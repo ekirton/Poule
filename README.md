@@ -29,6 +29,26 @@ Install [opam](https://opam.ocaml.org/) (OCaml's package manager), then use it t
 ```bash
 # macOS
 brew install opam hg darcs
+
+# Linux (Debian/Ubuntu)
+sudo apt-get update && sudo apt-get install -y bubblewrap mercurial darcs
+bash -c "sh <(curl -fsSL https://opam.ocaml.org/install.sh)"
+
+# Linux (Fedora/RHEL)
+sudo dnf install -y bubblewrap mercurial darcs
+bash -c "sh <(curl -fsSL https://opam.ocaml.org/install.sh)"
+
+# Linux (Arch)
+sudo pacman -S opam bubblewrap mercurial darcs
+
+# Windows — use WSL2 with a Ubuntu distribution, then follow the Debian/Ubuntu
+# instructions above. Native Windows is not supported by opam.
+# See https://learn.microsoft.com/en-us/windows/wsl/install
+```
+
+Then initialise opam and install Coq (all platforms, including WSL2):
+
+```bash
 opam init
 
 # Install Coq and the extraction backend
