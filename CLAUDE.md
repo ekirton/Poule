@@ -18,7 +18,7 @@ Each layer answers "what" for the layer below and "how" for the layer above. A s
 
 ## Layer 4 : Implementation specification
 
-* doc/tasks/ : detailed plan for implementation
+* tasks/ : detailed plan for implementation
 
 ## Layer 5 : Implementation
 
