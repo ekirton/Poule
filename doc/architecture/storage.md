@@ -2,6 +2,7 @@
 
 SQLite database schema for the search index. Single file, no external services.
 
+**Feature**: [Library Indexing](../features/library-indexing.md)
 **Stories**: [Epic 1: Library Indexing](../requirements/stories/tree-search-mcp.md#epic-1-library-indexing)
 
 ---
@@ -44,6 +45,17 @@ CREATE TABLE symbol_freq (
   freq INTEGER NOT NULL
 );
 
+-- Index metadata (schema version, library versions)
+CREATE TABLE index_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+-- Required keys:
+--   'schema_version'  → tool's index schema version (e.g., '1')
+--   'coq_version'     → Coq/Rocq version used during indexing
+--   'mathcomp_version' → MathComp version (if indexed), or NULL
+--   'created_at'      → ISO 8601 timestamp of index creation
+
 -- Full-text search
 CREATE VIRTUAL TABLE declarations_fts USING fts5(
   name, statement, module,
@@ -60,3 +72,5 @@ CREATE VIRTUAL TABLE declarations_fts USING fts5(
 **Content-synced FTS5**: The `content=declarations` parameter makes FTS5 a content-synced index — it reads from the declarations table rather than storing a copy. The `content_rowid=id` maps FTS5 rowids to declaration IDs.
 
 **WL vectors at multiple h values**: Storing histograms at h=1,3,5 allows experimentation with different WL iteration depths without re-extracting. h=3 is the primary query depth.
+
+**Index metadata table**: The `index_meta` table stores key-value pairs for the index schema version and the versions of indexed libraries. On server startup, the schema version is compared against the tool's expected version; a mismatch triggers a full re-index. Library versions are compared against the currently installed versions; a change triggers a rebuild before serving queries. This table is the mechanism behind the index versioning behavior described in [library-indexing.md](../features/library-indexing.md).

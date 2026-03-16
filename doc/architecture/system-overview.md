@@ -1,5 +1,7 @@
 # System Overview
 
+**Feature**: [Semantic Search for Coq/Rocq Libraries](../features/semantic-search.md)
+
 The system has four components connected in a pipeline from offline extraction through online search.
 
 ---
@@ -74,6 +76,14 @@ The system has four components connected in a pipeline from offline extraction t
 2. Each declaration is converted to an expression tree, normalized, and indexed
 3. The Search Backend stores all index data in a single SQLite database
 
+**Server startup (index lifecycle)**:
+1. The MCP Server checks for the index database at the configured path
+2. If the database is missing, the server returns an `INDEX_MISSING` error on all tool calls
+3. If the database exists, the server reads the `index_meta` table and checks:
+   a. Schema version matches the tool's expected version — if not, triggers a full re-index
+   b. Library versions match the currently installed versions — if not, triggers a full rebuild
+4. Once a valid index is confirmed, the server loads WL histograms into memory and begins serving queries
+
 **Online (query)**:
 1. The LLM in Claude Code receives a user query and formulates MCP tool calls
 2. The MCP Server translates tool calls to Search Backend queries
@@ -89,3 +99,21 @@ The system has four components connected in a pipeline from offline extraction t
 | MCP Server | Protocol translation, input validation, response formatting | Search logic, storage |
 | Search Backend | Retrieval channels, fusion, index queries | Coq parsing, user interaction |
 | Coq Library Extraction | Declaration extraction, tree conversion, normalization, index construction | Online queries |
+
+## Index Lifecycle
+
+The index is a derived artifact. Its lifecycle is managed by the MCP Server on startup:
+
+```
+Server start
+  │
+  ├─ Database missing? → INDEX_MISSING error on all tool calls
+  │
+  ├─ Schema version mismatch? → Full re-index from scratch
+  │
+  ├─ Library version changed? → Full rebuild before serving queries
+  │
+  └─ All checks pass → Load histograms into memory, serve queries
+```
+
+Re-indexing is always a full rebuild. See [storage.md](storage.md) for the `index_meta` table schema and [mcp-server.md](mcp-server.md) for the error contract.

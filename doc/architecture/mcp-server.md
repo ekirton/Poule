@@ -2,13 +2,14 @@
 
 The thin adapter layer between Claude Code and the search backend.
 
+**Feature**: [MCP Tool Surface](../features/mcp-tool-surface.md)
 **Stories**: [Epic 2: MCP Server and Tool Surface](../requirements/stories/tree-search-mcp.md#epic-2-mcp-server-and-tool-surface)
 
 ---
 
 ## Transport
 
-The server communicates via stdio transport, compatible with Claude Code's MCP configuration. HTTP transport is an alternative for non-Claude-Code clients.
+The server communicates via stdio transport, compatible with Claude Code's MCP configuration.
 
 ## Tool Signatures
 
@@ -85,3 +86,20 @@ The MCP server is a thin adapter. It:
 - Handles errors (unknown declarations, parse failures) with structured error responses
 
 It does **not** implement search logic, manage storage, or interact with Coq directly.
+
+## Error Contract
+
+All error responses use MCP's standard error format with a structured `error` object containing a `code` and human-readable `message`.
+
+| Condition | Error Code | Message |
+|-----------|-----------|---------|
+| No index database at configured path | `INDEX_MISSING` | Index database not found at `{path}`. Run the indexing command to create it. |
+| Index schema version does not match tool version | `INDEX_VERSION_MISMATCH` | Index schema version `{found}` is incompatible with tool version `{expected}`. Re-indexing from scratch. |
+| Library version changed (stale index detected) | `INDEX_REBUILDING` | Detected library update. Rebuilding index before serving queries. |
+| `get_lemma` with unknown name | `NOT_FOUND` | Declaration `{name}` not found in the index. |
+| Malformed query expression | `PARSE_ERROR` | Failed to parse expression: `{details}` |
+
+On startup, the server checks the index in this order:
+1. Does the database file exist? If not → `INDEX_MISSING`.
+2. Does the `schema_version` in `index_meta` match the tool's expected version? If not → full re-index.
+3. Do the library versions in `index_meta` match the currently installed versions? If not → full rebuild before serving queries.
