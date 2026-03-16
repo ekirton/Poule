@@ -1,24 +1,20 @@
-"""Storage error hierarchy."""
-
-from __future__ import annotations
+"""Error hierarchy for the storage layer."""
 
 
 class StorageError(Exception):
     """Base class for all storage errors."""
-    pass
 
 
 class IndexNotFoundError(StorageError):
     """Database file missing."""
-    pass
 
 
 class IndexVersionError(StorageError):
     """Schema version mismatch."""
 
-    def __init__(self, found: str, expected: str) -> None:
+    def __init__(self, found, expected):
         self.found = found
         self.expected = expected
         super().__init__(
-            f"Schema version mismatch: found {found!r}, expected {expected!r}"
+            f"Schema version mismatch: found {found}, expected {expected}"
         )

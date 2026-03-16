@@ -38,7 +38,9 @@ The database shall contain 6 tables as defined in the architecture:
 - `index_meta` — key-value metadata
 - `declarations_fts` — FTS5 virtual table (content-synced with `declarations`)
 
-FTS5 configuration: Unicode tokenizer with Porter stemming. BM25 column weights: `name=10.0`, `statement=1.0`, `module=5.0`.
+FTS5 configuration: The stemming tokenizer shall wrap the base tokenizer (Porter around Unicode61). BM25 column weights: `name=10.0`, `statement=1.0`, `module=5.0`.
+
+Language-specific note (SQLite FTS5): `tokenize='porter unicode61'`.
 
 ### 4.2 IndexWriter
 
@@ -144,6 +146,11 @@ The `IndexReader` manages the read path during online queries.
 
 - REQUIRES: `prefix` is a string (may be empty).
 - ENSURES: Returns `Module` entries for all modules whose name starts with `prefix`, with declaration counts.
+
+#### close()
+
+- REQUIRES: Database is open.
+- ENSURES: Connection is closed. Subsequent query calls raise `StorageError`.
 
 ## 5. Error Specification
 

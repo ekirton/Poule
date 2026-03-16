@@ -1,4 +1,4 @@
-"""IndexWriter: write path for the SQLite search index."""
+"""IndexWriter — write path for the SQLite search index."""
 
 from __future__ import annotations
 
@@ -6,85 +6,77 @@ import json
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any
 
-from wily_rooster.storage.errors import StorageError
+from .errors import StorageError
 
-
-_SCHEMA_DDL = """
-CREATE TABLE IF NOT EXISTS declarations (
+_SCHEMA_SQL = """\
+CREATE TABLE declarations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
+    name TEXT UNIQUE NOT NULL,
     module TEXT NOT NULL,
     kind TEXT NOT NULL,
     statement TEXT NOT NULL,
     type_expr TEXT,
     constr_tree BLOB,
-    node_count INTEGER NOT NULL,
+    node_count INTEGER NOT NULL CHECK(node_count > 0),
     symbol_set TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS dependencies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    src INTEGER NOT NULL REFERENCES declarations(id),
-    dst INTEGER NOT NULL REFERENCES declarations(id),
-    relation TEXT NOT NULL
+CREATE TABLE dependencies (
+    src INTEGER NOT NULL REFERENCES declarations(id) ON DELETE CASCADE,
+    dst INTEGER NOT NULL REFERENCES declarations(id) ON DELETE CASCADE,
+    relation TEXT NOT NULL,
+    PRIMARY KEY (src, dst, relation)
 );
 
-CREATE TABLE IF NOT EXISTS wl_vectors (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    decl_id INTEGER NOT NULL REFERENCES declarations(id),
+CREATE TABLE wl_vectors (
+    decl_id INTEGER NOT NULL REFERENCES declarations(id) ON DELETE CASCADE,
     h INTEGER NOT NULL,
-    histogram TEXT NOT NULL
+    histogram TEXT NOT NULL,
+    PRIMARY KEY (decl_id, h)
 );
 
-CREATE TABLE IF NOT EXISTS symbol_freq (
+CREATE TABLE symbol_freq (
     symbol TEXT PRIMARY KEY,
-    freq INTEGER NOT NULL
+    freq INTEGER NOT NULL CHECK(freq > 0)
 );
 
-CREATE TABLE IF NOT EXISTS index_meta (
+CREATE TABLE index_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 
-CREATE VIRTUAL TABLE IF NOT EXISTS declarations_fts USING fts5(
-    name,
-    statement,
-    module,
-    content=declarations,
-    content_rowid=id,
+CREATE VIRTUAL TABLE declarations_fts USING fts5(
+    name, statement, module,
+    content=declarations, content_rowid=id,
     tokenize='porter unicode61'
 );
 """
 
 
 class IndexWriter:
-    """Write path for bulk-loading a search index database."""
-
-    def __init__(self, conn: sqlite3.Connection, path: Path) -> None:
+    def __init__(self, conn: sqlite3.Connection, db_path: Path):
         self._conn = conn
-        self._path = path
+        self._db_path = db_path
 
     @classmethod
-    def create(cls, path: str | Path) -> IndexWriter:
-        """Create a new index database at *path*."""
+    def create(cls, path) -> IndexWriter:
         path = Path(path)
         conn = sqlite3.connect(str(path))
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA synchronous = OFF")
         conn.execute("PRAGMA journal_mode = MEMORY")
-        conn.executescript(_SCHEMA_DDL)
+        conn.executescript(_SCHEMA_SQL)
         return cls(conn, path)
 
-    def insert_declarations(self, batch: list[dict[str, Any]]) -> dict[str, int]:
-        """Insert a batch of declarations. Returns name -> id mapping."""
-        cur = self._conn.cursor()
-        mapping: dict[str, int] = {}
+    def insert_declarations(self, batch: list[dict]) -> dict[str, int]:
+        name_to_id: dict[str, int] = {}
         for decl in batch:
-            cur.execute(
-                "INSERT INTO declarations (name, module, kind, statement, type_expr, constr_tree, node_count, symbol_set) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            symbol_set_json = json.dumps(decl["symbol_set"])
+            cursor = self._conn.execute(
+                "INSERT INTO declarations "
+                "(name, module, kind, statement, type_expr, constr_tree, "
+                "node_count, symbol_set) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     decl["name"],
                     decl["module"],
@@ -93,43 +85,39 @@ class IndexWriter:
                     decl.get("type_expr"),
                     decl.get("constr_tree"),
                     decl["node_count"],
-                    decl["symbol_set"],
+                    symbol_set_json,
                 ),
             )
-            rowid = cur.lastrowid
-            mapping[decl["name"]] = rowid
-
-            # Sync FTS
-            cur.execute(
-                "INSERT INTO declarations_fts(rowid, name, statement, module) VALUES (?, ?, ?, ?)",
-                (rowid, decl["name"], decl["statement"], decl["module"]),
+            row_id = cursor.lastrowid
+            name_to_id[decl["name"]] = row_id
+            self._conn.execute(
+                "INSERT INTO declarations_fts(rowid, name, statement, module) "
+                "VALUES (?, ?, ?, ?)",
+                (row_id, decl["name"], decl["statement"], decl["module"]),
             )
         self._conn.commit()
-        return mapping
+        return name_to_id
 
-    def insert_wl_vectors(self, batch: list[dict[str, Any]]) -> None:
-        """Insert a batch of WL vectors."""
+    def insert_wl_vectors(self, batch: list[dict]) -> None:
         self._conn.executemany(
             "INSERT INTO wl_vectors (decl_id, h, histogram) VALUES (?, ?, ?)",
-            [(v["decl_id"], v["h"], v["histogram"]) for v in batch],
+            [(v["decl_id"], v["h"], json.dumps(v["histogram"])) for v in batch],
         )
         self._conn.commit()
 
-    def insert_dependencies(self, batch: list[dict[str, Any]]) -> None:
-        """Insert dependency edges. Rejects self-loops."""
-        for dep in batch:
-            if dep["src"] == dep["dst"]:
+    def insert_dependencies(self, batch: list[dict]) -> None:
+        for edge in batch:
+            if edge["src"] == edge["dst"]:
                 raise ValueError(
-                    f"Self-loop rejected: src == dst == {dep['src']}"
+                    f"Self-loop detected: src == dst == {edge['src']}"
                 )
         self._conn.executemany(
             "INSERT INTO dependencies (src, dst, relation) VALUES (?, ?, ?)",
-            [(d["src"], d["dst"], d["relation"]) for d in batch],
+            [(e["src"], e["dst"], e["relation"]) for e in batch],
         )
         self._conn.commit()
 
     def insert_symbol_freq(self, entries: dict[str, int]) -> None:
-        """Insert symbol frequency entries."""
         self._conn.executemany(
             "INSERT INTO symbol_freq (symbol, freq) VALUES (?, ?)",
             list(entries.items()),
@@ -137,7 +125,6 @@ class IndexWriter:
         self._conn.commit()
 
     def write_meta(self, key: str, value: str) -> None:
-        """Write a metadata key-value pair."""
         self._conn.execute(
             "INSERT OR REPLACE INTO index_meta (key, value) VALUES (?, ?)",
             (key, value),
@@ -145,26 +132,23 @@ class IndexWriter:
         self._conn.commit()
 
     def finalize(self) -> None:
-        """Rebuild FTS, run integrity check, close connection."""
+        self._conn.commit()
+        self._conn.close()
+
         try:
-            self._conn.execute(
+            conn = sqlite3.connect(str(self._db_path))
+            conn.execute(
                 "INSERT INTO declarations_fts(declarations_fts) VALUES('rebuild')"
             )
-            result = self._conn.execute("PRAGMA integrity_check").fetchone()
-            if result[0] != "ok":
-                self._conn.close()
-                os.unlink(str(self._path))
-                raise StorageError(f"Integrity check failed: {result[0]}")
-            self._conn.close()
-        except StorageError:
-            raise
-        except Exception as exc:
-            try:
-                self._conn.close()
-            except Exception:
-                pass
-            try:
-                os.unlink(str(self._path))
-            except Exception:
-                pass
-            raise StorageError(f"Finalize failed: {exc}") from exc
+            conn.commit()
+            result = conn.execute("PRAGMA integrity_check").fetchone()
+            conn.close()
+        except Exception as e:
+            if self._db_path.exists():
+                os.remove(self._db_path)
+            raise StorageError(str(e)) from e
+
+        if result[0] != "ok":
+            if self._db_path.exists():
+                os.remove(self._db_path)
+            raise StorageError(f"Integrity check failed: {result[0]}")
