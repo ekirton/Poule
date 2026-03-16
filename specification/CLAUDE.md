@@ -2,32 +2,22 @@
 
 ## Authority
 
-Specifications are **derived from** architecture documents (`doc/architecture/`) — they are Layer 4 artifacts that decompose Layer 3 design into implementable units.
+Specifications are derived from architecture documents (`doc/architecture/`).
 
-**Before writing or editing any specification:**
+**Before writing or editing:**
 
-1. Read the parent architecture document referenced at the top of the spec.
-2. Read `doc/architecture/data-models/expression-tree.md` and `doc/architecture/data-models/index-entities.md` — these are **authoritative** for all entity names, field types, constraints, node label names, and relationships. If a specification names an entity, field, node label, or constraint, it **must** match the data model documents exactly.
-3. Read `doc/architecture/component-boundaries.md` for the dependency graph and boundary contracts.
-4. When a specification and an architecture document disagree, the architecture document wins. When an architecture document and a data model document disagree on entity structure, the data model document wins.
+1. Read the parent architecture document.
+2. Read `doc/architecture/data-models/expression-tree.md` and `doc/architecture/data-models/index-entities.md` — authoritative for all entity names, field types, constraints, node labels, and relationships.
+3. Read `doc/architecture/component-boundaries.md` for boundary contracts.
+4. Architecture wins over specification. Data model wins over architecture on entity structure.
 
-**Cross-spec consistency:** When referencing types, labels, or contracts defined in another specification, read that specification to verify the names and signatures match. Do not assume — check.
+**Cross-spec consistency:** verify referenced types, labels, and contracts against the defining specification.
 
 ## Upstream Authority Is Immutable
 
-Architecture documents (`doc/architecture/`) and data model documents (`doc/architecture/data-models/`) **must not be modified** when writing specifications. Specifications are derived from these sources — not the other way around.
-
-- If an architecture document appears ambiguous, contradictory, or incomplete, file feedback in `doc/architecture/feedback/` — do not change the architecture document.
-- If a data model document conflicts with an architecture document, file feedback in `doc/architecture/feedback/` citing both sources.
-- Follow the feedback standards defined in `doc/architecture/feedback/CLAUDE.md`.
-
-## Core Principle
-
-Specification misunderstanding — not model capability — is the primary cause of code generation failure. Every sentence must earn its place by adding information the implementer needs to make a decision. Noise actively degrades output quality.
+Do not modify `doc/architecture/` or `doc/architecture/data-models/` when writing specs. File feedback in `doc/architecture/feedback/` per `doc/architecture/feedback/CLAUDE.md`.
 
 ## Document Structure
-
-Follow this anatomy (omit empty sections for small components):
 
 ```
 1. Purpose                  [required]
@@ -43,32 +33,29 @@ Follow this anatomy (omit empty sections for small components):
 11. Language-Specific Notes [separate section or file]
 ```
 
-Order content critical-first: happy path → errors/edges → NFRs → nice-to-haves. Within components: inputs → outputs → errors → internals.
+Order: happy path → errors/edges → NFRs → nice-to-haves. Within components: inputs → outputs → errors → internals.
 
 ## Abstraction Level
 
-- Describe **what** and **why**, with enough **how** to constrain — not dictate — the solution.
-- A well-written spec admits at least two valid implementations. If only one implementation is possible, it's pseudo-code.
-- Use domain language ("calculate total order price"), not solution language ("iterate array and sum item.price * quantity").
-- Be precise at **boundaries** (inputs, outputs, errors, state transitions). Be abstract about **internal logic**.
-- If a platform migration would invalidate a statement, it belongs in language-specific notes, not the core spec.
+- Describe **what** and **why**, with enough **how** to constrain — not dictate.
+- Use domain language, not solution language.
+- Be precise at boundaries (inputs, outputs, errors, state transitions). Be abstract about internals.
+- Platform-specific statements belong in Language-Specific Notes.
 
-## Writing Requirements
+## Requirements
 
-Each requirement must be **atomic** (one behavior), **testable** (describable test exists), and **unambiguous** (one interpretation).
+Each requirement: **atomic** (one behavior), **testable**, **unambiguous** (one interpretation).
 
-**Banned vague terms** — replace with measurable specifics: robust, efficient, user-friendly, flexible, reliable, secure, fast, scalable, appropriate, various, quickly, "in a timely manner."
+**Banned terms** (replace with measurables): robust, efficient, user-friendly, flexible, reliable, secure, fast, scalable, appropriate, various, quickly, "in a timely manner."
 
-**Fix ambiguity:** replace pronouns with nouns, use active voice with explicit actors, split compound "and" statements, clarify "or" (inclusive vs exclusive).
+**Fix ambiguity:** replace pronouns with nouns, use active voice, split compound "and" statements.
 
-**EARS template** for unambiguous requirements:
+**EARS template:**
 ```
 [When <trigger>] [while <precondition>] the <system> shall <action> [the <object>]
 ```
 
-## Behavioral Specs
-
-Use **Design by Contract** for each operation:
+## Behavioral Specs — Design by Contract
 
 | Element | Definition |
 |---------|-----------|
@@ -76,45 +63,40 @@ Use **Design by Contract** for each operation:
 | **ENSURES** | What must be true after (implementer's obligation) |
 | **MAINTAINS** | What is always true (both sides) |
 
-Prioritize DbC for complex, multi-method, stateful components. Simple pure functions need less.
-
-Include **2–3 concrete examples** per behavior in Given/When/Then format. Place examples immediately after the requirement they illustrate. Do not exceed 3 examples unless unusual edge cases exist.
+Include 2-3 concrete Given/When/Then examples per behavior, placed immediately after the requirement.
 
 ## Data Model
 
-- Define entities with domain-level types (e.g., "unique identifier" not "UUID", "monetary amount" not "f64").
-- State all constraints, validation rules, and relationships with cardinality.
+Define entities with domain-level types. State all constraints, validation rules, and relationships with cardinality.
 
 ## Interface Contracts
 
-For each boundary operation, specify: **Input**, **Output**, **Guarantees**, **Error strategy**, **Concurrency**, **Idempotency** (required for retriable operations).
-
-A contract is complete when either side (caller or callee) can be implemented without reading the other's internals.
+Per boundary operation: **Input**, **Output**, **Guarantees**, **Error strategy**, **Concurrency**, **Idempotency** (required for retriable operations). Complete when either side can be implemented without reading the other's internals.
 
 ## State Machines
 
-When an entity has a status/lifecycle, **always provide an explicit transition table** — never describe state behavior narratively.
+Always provide an explicit transition table — never narrative.
 
 ```
 | Current State | Event | Guard | Action | Next State |
 ```
 
-Every non-terminal state needs at least one outbound transition. Every event must be accounted for in every non-terminal state.
+Every non-terminal state needs at least one outbound transition. Every event accounted for in every non-terminal state.
 
 ## Error Specification
 
-Classify errors per operation: **input error**, **state error**, **dependency error**, **invariant violation**. Specify the outcome for each.
+Classify per operation: **input error**, **state error**, **dependency error**, **invariant violation**.
 
-Enumerate edge cases explicitly: empty input, boundary values, null/missing, duplicates, concurrent access, partial failure, repeated invocation. Every edge case must have a specified outcome.
+Enumerate edge cases: empty input, boundary values, null/missing, duplicates, concurrent access, partial failure, repeated invocation.
 
 ## Signal Quality
 
-- Target ≤ 3,000 tokens per section. Split longer sections.
-- Prefer tables over prose for structured content (state transitions, error classifications, validation rules, data constraints).
-- No TBD/TODO markers — make provisional decisions explicitly marked as such.
-- No aspirational prose ("it is important that..."), redundant restatements, or narrative data flows spanning multiple components.
-- Front-load critical requirements (LLMs attend more strongly to early content).
+- Target ≤ 3,000 tokens per section.
+- Prefer tables over prose for structured content.
+- No TBD/TODO — make provisional decisions explicitly.
+- No aspirational prose or redundant restatements.
+- Front-load critical requirements.
 
 ## Language Separation
 
-Keep language-agnostic content (behaviors, contracts, data models, state machines, errors, examples) separate from language-specific content (framework choices, project structure, build commands, code style snippets). The agnostic layer must survive a technology migration unchanged.
+Keep language-agnostic content separate from language-specific content. The agnostic layer must survive a technology migration unchanged.

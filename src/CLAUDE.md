@@ -2,25 +2,23 @@
 
 ## Source of Authority
 
-The `specification/*.md` files are the authoritative source for all implementation decisions. When in doubt about behavior, data types, error handling, contracts, or edge cases, consult the relevant specification document — not the tests, not the architecture docs.
+`specification/*.md` is authoritative for all implementation decisions.
 
 Authority chain: `specification/*.md` → `doc/architecture/` → `doc/features/` → `doc/requirements/`
 
 ## Upstream Authority Is Immutable
 
-Test files in `test/`, specification documents in `specification/`, architecture documents in `doc/architecture/`, and data model documents in `doc/architecture/data-models/` **must not be modified** when writing implementation code. Tests encode the specification contracts and were written first (TDD). Implementation must conform to all upstream layers — not the other way around.
+Do not modify `test/`, `specification/`, `doc/architecture/`, or `doc/architecture/data-models/` when writing implementation code.
 
 - If a test fails, fix the implementation — not the test.
 - If a test imports from a specific module path, create that module at that path.
 - If a test expects a specific function signature, implement that exact signature.
 - If a test expects a specific exception type, raise that exact exception.
-- If a specification appears ambiguous or incorrect, file feedback in `specification/feedback/` — do not change the spec. Follow the feedback standards defined in `specification/feedback/CLAUDE.md`.
-- If a test appears to conflict with its specification, file feedback in `test/feedback/` — do not change the test. Follow the feedback standards defined in `test/feedback/CLAUDE.md`.
-- If an architecture or data model document conflicts with a specification, file feedback in `doc/architecture/feedback/`. Follow the feedback standards defined in `doc/architecture/feedback/CLAUDE.md`.
+- File feedback in the appropriate `feedback/` folder if upstream appears wrong.
 
 ## Import Paths
 
-Tests define the expected package structure. Follow these module paths exactly:
+Tests define the expected package structure:
 
 | Package | Location |
 |---------|----------|
