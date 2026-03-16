@@ -12,32 +12,33 @@ System-level view of all components, their boundaries, and the dependency graph.
 | Storage | SQLite schema, index metadata, FTS5 index | [storage.md](storage.md) |
 | Retrieval Pipeline | Retrieval channels, metric computation, fusion | [retrieval-pipeline.md](retrieval-pipeline.md) |
 | MCP Server | Protocol translation, input validation, error handling, response formatting | [mcp-server.md](mcp-server.md) |
+| CLI | Command-line interface for indexing and search, output formatting | [cli.md](cli.md) |
 | Claude Code / LLM | Intent interpretation, query formulation, result filtering, explanation | External (not owned by this project) |
 
 ## Dependency Graph
 
 ```
-Claude Code / LLM
-  │
-  │ MCP tool calls (stdio)
-  ▼
-MCP Server
-  │
-  │ Internal function calls
-  ▼
-Retrieval Pipeline
-  │
-  │ SQLite queries
-  ▼
-Storage (SQLite database)
-  ▲
-  │ Writes during indexing
-  │
-Coq Library Extraction
-  │
-  │ coq-lsp / SerAPI
-  ▼
-Compiled .vo files (external)
+Claude Code / LLM          Terminal user
+  │                           │
+  │ MCP tool calls (stdio)    │ CLI subcommands
+  ▼                           ▼
+MCP Server                  CLI
+  │                           │
+  │ Internal function calls   │ Internal function calls
+  ▼                           ▼
+       Retrieval Pipeline
+             │
+             │ SQLite queries
+             ▼
+       Storage (SQLite database)
+             ▲
+             │ Writes during indexing
+             │
+       Coq Library Extraction
+             │
+             │ coq-lsp / SerAPI
+             ▼
+       Compiled .vo files (external)
 ```
 
 ## Boundary Contracts
@@ -52,6 +53,16 @@ Compiled .vo files (external)
 | Tools | `search_by_name`, `search_by_type`, `search_by_structure`, `search_by_symbols`, `get_lemma`, `find_related`, `list_modules` |
 | Response types | `SearchResult`, `LemmaDetail`, `Module`, structured errors |
 | Error contract | See [mcp-server.md](mcp-server.md) § Error Contract |
+
+### CLI → Retrieval Pipeline
+
+| Property | Value |
+|----------|-------|
+| Mechanism | Internal function calls (in-process) |
+| Direction | Request-response |
+| Input | Parsed and validated query parameters (identical to MCP server) |
+| Output | Ranked result lists with scores |
+| Shared with | MCP Server → Retrieval Pipeline (same `PipelineContext` and pipeline functions) |
 
 ### MCP Server → Retrieval Pipeline
 
@@ -100,3 +111,4 @@ Compiled .vo files (external)
 | [storage.md](storage.md) | [specification/storage.md](../../specification/storage.md) |
 | [retrieval-pipeline.md](retrieval-pipeline.md) | [specification/pipeline.md](../../specification/pipeline.md), [specification/fusion.md](../../specification/fusion.md), [specification/channel-wl-kernel.md](../../specification/channel-wl-kernel.md), [specification/channel-mepo.md](../../specification/channel-mepo.md), [specification/channel-fts.md](../../specification/channel-fts.md), [specification/channel-ted.md](../../specification/channel-ted.md), [specification/channel-const-jaccard.md](../../specification/channel-const-jaccard.md) |
 | [mcp-server.md](mcp-server.md) | [specification/mcp-server.md](../../specification/mcp-server.md) |
+| [cli.md](cli.md) | [specification/cli.md](../../specification/cli.md) |

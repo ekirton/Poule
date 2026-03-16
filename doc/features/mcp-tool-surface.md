@@ -1,6 +1,6 @@
 # MCP Tool Surface
 
-The set of MCP tools exposed by the search server, designed to give the LLM maximum flexibility in how it searches Coq libraries.
+The set of MCP tools exposed by the search server, designed to give the LLM maximum flexibility in how it searches Coq libraries. The same search operations are also available as [standalone CLI commands](cli-search.md) for terminal use without an MCP client.
 
 **Stories**: [Epic 2: MCP Server and Tool Surface](../requirements/stories/tree-search-mcp.md#epic-2-mcp-server-and-tool-surface), [Epic 5: End-to-End User Experience](../requirements/stories/tree-search-mcp.md#epic-5-end-to-end-user-experience)
 

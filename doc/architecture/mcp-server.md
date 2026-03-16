@@ -1,6 +1,6 @@
 # MCP Server
 
-The thin adapter layer between Claude Code and the search backend.
+The thin adapter layer between Claude Code and the search backend. The [CLI](cli.md) is a peer adapter that provides the same search capabilities for terminal users.
 
 **Feature**: [MCP Tool Surface](../features/mcp-tool-surface.md)
 **Stories**: [Epic 2: MCP Server and Tool Surface](../requirements/stories/tree-search-mcp.md#epic-2-mcp-server-and-tool-surface)

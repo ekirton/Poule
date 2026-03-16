@@ -76,6 +76,9 @@ Cross-references:
 | R-P0-16 | Record the index schema version in the database; reject incompatible indexes at startup |
 | R-P0-17 | When the indexed library is updated, rebuild the index immediately before serving queries |
 | R-P0-18 | When the indexing command is run and an existing database file exists at the output path, delete it and rebuild from scratch without prompting |
+| R-P0-19 | Expose all search capabilities (name, type, structure, symbol, lemma detail, related declarations, module listing) as standalone CLI commands |
+| R-P0-20 | CLI search commands shall output results to stdout in both human-readable and machine-readable (JSON) formats |
+| R-P0-21 | CLI search commands shall reuse the same retrieval pipeline as the MCP server with identical ranking behavior |
 
 ### P1 — Should Have
 
@@ -100,6 +103,7 @@ Cross-references:
 **In scope:**
 - Semantic lemma search for Coq/Rocq libraries
 - MCP server deployment for Claude Code integration (stdio transport)
+- Standalone CLI search tool (same retrieval capabilities as MCP, for terminal workflows)
 - Offline indexing CLI for stdlib, MathComp, and user projects
 - Tree-based and symbolic retrieval channels (no neural embeddings in v1)
 - SQLite-based local index storage
@@ -107,7 +111,6 @@ Cross-references:
 **Out of scope (this initiative):**
 - Web interface deployment
 - coq-lsp / IDE plugin deployment
-- Standalone CLI search tool (search is via MCP only; indexing has a CLI)
 - Neural embedding models or GPU-dependent retrieval
 
 ---

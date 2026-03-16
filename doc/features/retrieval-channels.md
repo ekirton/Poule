@@ -34,12 +34,14 @@ Results from applicable channels are combined so that items appearing across mul
 
 ## Channel Usage by Tool
 
-| MCP Tool | Channels Used |
-|----------|--------------|
+| Search Operation | Channels Used |
+|------------------|--------------|
 | `search_by_structure` | Structural + Fine Structural + Constant Name |
 | `search_by_symbols` | Symbol Overlap, optionally Constant Name |
 | `search_by_name` | Lexical only |
 | `search_by_type` | Structural + Symbol Overlap + Lexical |
+
+Channel usage is identical whether the query arrives via MCP tool call or CLI command.
 
 ## Design Rationale
 

@@ -14,7 +14,7 @@ A Coq developer looking for "a lemma about commutativity of addition on natural 
 
 ## Solution
 
-A tree-based structural search system that indexes Coq library declarations and exposes them as MCP tools for LLM-mediated retrieval. The system combines multiple retrieval channels — structural, symbolic, and lexical — to maximize recall, then relies on the LLM reasoning layer for precision, filtering, and explanation.
+A tree-based structural search system that indexes Coq library declarations and exposes them via both MCP tools (for LLM-mediated retrieval) and standalone CLI commands (for direct terminal use). The system combines multiple retrieval channels — structural, symbolic, and lexical — to maximize recall. In the MCP path, the LLM reasoning layer provides precision, filtering, and explanation. In the CLI path, results are presented directly to the user.
 
 ## Design Rationale
 
@@ -66,4 +66,5 @@ This system is **not**:
 1. **Recall**: On a hand-curated set of (query, relevant lemma) pairs from common Coq workflows, the retrieval stage (before LLM filtering) should surface the relevant lemma in the top-50 at least 70% of the time.
 2. **Latency**: First-pass retrieval completes in <1 second for a library of 50K declarations.
 3. **Usability**: A user in Claude Code can describe what they need in natural language and get a useful, explained result within one conversational turn.
-4. **Zero-config deployment**: Index the standard library with a single command. No GPU, no external services, no API keys (beyond Claude Code itself).
+4. **Zero-config deployment**: Index the standard library with a single command. No GPU, no external services, no API keys (beyond Claude Code itself for the MCP path).
+5. **CLI access**: All search capabilities available as standalone CLI commands for terminal workflows without Claude Code.

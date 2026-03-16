@@ -332,3 +332,118 @@ Derived from [doc/requirements/coq-ecosystem-gaps.md](../coq-ecosystem-gaps.md).
 **Acceptance criteria:**
 - GIVEN no index database at the configured path WHEN the MCP server starts THEN it returns a clear error message indicating the index is missing and how to create it
 - GIVEN a missing index WHEN any search tool is called THEN the tool returns an error rather than empty results
+
+---
+
+## Epic 7: Standalone CLI Search
+
+### 7.1 Search by Name via CLI
+
+**As a** Coq developer working in a terminal without Claude Code,
+**I want to** search for declarations by name pattern from the command line,
+**so that** I can find lemmas without needing an MCP client.
+
+**Priority:** P0
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN an indexed database WHEN the user runs the CLI search-by-name command with a pattern THEN matching declarations are printed to stdout ranked by relevance
+- GIVEN a search command WHEN the `--json` flag is provided THEN results are output as a JSON array of `SearchResult` objects
+- GIVEN a search command WHEN no format flag is provided THEN results are output in a human-readable tabular format
+- GIVEN a search command WHEN a `--limit` option is provided THEN the result count respects the specified limit
+- GIVEN a search command WHEN no `--limit` is provided THEN the default limit is 50
+
+### 7.2 Search by Type via CLI
+
+**As a** Coq developer working in a terminal,
+**I want to** search for declarations by type expression from the command line,
+**so that** I can find lemmas by their logical content without an MCP client.
+
+**Priority:** P0
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN an indexed database WHEN the user runs the CLI search-by-type command with a Coq type expression THEN matching declarations are printed to stdout ranked by fused score
+- GIVEN search results WHEN the `--json` flag is provided THEN results are output as a JSON array
+- GIVEN search results WHEN no format flag is provided THEN results are output in human-readable format
+
+### 7.3 Search by Structure via CLI
+
+**As a** Coq developer working in a terminal,
+**I want to** find declarations structurally similar to a given expression from the command line,
+**so that** I can discover lemmas with related logical shapes without an MCP client.
+
+**Priority:** P0
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN an indexed database WHEN the user runs the CLI search-by-structure command with a Coq expression THEN matching declarations are printed to stdout ranked by structural score
+- GIVEN search results WHEN the `--json` flag is provided THEN results are output as a JSON array
+
+### 7.4 Search by Symbols via CLI
+
+**As a** Coq developer working in a terminal,
+**I want to** find declarations that use specific symbols from the command line,
+**so that** I can locate lemmas involving particular definitions without an MCP client.
+
+**Priority:** P0
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN an indexed database WHEN the user runs the CLI search-by-symbols command with one or more symbol names THEN matching declarations are printed to stdout ranked by relevance
+- GIVEN search results WHEN the `--json` flag is provided THEN results are output as a JSON array
+
+### 7.5 Get Lemma Details via CLI
+
+**As a** Coq developer working in a terminal,
+**I want to** retrieve full details for a specific declaration from the command line,
+**so that** I can inspect dependencies, dependents, and symbols without an MCP client.
+
+**Priority:** P0
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN an indexed database WHEN the user runs the CLI get-lemma command with a fully qualified name THEN the full declaration details are printed to stdout
+- GIVEN a name that does not exist WHEN the get-lemma command is run THEN a clear error message is printed to stderr and the command exits with a non-zero status
+- GIVEN the `--json` flag WHEN get-lemma is run THEN the output is a JSON `LemmaDetail` object
+
+### 7.6 Find Related Declarations via CLI
+
+**As a** Coq developer working in a terminal,
+**I want to** navigate the dependency graph from a known declaration via the command line,
+**so that** I can explore related lemmas without an MCP client.
+
+**Priority:** P0
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN an indexed database WHEN the user runs the CLI find-related command with a declaration name and relation type THEN related declarations are printed to stdout
+- GIVEN search results WHEN the `--json` flag is provided THEN results are output as a JSON array
+
+### 7.7 List Modules via CLI
+
+**As a** Coq developer working in a terminal,
+**I want to** browse the module hierarchy from the command line,
+**so that** I can orient myself within the library structure without an MCP client.
+
+**Priority:** P0
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN an indexed database WHEN the user runs the CLI list-modules command with a prefix THEN matching modules and their declaration counts are printed to stdout
+- GIVEN an empty prefix WHEN list-modules is run THEN all top-level modules are listed
+- GIVEN the `--json` flag WHEN list-modules is run THEN the output is a JSON array of module objects
+
+### 7.8 CLI Error Handling
+
+**As a** Coq developer using the CLI search commands,
+**I want** clear error messages when something goes wrong,
+**so that** I know how to resolve the issue.
+
+**Priority:** P0
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN no index database at the specified path WHEN any CLI search command is run THEN an error message is printed to stderr indicating the index is missing and how to create it, and the command exits with a non-zero status
+- GIVEN a malformed query expression WHEN a CLI search command is run THEN a parse error message is printed to stderr and the command exits with a non-zero status
+- GIVEN a successful search WHEN results are empty THEN the command exits with zero status and prints no results (or an empty JSON array with `--json`)
