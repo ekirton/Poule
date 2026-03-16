@@ -138,7 +138,7 @@ Lean has multiple neural premise selection systems:
 
 Research on library learning (LEGO-Prover, NeurIPS 2024; follow-up 2025) found that AI-generated lemmas are almost never reused across problems. Of 20,000+ generated lemmas, exactly one was reused, and only once. This suggests that retrieval from existing curated libraries (like MathComp) is more critical than retrieval from dynamically generated libraries.
 
-The implication for Coq: building effective retrieval over Coq's existing library ecosystem (standard library, MathComp, Iris, CompCert support libraries) is likely more impactful than systems that generate and attempt to reuse new lemmas.
+This finding suggests that retrieval from existing curated libraries (such as MathComp, Iris, and CompCert support libraries) is more valuable than retrieval from dynamically generated lemma stores, since AI-generated lemmas exhibit negligible cross-problem reuse.
 
 ---
 

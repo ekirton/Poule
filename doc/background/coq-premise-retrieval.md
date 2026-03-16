@@ -99,7 +99,7 @@ A critical research finding for anyone building premise retrieval systems:
 
 **"Library Learning Doesn't"** (NeurIPS 2024) found that of those 20,000+ lemmas, exactly one was reused across problems, and only once. Disabling cross-problem sharing reduced performance by only one problem on a validation subset. A follow-up study (2025) found no evidence of even "soft reuse" (reuse by modifying relevant examples).
 
-**Implication**: Retrieval from curated, human-authored libraries (standard library, MathComp, Iris) is more valuable than retrieval from dynamically generated lemma stores. Tool development should prioritize making existing Coq libraries more discoverable and retrievable rather than building systems that generate and attempt to reuse new lemmas.
+This finding indicates that retrieval from curated, human-authored libraries (standard library, MathComp, Iris) is more valuable than retrieval from dynamically generated lemma stores. AI-generated lemmas exhibit negligible cross-problem reuse, while existing library coverage remains the dominant factor in retrieval-augmented proving.
 
 ---
 

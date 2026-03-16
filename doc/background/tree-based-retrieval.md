@@ -1,11 +1,10 @@
 # Tree-Based and Structural Retrieval Methods for Formal Mathematics (March 2026)
 
-A survey of training-free, structure-aware retrieval methods for formal mathematical libraries, with implementation-level detail relevant to building a Coq/Rocq semantic search system.
+A survey of training-free, structure-aware retrieval methods for formal mathematical libraries, with implementation-level detail relevant to Coq/Rocq.
 
 Cross-references:
-- [semantic-search.md](semantic-search.md) — Architecture options and delivery mechanisms
+- [semantic-search.md](semantic-search.md) — Semantic search state of the art
 - [coq-premise-retrieval.md](coq-premise-retrieval.md) — Neural and hybrid premise selection
-- [coq-ecosystem-gaps.md](coq-ecosystem-gaps.md) — Gap 1 (Semantic Lemma Search)
 
 ---
 
@@ -184,7 +183,7 @@ For each proof state, find the k nearest previous proof states in the same proof
 
 In Graph2Tac, k-NN and GNN are highly complementary (1.27x improvement over either alone). The k-NN component alone outperforms CoqHammer on the Tactician benchmark.
 
-**Relevance for search**: This is a *proof-time* method (requires an active proof state), not a *library-browsing* method. But the locality principle informs search design: results from the user's current file/project context should be ranked higher.
+**Scope**: This is a *proof-time* method (requires an active proof state), not a *library-browsing* method. The locality principle — that nearby proof states tend to need similar lemmas — is the underlying signal exploited by the k-NN component.
 
 ---
 

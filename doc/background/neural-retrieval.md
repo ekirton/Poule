@@ -1,12 +1,11 @@
 # Neural Retrieval Architectures for Formal Mathematics (March 2026)
 
-A survey of neural network architectures for premise selection and semantic search over formal mathematical libraries, covering architecture families, training methods, compute requirements, and deployment considerations. Focused on what is relevant for building a Coq/Rocq retrieval system.
+A survey of neural network architectures for premise selection and semantic search over formal mathematical libraries, covering architecture families, training methods, compute requirements, and deployment considerations.
 
 Cross-references:
-- [tree-based-retrieval.md](tree-based-retrieval.md) — Training-free structural methods (our baseline)
-- [semantic-search.md](semantic-search.md) — Architecture options and delivery mechanisms
+- [tree-based-retrieval.md](tree-based-retrieval.md) — Training-free structural methods
+- [semantic-search.md](semantic-search.md) — Semantic search state of the art
 - [coq-premise-retrieval.md](coq-premise-retrieval.md) — Premise selection landscape
-- [coq-ecosystem-gaps.md](coq-ecosystem-gaps.md) — Gap 1 (Semantic Lemma Search)
 
 ---
 
@@ -40,7 +39,7 @@ Jointly encode (query, document) pairs with full cross-attention. Used as a seco
 | **Magnushammer RERANK** (ICLR 2024) | Decoder-only, 38-86M | Top-1024 from SELECT | 59.5% on PISA (vs 38.3% Sledgehammer) |
 | **CAR** (Jan 2025) | BERT cross-encoder | Top-K from CFR | Improved precision; nDCG@1=0.373 |
 
-**The standard pattern** is two-stage: bi-encoder retrieval → cross-encoder reranking of top-K. This is the architecture used by Magnushammer, CFR+CAR, and implicitly by any system where an LLM reasons over retrieved results (including our MCP approach, where the LLM serves as the reranking/reasoning layer).
+**The standard pattern** is two-stage: bi-encoder retrieval → cross-encoder reranking of top-K. This is the architecture used by Magnushammer, CFR+CAR, and implicitly by any system where an LLM reasons over retrieved results (including MCP-based approaches, where the LLM serves as the reranking/reasoning layer).
 
 ### 1.3 Graph Neural Networks
 
@@ -88,7 +87,7 @@ Autoregressive generation of premise names, rather than retrieval from a fixed i
 | **Contrastive + cross-entropy rerank** | Magnushammer | Two-stage; best end-to-end proving results |
 | **Proof-similarity InfoNCE** | RocqStar | Trains on proof structure, not statement similarity; novel for Coq |
 
-**Verdict**: Masked contrastive (LeanHammer) for retrieval quality. DPO (Lean Finder) for user-facing search. Two-stage (Magnushammer) for integration with provers.
+Based on published benchmarks, masked contrastive loss (LeanHammer) produces the strongest retrieval metrics; DPO (Lean Finder) achieves the highest user satisfaction scores; two-stage approaches (Magnushammer) yield the best end-to-end proving results.
 
 ### 2.2 Hard Negative Mining
 
@@ -118,7 +117,7 @@ All top systems use carefully designed hard negatives:
 
 **Training signal**:
 - **Statement similarity**: Standard approach (most systems)
-- **Proof similarity**: RocqStar's innovation — two theorems with similar proofs should be close in embedding space. Directly applicable to Coq.
+- **Proof similarity**: RocqStar's innovation — two theorems with similar proofs are trained to be close in embedding space. RocqStar demonstrated this on Coq/Rocq with open-source model and data.
 - **User intent alignment**: Lean Finder's DPO stage. Requires user feedback data.
 
 ---
@@ -214,7 +213,7 @@ At 50-200K items (the scale of Coq libraries), even brute-force FAISS is <5ms. H
 | ~300M | Any modern CPU | M1+ | INT8: <20ms/item |
 | 7B | 16GB VRAM GPU (INT4) | M2 Max+ (32GB) | ~100-200ms/item |
 
-**For our use case** (MCP server running alongside Claude Code): a 100M-class model with INT8 quantization runs at <10ms/item on any laptop. No GPU needed. Total query latency including FAISS: ~12ms.
+For a local MCP server use case, a 100M-class model with INT8 quantization runs at <10ms/item on any laptop. No GPU needed. Total query latency including FAISS: ~12ms.
 
 ---
 
@@ -235,7 +234,7 @@ The most striking finding across all systems:
 3. **Formal math is a small domain**: ~50-200K items; the embedding space doesn't need to be as expressive as for web-scale retrieval
 4. **Scaling law evidence** (SIGIR 2024): When accounting for inference cost, optimal model size drops to million-scale parameters
 
-**Recommendation**: Start with 100-125M parameters (bge-base or CodeBERT). Only scale to 7B if retrieval quality provably insufficient after hybrid ranking.
+The evidence consistently shows that 100-125M parameter models (bge-base, CodeBERT) match or exceed much larger models when combined with hybrid ranking and quality training data. Scaling to 7B has not demonstrated retrieval improvements sufficient to offset the inference cost increase.
 
 ---
 
@@ -256,51 +255,26 @@ No single retrieval signal dominates. The evidence points to combining multiple 
 **Fusion methods**:
 - Reciprocal Rank Fusion (simple, effective, no training)
 - Learned score fusion (needs validation data)
-- LLM-based reasoning over multi-channel results (our MCP approach)
+- LLM-based reasoning over multi-channel results (MCP-based approaches)
 
 ---
 
-## 7. Unexplored Opportunities
+## 7. Open Research Directions
 
 ### 7.1 ColBERT / Late Interaction for Formal Math
-Token-level MaxSim scoring should capture fine-grained symbol matching. Jina-ColBERT-v2 and BGE-M3 provide ready-made multi-vector modes. No published work exists.
+Token-level MaxSim scoring is theoretically well-suited to fine-grained symbol matching in formal expressions. Jina-ColBERT-v2 and BGE-M3 provide ready-made multi-vector modes. No published application to formal math exists.
 
 ### 7.2 SPLADE / Learned Sparse for Formal Math
-Rango's BM25 success suggests lexical features are crucial. SPLADE could learn to expand formal terms to related concepts (e.g., `Nat.add_comm` → `commutativity`, `addition`, `natural`). Sentence-transformers v5 provides training support.
+Rango's BM25 results suggest lexical features carry critical signal for formal math retrieval. SPLADE's learned term expansion (e.g., `Nat.add_comm` → `commutativity`, `addition`, `natural`) has not been evaluated in this domain. Sentence-transformers v5 provides training support.
 
 ### 7.3 Matryoshka Embeddings for Formal Math
-Train embeddings that work at multiple dimensions (768 down to 64). Use high dimensions for precision, low for fast approximate screening. No formal-math application exists.
+Variable-dimension embeddings (768 down to 64) enabling dimension-accuracy tradeoffs have not been applied to formal math retrieval.
 
 ### 7.4 Hybrid Dense+Sparse for Formal Math
-Combining dense and sparse signals improved MSMARCO by 20% relative. BGE-M3 supports dense + sparse + multi-vector in a single model. Nobody has tried this for formal math.
+Dense+sparse fusion improved MSMARCO by 20% relative. BGE-M3 supports dense + sparse + multi-vector in a single model. No formal-math evaluation exists.
 
 ### 7.5 Cross-Prover Transfer
-No work transfers retrieval models across Lean/Coq/Isabelle. PROOFWALA shows cross-system benefits. A single model serving both Lean and Coq retrieval is an open opportunity.
-
----
-
-## 8. Comparison with Our Tree-Based Baseline
-
-Our Phase 1 system uses training-free tree-based retrieval (WL kernel + MePo + FTS5) with LLM reasoning via MCP. How does this compare to neural approaches?
-
-| Dimension | Tree-Based (Phase 1) | Neural Bi-Encoder | Neural + Graph |
-|-----------|---------------------|-------------------|----------------|
-| **Training data needed** | None | 10K-5.8M pairs | Same + dependency graph |
-| **GPU needed** | No | No (100M INT8 on CPU) | Training only |
-| **Deployment complexity** | SQLite only | + embedding model + FAISS | + graph DB or RGCN |
-| **Natural language queries** | Handled by LLM layer | Natively (if trained on NL) | Natively |
-| **Structural queries** | Strong (WL, TED) | Weak (linearized text) | Strong (graph structure) |
-| **Symbol overlap** | Strong (MePo) | Moderate (implicit) | Moderate |
-| **Expected R@50** | Unknown (no Coq eval) | ~80-90% (from Lean numbers) | ~85-95% |
-| **Latency** | <1s (WL screening) | ~12ms (100M INT8) | ~50-100ms |
-
-**The tree-based system is the right starting point** because:
-1. It provides a training-free baseline with zero dependencies
-2. The LLM reasoning layer compensates for retrieval quality
-3. It establishes evaluation infrastructure before investing in neural methods
-4. Its structural signals (WL, TED, MePo) are **complementary** to neural embeddings — they will remain valuable in a hybrid system
-
-**When to add neural**: When evaluation shows the tree-based system's recall is insufficient for target use cases, or when natural-language query handling needs to work without the LLM layer.
+No work transfers retrieval models across Lean/Coq/Isabelle. PROOFWALA shows cross-system training benefits, but a single retrieval model serving multiple proof assistants remains unstudied.
 
 ---
 
