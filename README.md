@@ -22,6 +22,36 @@ Wily Rooster indexes compiled Coq `.vo` libraries into a SQLite database and pro
 
 ## Installation
 
+### Coq Toolchain
+
+Install [opam](https://opam.ocaml.org/) (OCaml's package manager), then use it to install Coq:
+
+```bash
+# macOS
+brew install opam hg darcs
+opam init
+
+# Install Coq
+opam install coq
+
+# Add the Coq package repository (required for MathComp)
+opam repo add coq-released https://coq.inria.fr/opam/released
+
+# For MathComp indexing
+opam install coq-mathcomp-ssreflect
+
+# Make coqc available in your shell (add to .zshrc / .bashrc for persistence)
+eval $(opam env)
+```
+
+Verify the installation:
+
+```bash
+coqc --version
+```
+
+### Python Package
+
 ```bash
 # Clone the repository
 git clone <repo-url>
@@ -41,7 +71,7 @@ uv sync --group dev
 Build the search index from your installed Coq standard library and MathComp:
 
 ```bash
-uv run python -m wily_rooster.extraction.pipeline --target stdlib+mathcomp --db index.db
+uv run python -m wily_rooster.extraction --target stdlib+mathcomp --db index.db
 ```
 
 This runs the offline extraction pipeline:
