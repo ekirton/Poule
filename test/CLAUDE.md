@@ -34,6 +34,30 @@ Example — correct:
 assert symbol_weight(1_000_000) < 1.2
 ```
 
+## Mock Discipline
+
+Every `Mock()` or `patch()` requires a corresponding **contract test** that exercises the real implementation against the same interface. Skipping via pytest marker (e.g., `@pytest.mark.requires_coq`) is acceptable when external tools are needed; omitting the test is not.
+
+```python
+# Good: consumer test mocks the backend
+def test_pipeline_calls_backend():
+    backend = Mock()
+    backend.list_declarations.return_value = [("A", "Lemma", {})]
+    ...
+
+# Good: contract test verifies real backend satisfies the same interface
+@pytest.mark.requires_coq
+def test_coq_lsp_backend_list_declarations():
+    backend = CoqLspBackend(...)
+    decls = backend.list_declarations(Path("test_fixture.vo"))
+    assert isinstance(decls, list)
+    assert all(len(d) == 3 for d in decls)
+
+# Bad: consumer test exists but no contract test for the real implementation
+```
+
+Before declaring a task phase complete, verify every `Mock()`/`patch()` has a corresponding contract test. If not, the phase is incomplete.
+
 ## Test File Feedback
 
 When a test appears to conflict with its specification, file feedback in `test/feedback/<test-file-name>.md` describing the discrepancy. Do not silently adjust the test or the implementation. Follow the feedback standards defined in `test/feedback/CLAUDE.md`.

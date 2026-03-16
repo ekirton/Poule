@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import pickle
 import subprocess
 from collections import Counter
 from dataclasses import dataclass, field
@@ -37,17 +39,130 @@ class DeclarationResult:
 
 
 # ---------------------------------------------------------------------------
+# PipelineWriter adapter
+# ---------------------------------------------------------------------------
+
+class PipelineWriter:
+    """Adapter that wraps :class:`IndexWriter` with the API the pipeline expects."""
+
+    def __init__(self, index_writer: Any) -> None:
+        self._writer = index_writer
+
+    def batch_insert(self, results: list[Any]) -> dict[str, int]:
+        """Convert DeclarationResult objects to dicts and insert.
+
+        Calls ``insert_declarations()`` and ``insert_wl_vectors()`` on the
+        underlying IndexWriter.  Returns a name-to-id mapping.
+        """
+        decl_dicts: list[dict] = []
+        for r in results:
+            # Serialize tree with pickle protocol 5 for constr_tree blob
+            constr_tree: bytes | None = None
+            node_count = 1  # default if tree is None
+            tree = getattr(r, "tree", None)
+            if tree is not None:
+                constr_tree = pickle.dumps(tree, protocol=5)
+                # Compute node_count from tree if it has the attribute
+                nc = getattr(tree, "node_count", None)
+                if nc is not None:
+                    node_count = nc
+                else:
+                    node_count = 1
+
+            decl_dicts.append({
+                "name": r.name,
+                "module": r.module,
+                "kind": r.kind,
+                "statement": r.statement,
+                "type_expr": getattr(r, "type_expr", None),
+                "constr_tree": constr_tree,
+                "node_count": node_count,
+                "symbol_set": getattr(r, "symbol_set", []),
+            })
+
+        name_to_id = self._writer.insert_declarations(decl_dicts)
+
+        # Insert WL vectors
+        wl_rows: list[dict] = []
+        for r in results:
+            decl_id = name_to_id.get(r.name)
+            if decl_id is None:
+                continue
+            wl_vector = getattr(r, "wl_vector", None)
+            if wl_vector:
+                wl_rows.append({
+                    "decl_id": decl_id,
+                    "h": 3,
+                    "histogram": wl_vector,
+                })
+
+        if wl_rows:
+            self._writer.insert_wl_vectors(wl_rows)
+
+        return name_to_id
+
+    def resolve_and_insert_dependencies(
+        self,
+        all_results: list[Any],
+        name_to_id: dict[str, int],
+    ) -> int:
+        """Resolve dependency names to IDs and insert edges.
+
+        Skips unresolved targets and self-references.
+        """
+        edges: list[dict] = []
+        for r in all_results:
+            src_id = name_to_id.get(r.name)
+            if src_id is None:
+                continue
+            dep_names = getattr(r, "dependency_names", [])
+            for target_name, relation in dep_names:
+                dst_id = name_to_id.get(target_name)
+                if dst_id is None:
+                    continue
+                if src_id == dst_id:
+                    continue
+                edges.append({
+                    "src": src_id,
+                    "dst": dst_id,
+                    "relation": relation,
+                })
+
+        if edges:
+            self._writer.insert_dependencies(edges)
+
+        return len(edges)
+
+    def insert_symbol_freq(self, entries: dict[str, int]) -> None:
+        """Delegate to IndexWriter.insert_symbol_freq()."""
+        self._writer.insert_symbol_freq(entries)
+
+    def write_metadata(self, **kwargs: Any) -> None:
+        """Write each metadata key-value pair via IndexWriter.write_meta()."""
+        for key, value in kwargs.items():
+            if value is not None:
+                self._writer.write_meta(key, str(value))
+
+    def finalize(self) -> None:
+        """Delegate to IndexWriter.finalize()."""
+        self._writer.finalize()
+
+
+# ---------------------------------------------------------------------------
 # Stubs / factory functions (patched in tests)
 # ---------------------------------------------------------------------------
 
 def create_backend() -> Any:
     """Create and return a Backend instance (coq-lsp or SerAPI)."""
-    raise NotImplementedError("create_backend must be provided or patched")
+    from .backend_factory import create_coq_backend
+    return create_coq_backend()
 
 
 def create_writer(db_path: Path) -> Any:
     """Create and return an IndexWriter for the given database path."""
-    raise NotImplementedError("create_writer must be provided or patched")
+    from wily_rooster.storage.writer import IndexWriter
+    index_writer = IndexWriter.create(db_path)
+    return PipelineWriter(index_writer)
 
 
 def process_declaration(
