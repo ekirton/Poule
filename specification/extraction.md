@@ -50,7 +50,7 @@ The `About` response format is version-dependent:
 | Coq ≤ 8.x | `<name> is [a] <Kind>.` | Extract `<Kind>` from the `is [a]` pattern |
 | Rocq 9.x | Multi-line; includes `Expands to: <Category> <path>` | Map `<Category>`: `Constant` → `definition`, `Inductive` → `inductive`, `Constructor` → `constructor` |
 
-**Parsing precedence (coq-lsp):** When both formats are present in the response, the Coq ≤ 8.x `"is [a] <Kind>"` pattern takes precedence (it is more specific).
+**Parsing precedence (coq-lsp):** When both formats are present in the response, the Rocq 9.x `"Expands to:"` pattern takes precedence (it is more structured and less ambiguous than the `"is [a] <Kind>"` regex, which can false-match on non-kind lines).
 
 **Fallback:** When `About` returns `"<name> not a defined object."` or no parseable kind information, the backend shall default to `"definition"`.
 
