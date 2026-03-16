@@ -14,7 +14,9 @@
 
 **Structure:** Each story follows:
 ```
-**Story:** As a [role], I want [goal], so that [benefit].
+**As a** [role],
+**I want to** [goal],
+**so that** [benefit].
 
 **Priority:** P0 | P1 | P2 | P3
 
@@ -22,6 +24,8 @@
 - GIVEN [precondition] WHEN [action] THEN [expected outcome]
 - GIVEN [precondition] WHEN [action] THEN [expected outcome]
 ```
+
+The user story sentence uses bold for the common phrases (**As a**, **I want to**, **so that**) and each clause appears on its own line. This keeps stories scannable and visually consistent.
 
 **Relationship to other types:** User stories are derived from PRDs and feed into feature documents. Each feature document addresses one or more user stories; the feature document provides design rationale while the user story provides testable acceptance criteria. User stories are consumed by the LLM spec-extraction pipeline as a source of behavioral requirements and test assertions. Task breakdown documents organize implementation work by user story.
 
