@@ -98,7 +98,7 @@ The server communicates via stdio, compatible with Claude Code's MCP configurati
 
 ### 3. Configure Claude Code
 
-Add to your Claude Code MCP config:
+Add to your Claude Code MCP config (`~/.claude/mcp.json`):
 
 ```json
 {
