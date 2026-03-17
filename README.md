@@ -155,7 +155,24 @@ uv run python -m wily_rooster.cli list-modules --db index.db "Coq.Arith"
 
 All search commands accept `--limit N` (default 50, max 200) and `--json` for machine-readable output.
 
-### 3. Start the MCP Server
+### 3. Replay a Proof from the Terminal
+
+Extract the complete proof trace for a named proof in a `.v` file:
+
+```bash
+# Human-readable output
+uv run python -m wily_rooster.cli replay-proof path/to/file.v my_proof_name
+
+# JSON output (for scripts and pipelines)
+uv run python -m wily_rooster.cli replay-proof path/to/file.v my_proof_name --json
+
+# Include per-step premise annotations
+uv run python -m wily_rooster.cli replay-proof path/to/file.v my_proof_name --json --premises
+```
+
+No search index is needed — `replay-proof` works directly with `.v` files through the Coq backend.
+
+### 4. Start the MCP Server
 
 ```bash
 uv run python -m wily_rooster.server --db index.db
@@ -163,7 +180,7 @@ uv run python -m wily_rooster.server --db index.db
 
 The server communicates via stdio, compatible with Claude Code's MCP configuration.
 
-### 4. Configure Claude Code
+### 5. Configure Claude Code
 
 Add to your Claude Code MCP config (`~/.claude/mcp.json`):
 
@@ -225,12 +242,12 @@ Claude Code / LLM          Terminal user
   | MCP tool calls (stdio)    | CLI subcommands
   v                           v
 MCP Server                  CLI
-  |         |                 |
-  | search  | proof           | search
-  | queries | session ops     | queries
-  v         v                 v
-Retrieval   Proof Session   Retrieval
-Pipeline    Manager         Pipeline
+  |         |                 |         |
+  | search  | proof           | search  | proof
+  | queries | session ops     | queries | replay
+  v         v                 v         v
+Retrieval   Proof Session   Retrieval  Proof Session
+Pipeline    Manager         Pipeline   Manager
   |           |                |
   | SQLite    | coq-lsp /      | SQLite
   | queries   | SerAPI         | queries
