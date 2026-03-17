@@ -159,11 +159,13 @@ Add to your Claude Code MCP config (`~/.claude/mcp.json`):
   "mcpServers": {
     "coq-search": {
       "command": "uv",
-      "args": ["run", "python", "-m", "wily_rooster.server", "--db", "/path/to/index.db"]
+      "args": ["run", "--project", "/path/to/wily-rooster", "python", "-m", "wily_rooster.server", "--db", "/path/to/wily-rooster/index.db"]
     }
   }
 }
 ```
+
+Replace `/path/to/wily-rooster` with the absolute path to your cloned repository.
 
 ## MCP Tools
 

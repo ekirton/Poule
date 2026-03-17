@@ -58,6 +58,10 @@ def test_coq_lsp_backend_list_declarations():
 
 Before declaring a task phase complete, verify every `Mock()`/`patch()` has a corresponding contract test. If not, the phase is incomplete.
 
+### Mock Return Values Must Use Real Types
+
+Mock `return_value` must use the actual type the real implementation returns (e.g., dataclass, not `dict`). This exercises serialization and attribute-access paths in the consumer.
+
 ## Test File Feedback
 
 When a test appears to conflict with its specification, file feedback in `test/feedback/<test-file-name>.md` describing the discrepancy. Do not silently adjust the test or the implementation. Follow the feedback standards defined in `test/feedback/CLAUDE.md`.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from wily_rooster.server.errors import (
@@ -20,10 +21,19 @@ from wily_rooster.server.validation import (
 )
 
 
+def _serialize(obj: Any) -> Any:
+    """Convert dataclass instances to dicts for JSON serialization."""
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return asdict(obj)
+    if isinstance(obj, list):
+        return [_serialize(item) for item in obj]
+    return obj
+
+
 def _format_success(data: Any) -> dict:
     """Format a successful response as an MCP content dict."""
     return {
-        "content": [{"type": "text", "text": json.dumps(data)}],
+        "content": [{"type": "text", "text": json.dumps(_serialize(data))}],
     }
 
 

@@ -949,3 +949,202 @@ class TestResponseFormatting:
             "dependencies", "dependents", "proof_sketch", "symbols", "node_count",
         }
         assert required_fields.issubset(set(parsed.keys()))
+
+
+# ===========================================================================
+# Dataclass serialization: handlers must serialize real dataclass instances
+# ===========================================================================
+
+def _import_response_types():
+    from wily_rooster.models.responses import SearchResult, LemmaDetail, Module
+    return SearchResult, LemmaDetail, Module
+
+
+class TestDataclassSerialization:
+    """Handlers must serialize dataclass instances returned by the pipeline.
+
+    The pipeline returns SearchResult, LemmaDetail, and Module dataclass
+    instances, not plain dicts. The handler layer must convert these to
+    JSON-serializable dicts before calling json.dumps().
+
+    Spec §4.5: "All successful responses shall be formatted as MCP content
+    with type: 'text' containing a JSON-serialized result."
+    Spec §8: "JSON serialization via dataclasses.asdict() + json.dumps()
+    for response types."
+    """
+
+    def test_search_by_name_serializes_search_result_dataclass(self):
+        (handle_search_by_name, *_) = _import_handlers()
+        SearchResult, _, _ = _import_response_types()
+        ctx = _make_mock_pipeline_context()
+        ctx.pipeline.search_by_name.return_value = [
+            SearchResult(
+                name="Nat.add_comm",
+                statement="forall n m, n + m = m + n",
+                type="forall n m, n + m = m + n",
+                module="Coq.Arith.PeanoNat",
+                kind="lemma",
+                score=0.95,
+            )
+        ]
+
+        result = handle_search_by_name(ctx, pattern="add_comm", limit=10)
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert isinstance(parsed, list)
+        assert len(parsed) == 1
+        assert parsed[0]["name"] == "Nat.add_comm"
+        assert parsed[0]["score"] == 0.95
+
+    def test_search_by_type_serializes_search_result_dataclass(self):
+        (_, handle_search_by_type, *_) = _import_handlers()
+        SearchResult, _, _ = _import_response_types()
+        ctx = _make_mock_pipeline_context()
+        ctx.pipeline.search_by_type.return_value = [
+            SearchResult(
+                name="Nat.add",
+                statement="",
+                type="nat -> nat -> nat",
+                module="Coq.Init.Nat",
+                kind="definition",
+                score=0.8,
+            )
+        ]
+
+        result = handle_search_by_type(ctx, type_expr="nat -> nat -> nat", limit=10)
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed[0]["name"] == "Nat.add"
+
+    def test_search_by_structure_serializes_search_result_dataclass(self):
+        (*_, handle_search_by_structure, _, _, _, _) = _import_handlers()
+        SearchResult, _, _ = _import_response_types()
+        ctx = _make_mock_pipeline_context()
+        ctx.pipeline.search_by_structure.return_value = [
+            SearchResult(
+                name="Nat.add_0_r",
+                statement="forall n, n + 0 = n",
+                type="forall n, n + 0 = n",
+                module="Coq.Arith.PeanoNat",
+                kind="lemma",
+                score=0.75,
+            )
+        ]
+
+        result = handle_search_by_structure(ctx, expression="forall n, n + 0 = n", limit=10)
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed[0]["name"] == "Nat.add_0_r"
+
+    def test_search_by_symbols_serializes_search_result_dataclass(self):
+        (*_, handle_search_by_symbols, _, _, _) = _import_handlers()
+        SearchResult, _, _ = _import_response_types()
+        ctx = _make_mock_pipeline_context()
+        ctx.pipeline.search_by_symbols.return_value = [
+            SearchResult(
+                name="Nat.add_comm",
+                statement="",
+                type="",
+                module="Coq.Arith.PeanoNat",
+                kind="lemma",
+                score=0.9,
+            )
+        ]
+
+        result = handle_search_by_symbols(ctx, symbols=["Nat.add"], limit=10)
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed[0]["name"] == "Nat.add_comm"
+
+    def test_get_lemma_serializes_lemma_detail_dataclass(self):
+        (*_, handle_get_lemma, _, _) = _import_handlers()
+        _, LemmaDetail, _ = _import_response_types()
+        ctx = _make_mock_pipeline_context()
+        ctx.pipeline.get_lemma.return_value = LemmaDetail(
+            name="Nat.add_comm",
+            statement="forall n m, n + m = m + n",
+            type="forall n m, n + m = m + n",
+            module="Coq.Arith.PeanoNat",
+            kind="lemma",
+            score=1.0,
+            dependencies=["Nat.add"],
+            dependents=["Some.theorem"],
+            proof_sketch="",
+            symbols=["Nat.add"],
+            node_count=5,
+        )
+
+        result = handle_get_lemma(ctx, name="Nat.add_comm")
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed["name"] == "Nat.add_comm"
+        assert parsed["dependencies"] == ["Nat.add"]
+        assert parsed["node_count"] == 5
+
+    def test_find_related_serializes_search_result_dataclass(self):
+        (*_, handle_find_related, _) = _import_handlers()
+        SearchResult, _, _ = _import_response_types()
+        ctx = _make_mock_pipeline_context()
+        ctx.pipeline.find_related.return_value = [
+            SearchResult(
+                name="Nat.add_assoc",
+                statement="",
+                type="",
+                module="Coq.Arith.PeanoNat",
+                kind="lemma",
+                score=1.0,
+            )
+        ]
+
+        result = handle_find_related(ctx, name="Nat.add_comm", relation="same_module", limit=10)
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed[0]["name"] == "Nat.add_assoc"
+
+    def test_list_modules_serializes_module_dataclass(self):
+        (*_, handle_list_modules) = _import_handlers()
+        _, _, Module = _import_response_types()
+        ctx = _make_mock_pipeline_context()
+        ctx.pipeline.list_modules.return_value = [
+            Module(name="Coq.Arith.PeanoNat", decl_count=42),
+            Module(name="Coq.Init.Nat", decl_count=15),
+        ]
+
+        result = handle_list_modules(ctx, prefix="")
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert len(parsed) == 2
+        assert parsed[0]["name"] == "Coq.Arith.PeanoNat"
+        assert parsed[0]["decl_count"] == 42
+
+    def test_empty_list_of_dataclasses_serializes(self):
+        (handle_search_by_name, *_) = _import_handlers()
+        ctx = _make_mock_pipeline_context()
+        ctx.pipeline.search_by_name.return_value = []
+
+        result = handle_search_by_name(ctx, pattern="nonexistent", limit=10)
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed == []
+
+    def test_mixed_list_not_accepted_plain_dicts_still_work(self):
+        """Plain dicts (e.g. from get_lemma/find_related internals) still serialize."""
+        (handle_search_by_name, *_) = _import_handlers()
+        ctx = _make_mock_pipeline_context()
+        ctx.pipeline.search_by_name.return_value = [
+            {"name": "A", "statement": "", "type": "", "module": "M", "kind": "lemma", "score": 1.0}
+        ]
+
+        result = handle_search_by_name(ctx, pattern="A", limit=10)
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed[0]["name"] == "A"
