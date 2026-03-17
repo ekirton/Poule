@@ -7,8 +7,6 @@ echo "════════════════════════�
 echo "  Stage 1: Unit tests (no Docker, no Coq)"
 echo "═══════════════════════════════════════════════════════"
 uv run pytest -m "not requires_coq" \
-    --ignore=test/test_neural_retrieval.py \
-    --ignore=test/test_neural_training.py \
     --cov=poule --cov-report=term -v
 
 echo ""
@@ -32,10 +30,7 @@ echo ""
 echo "═══════════════════════════════════════════════════════"
 echo "  Stage 3: Integration tests (inside container)"
 echo "═══════════════════════════════════════════════════════"
-docker run --rm --entrypoint uv "$IMAGE" run pytest -m requires_coq \
-    --ignore=test/test_neural_retrieval.py \
-    --ignore=test/test_neural_training.py \
-    -v
+docker run --rm --entrypoint uv "$IMAGE" run pytest -m requires_coq -v
 
 echo ""
 echo "═══════════════════════════════════════════════════════"

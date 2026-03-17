@@ -24,8 +24,6 @@ jobs:
       - name: Run unit tests
         run: >-
           uv run pytest -m "not requires_coq"
-          --ignore=test/test_neural_retrieval.py
-          --ignore=test/test_neural_training.py
           --cov=poule --cov-report=xml -v
 
   # ── Build container image (parallel with unit-tests) ────────────────
@@ -85,7 +83,4 @@ jobs:
         run: |
           docker run --rm --entrypoint uv \
             ${{ env.IMAGE }}:sha-${{ github.sha }} \
-            run pytest -m requires_coq \
-            --ignore=test/test_neural_retrieval.py \
-            --ignore=test/test_neural_training.py \
-            -v
+            run pytest -m requires_coq -v
