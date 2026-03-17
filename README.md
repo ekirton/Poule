@@ -157,17 +157,17 @@ All search commands accept `--limit N` (default 50, max 200) and `--json` for ma
 
 ### 3. Replay a Proof from the Terminal
 
-Extract the complete proof trace for a named proof in a `.v` file:
+Extract the complete proof trace for a named proof in a `.v` file. For example, given a file `arith.v` containing a proof named `add_comm`:
 
 ```bash
 # Human-readable output
-uv run python -m wily_rooster.cli replay-proof path/to/file.v my_proof_name
+uv run python -m wily_rooster.cli replay-proof arith.v add_comm
 
 # JSON output (for scripts and pipelines)
-uv run python -m wily_rooster.cli replay-proof path/to/file.v my_proof_name --json
+uv run python -m wily_rooster.cli replay-proof arith.v add_comm --json
 
 # Include per-step premise annotations
-uv run python -m wily_rooster.cli replay-proof path/to/file.v my_proof_name --json --premises
+uv run python -m wily_rooster.cli replay-proof arith.v add_comm --json --premises
 ```
 
 No search index is needed — `replay-proof` works directly with `.v` files through the Coq backend.
