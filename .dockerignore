@@ -1,0 +1,11 @@
+.git
+__pycache__
+*.pyc
+.pytest_cache
+index.db
+doc/
+specification/
+tasks/
+.claude/
+node_modules/
+.venv/
