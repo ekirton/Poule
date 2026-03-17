@@ -1,52 +1,52 @@
 # System Overview
 
-**Feature**: [Semantic Search for Coq/Rocq Libraries](../features/semantic-search.md), [Proof Session Management](../features/proof-session-management.md)
+**Feature**: [Semantic Search for Coq/Rocq Libraries](../features/semantic-search.md), [Proof Session Management](../features/proof-session-management.md), [Batch Extraction CLI](../features/batch-extraction-cli.md)
 
-The system has two major subsystems — semantic search (Phase 1) and proof interaction (Phase 2) — sharing a single MCP server entry point.
+The system has three major subsystems — semantic search (Phase 1), proof interaction (Phase 2), and training data extraction (Phase 3) — with search and proof interaction sharing an MCP server entry point, and extraction operating as a standalone batch pipeline via the CLI.
 
 ---
 
 ## Component Diagram
 
 ```
-┌─────────────────────────┐   ┌─────────────────┐
-│       Claude Code       │   │  Terminal user   │
-│                         │   │                  │
-│  Formulates MCP tool    │   │  CLI subcommands │
-│  calls, filters and     │   │                  │
-│  explains results       │   │                  │
-└───────────┬─────────────┘   └────────┬─────────┘
-            │ MCP tool calls (stdio)    │ CLI
-            ▼                           ▼
-┌────────────────────────────────┐  ┌────────────┐
-│    MCP Server (thin adapter)   │  │    CLI     │
-│                                │  │            │
-│  Search tools (Phase 1):      │  │  index     │
-│    search_by_name, ...         │  │  search-*  │
-│                                │  │  get-lemma │
-│  Proof tools (Phase 2):       │  │  ...       │
-│    open_proof_session, ...     │  │            │
-└──────┬──────────────┬─────────┘  └─────┬──────┘
-       │ search       │ session          │ search
-       │ queries      │ operations       │ queries
-       ▼              ▼                  ▼
-┌────────────┐  ┌──────────────────────────────┐
-│  Retrieval │  │   Proof Session Manager       │
-│  Pipeline  │  │                                │
-│            │  │  Session Registry              │
-│  Channels: │  │    session_id → SessionState   │
-│  WL, MePo, │  │                                │
-│  FTS5, TED,│  │  Per-session:                  │
-│  Const     │  │    CoqBackend (one process)    │
-│  Jaccard   │  │    State history               │
-│            │  │    Premise extraction           │
-│  Fusion:   │  │                                │
-│  RRF       │  └──────────────┬─────────────────┘
-└──────┬─────┘                 │ coq-lsp / SerAPI
-       │ SQLite queries        │ (bidirectional, stateful)
-       ▼                       ▼
-┌──────────────┐  ┌──────────────────────────────┐
-│   Storage    │  │  Coq Backend Processes        │
+┌─────────────────────────┐   ┌──────────────────────────────────┐
+│       Claude Code       │   │         Terminal user             │
+│                         │   │                                    │
+│  Formulates MCP tool    │   │  CLI subcommands                   │
+│  calls, filters and     │   │                                    │
+│  explains results       │   │                                    │
+└───────────┬─────────────┘   └──────────┬──────────────┬──────────┘
+            │ MCP tool calls (stdio)      │ CLI           │ CLI
+            ▼                             ▼               ▼
+┌────────────────────────────────┐  ┌────────────┐  ┌──────────────────────┐
+│    MCP Server (thin adapter)   │  │    CLI     │  │   CLI (Phase 3)      │
+│                                │  │            │  │                      │
+│  Search tools (Phase 1):      │  │  index     │  │  extract             │
+│    search_by_name, ...         │  │  search-*  │  │  extract-deps        │
+│                                │  │  get-lemma │  │  quality-report      │
+│  Proof tools (Phase 2):       │  │  replay-   │  │                      │
+│    open_proof_session, ...     │  │   proof    │  │                      │
+└──────┬──────────────┬─────────┘  └─────┬──────┘  └──────────┬───────────┘
+       │ search       │ session          │ search          │ batch
+       │ queries      │ operations       │ queries         │ extraction
+       ▼              ▼                  ▼                 ▼
+┌────────────┐  ┌──────────────────────────────┐  ┌─────────────────────┐
+│  Retrieval │  │   Proof Session Manager       │  │  Extraction Campaign│
+│  Pipeline  │  │                                │  │  Orchestrator       │
+│            │  │  Session Registry              │  │                     │
+│  Channels: │  │    session_id → SessionState   │  │  Campaign Planner   │
+│  WL, MePo, │  │                                │  │  Per-proof Loop     │
+│  FTS5, TED,│  │  Per-session:                  │  │  Output Writer      │
+│  Const     │  │    CoqBackend (one process)    │  │  Checkpoint Mgr(P1) │
+│  Jaccard   │  │    State history               │  │                     │
+│            │  │    Premise extraction           │  └──────────┬──────────┘
+│  Fusion:   │  │                                │             │ session
+│  RRF       │  └──────────────┬─────────────────┘             │ operations
+└──────┬─────┘                 │ coq-lsp / SerAPI              │ (reuse)
+       │ SQLite queries        │ (bidirectional, stateful)     │
+       ▼                       ▼                               │
+┌──────────────┐  ┌──────────────────────────────┐             │
+│   Storage    │  │  Coq Backend Processes        │◄────────────┘
 │   (SQLite)   │  │  (one per session)            │
 │              │  │                                │
 │ declarations │  │  Load .v files                 │
@@ -54,14 +54,14 @@ The system has two major subsystems — semantic search (Phase 1) and proof inte
 │ wl_vectors   │  │  Report proof state + premises │
 │ symbol_freq  │  └──────────────────────────────┘
 │ index_meta   │
-└──────┬───────┘
-       ▲
-       │ writes during indexing
-┌──────┴───────┐
-│  Coq Library │
-│  Extraction  │
-│              │
-│  Via coq-lsp │
+└──────┬───────┘           JSON Lines output
+       ▲                   (Phase 3 batch output)
+       │ writes during indexing    ▲
+┌──────┴───────┐                   │
+│  Coq Library │          ┌────────┴──────────┐
+│  Extraction  │          │  Extraction Output │
+│              │          │  (.jsonl files)    │
+│  Via coq-lsp │          └───────────────────┘
 │  or SerAPI   │
 └──────────────┘
 ```
@@ -98,17 +98,28 @@ The system has two major subsystems — semantic search (Phase 1) and proof inte
 7. Trace extraction materializes all states and tactics into a single ProofTrace response
 8. When the session is closed (explicitly or by timeout), the backend process is terminated
 
+**Batch (training data extraction)**:
+1. The terminal user invokes the `extract` CLI subcommand with one or more Coq project directories
+2. The Extraction Campaign Orchestrator enumerates .v files and provable theorems in deterministic order
+3. For each theorem, the orchestrator creates a proof session via the Proof Session Manager, replays the proof, extracts the trace and premise annotations, then closes the session
+4. If a proof fails (tactic error, backend crash, timeout), a structured error record is emitted and extraction continues with the next proof
+5. Extracted proof traces are serialized to JSON Lines output — one JSON object per line, one proof per record (see [extraction-output.md](extraction-output.md))
+6. Provenance metadata (Coq version, project commit hash, tool version) is recorded in the campaign metadata
+7. After all proofs are processed, an extraction summary with per-file and per-project statistics is emitted
+8. Incremental re-extraction (P1) re-processes only files that changed since the prior run (see [extraction-checkpointing.md](extraction-checkpointing.md))
+
 ## Component Responsibilities
 
 | Component | Responsibility | Does NOT do |
 |-----------|---------------|-------------|
-| Claude Code / LLM | Intent interpretation, query formulation, result filtering, explanation | Retrieval, indexing, proof state management |
-| MCP Server | Protocol translation, input validation, response formatting, proof state serialization | Search logic, storage, session state management |
-| CLI | Command-line interface for indexing and search, output formatting | Search logic, proof interaction |
-| Retrieval Pipeline | Retrieval channels, metric computation, fusion, index queries | Coq parsing, user interaction, proof interaction |
-| Storage | SQLite schema, index metadata, FTS5 index | Online queries, proof interaction |
-| Proof Session Manager | Session lifecycle, Coq backend process management, tactic dispatch, state caching, premise extraction | Search logic, serialization format, protocol translation |
-| Coq Library Extraction | Declaration extraction, tree conversion, normalization, index construction | Online queries, proof interaction |
+| Claude Code / LLM | Intent interpretation, query formulation, result filtering, explanation | Retrieval, indexing, proof state management, batch extraction |
+| MCP Server | Protocol translation, input validation, response formatting, proof state serialization | Search logic, storage, session state management, batch extraction |
+| CLI | Command-line interface for indexing, search, proof replay, and batch extraction, output formatting | Search logic, session state management |
+| Retrieval Pipeline | Retrieval channels, metric computation, fusion, index queries | Coq parsing, user interaction, proof interaction, batch extraction |
+| Storage | SQLite schema, index metadata, FTS5 index | Online queries, proof interaction, batch extraction |
+| Proof Session Manager | Session lifecycle, Coq backend process management, tactic dispatch, state caching, premise extraction | Search logic, serialization format, protocol translation, project enumeration |
+| Coq Library Extraction | Declaration extraction, tree conversion, normalization, index construction | Online queries, proof interaction, batch extraction |
+| Extraction Campaign Orchestrator | Project/file enumeration, per-proof extraction loop, failure isolation, streaming JSON Lines output, summary statistics, checkpointing (P1) | Session management, Coq backend communication (delegates to Proof Session Manager) |
 
 ## Index Lifecycle
 
@@ -128,4 +139,4 @@ Server start
 
 Re-indexing is always a full rebuild. See [storage.md](storage.md) for the `index_meta` table schema and [mcp-server.md](mcp-server.md) for the error contract.
 
-Note: Proof interaction tools do not depend on the search index. A proof session can be opened and used even when the index is missing or being rebuilt. The two subsystems are independent at runtime.
+Note: All three subsystems are independent at runtime. Proof interaction tools do not depend on the search index. Batch extraction does not depend on the search index. A proof session can be opened and used even when the index is missing or being rebuilt. Extraction uses the Proof Session Manager but not the MCP Server or Retrieval Pipeline.

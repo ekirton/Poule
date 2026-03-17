@@ -1,19 +1,20 @@
 # CLI
 
-The command-line interface for indexing, search, and proof replay operations.
+The command-line interface for indexing, search, proof replay, and batch extraction operations.
 
-**Features**: [CLI Search](../features/cli-search.md), [CLI Proof Replay](../features/cli-proof-replay.md)
-**Stories**: [Epic 1: Library Indexing](../requirements/stories/tree-search-mcp.md#epic-1-library-indexing), [Epic 7: Standalone CLI Search](../requirements/stories/tree-search-mcp.md#epic-7-standalone-cli-search), [Epic 8: Batch Proof Replay CLI](../requirements/stories/proof-interaction-protocol.md#epic-8-batch-proof-replay-cli)
+**Features**: [CLI Search](../features/cli-search.md), [CLI Proof Replay](../features/cli-proof-replay.md), [Batch Extraction CLI](../features/batch-extraction-cli.md), [Extraction Quality Reports](../features/extraction-quality-reports.md)
+**Stories**: [Epic 1: Library Indexing](../requirements/stories/tree-search-mcp.md#epic-1-library-indexing), [Epic 7: Standalone CLI Search](../requirements/stories/tree-search-mcp.md#epic-7-standalone-cli-search), [Epic 8: Batch Proof Replay CLI](../requirements/stories/proof-interaction-protocol.md#epic-8-batch-proof-replay-cli), [Epics 1, 4, 5: Batch Extraction](../requirements/stories/training-data-extraction.md#epic-1-project-level-extraction)
 
 ---
 
 ## Entry Point
 
-A single CLI entry point exposes three command groups:
+A single CLI entry point exposes four command groups:
 
 - **`index`** — library extraction and index construction (existing)
 - **Search subcommands** — `search-by-name`, `search-by-type`, `search-by-structure`, `search-by-symbols`, `get-lemma`, `find-related`, `list-modules`
 - **Proof subcommands** — `replay-proof`
+- **Extraction subcommands** (Phase 3) — `extract`, `extract-deps`, `quality-report`
 
 All search subcommands share common options:
 
@@ -216,6 +217,75 @@ Without `--premises`: the output of `serialize_proof_trace(trace)`.
 
 With `--premises`: `{"trace": <serialize_proof_trace output>, "premises": [<serialize_premise_annotation output>, ...]}`.
 
+## Extraction Subcommand Signatures (Phase 3)
+
+### extract
+
+```
+wily-rooster extract <project_dir> [<project_dir> ...] --output <path> [--name-pattern <pattern>] [--modules <mod,...>] [--incremental] [--resume] [--include-diffs]
+```
+
+Positional arguments: one or more Coq project directories.
+
+Options:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--output` | path | required | Path for JSON Lines output file |
+| `--name-pattern` | glob/regex | none | Only extract proofs matching this name pattern (P1) |
+| `--modules` | comma-separated | none | Only extract proofs in these modules (P1) |
+| `--incremental` | flag | false | Re-extract only changed files, merge with prior output (P1) |
+| `--resume` | flag | false | Resume an interrupted extraction from checkpoint (P1) |
+| `--include-diffs` | flag | false | Include proof state diffs in output (P1) |
+
+No `--db` option — extraction is independent of the search index.
+
+### extract-deps
+
+```
+wily-rooster extract-deps <extraction_output> --output <path>
+```
+
+Positional argument: path to a JSON Lines extraction output file.
+
+Reads ExtractionRecords and produces a dependency graph (JSON Lines, one DependencyEntry per line). Can also run inline during `extract` via `--deps` flag (P1).
+
+### quality-report
+
+```
+wily-rooster quality-report <extraction_output> [--output <path>] [--json]
+```
+
+Positional argument: path to a JSON Lines extraction output file.
+
+Generates a QualityReport from the extraction output. Defaults to human-readable output on stdout; `--json` produces JSON; `--output` writes to a file.
+
+## Pipeline Integration (Extraction)
+
+```
+CLI extract subcommand
+  │
+  │ validate project dirs, parse options
+  ▼
+ExtractionCampaignOrchestrator
+  │
+  │ enumerate projects → files → theorems
+  │ For each theorem:
+  │   SessionManager.create_session → replay → extract_trace
+  │   → get_premises → close_session
+  │   On failure: emit ExtractionError
+  │
+  │ Write CampaignMetadata, ExtractionRecords/Errors, ExtractionSummary
+  ▼
+JSON Lines output file
+```
+
+The extraction CLI creates the Extraction Campaign Orchestrator, which reuses the same `SessionManager` used by proof replay and the MCP server. No extraction logic lives in the CLI layer — the CLI is responsible for argument parsing, output path management, and exit code handling.
+
+### Extraction Output
+
+The `extract` command writes JSON Lines to `--output`. Progress is reported to stderr during extraction. On completion, a human-readable summary is printed to stderr. The JSON Lines output file contains only machine-readable records.
+
 ## Error Handling
 
 | Condition | Behavior |
@@ -228,3 +298,9 @@ With `--premises`: `{"trace": <serialize_proof_trace output>, "premises": [<seri
 | File not found (proof replay) | Print error to stderr, exit 1 |
 | Proof not found (proof replay) | Print error to stderr, exit 1 |
 | Backend crashed (proof replay) | Print error to stderr, exit 1 |
+| Project directory not found (extract) | Print error to stderr, exit 1 |
+| All proofs fail in extract | Print summary to stderr, exit 1 |
+| Some proofs fail in extract | Print summary to stderr (with failure count), exit 0 (partial success) |
+| No proofs found in extract | Print warning to stderr, exit 0 |
+| Checkpoint file corrupted (resume) | Print warning to stderr, fall back to full extraction |
+| Missing required args (extract) | Print usage to stderr, exit 2 |
