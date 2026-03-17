@@ -1,6 +1,6 @@
 # Dependency Graph Extraction — Product Requirements Document
 
-Cross-reference: see [coq-ecosystem-gaps.md](coq-ecosystem-gaps.md) for ecosystem context.
+Cross-reference: see [coq-ecosystem-opportunities.md](coq-ecosystem-opportunities.md) for ecosystem context.
 
 Lineage: Poule already exposes `find_related` for navigating direct dependencies and `visualize_dependencies` for rendering subgraphs. This initiative wraps coq-dpdgraph to deliver richer transitive dependency analysis — full project-level dependency graphs, cycle detection, impact analysis, and module-level dependency summaries — as MCP tools.
 

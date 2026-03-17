@@ -1,6 +1,6 @@
 # Proof Search & Automation for Coq/Rocq — Product Requirements Document
 
-Cross-reference: see [coq-ecosystem-gaps.md](coq-ecosystem-gaps.md) for ecosystem context and initiative sequencing.
+Cross-reference: see [coq-ecosystem-opportunities.md](coq-ecosystem-opportunities.md) for ecosystem context and initiative sequencing.
 
 Lineage: Depends on Proof Interaction Protocol and Training Data Extraction. Optionally consumes Semantic Lemma Search for premise-augmented candidate generation.
 

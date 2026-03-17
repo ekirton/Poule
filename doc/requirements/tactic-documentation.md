@@ -1,6 +1,6 @@
 # Tactic Documentation — Product Requirements Document
 
-Cross-reference: see [coq-ecosystem-gaps.md](coq-ecosystem-gaps.md) for ecosystem context.
+Cross-reference: see [coq-ecosystem-opportunities.md](coq-ecosystem-opportunities.md) for ecosystem context.
 
 ## 1. Business Goals
 

@@ -1,6 +1,6 @@
 # Neural Premise Selection for Coq/Rocq — Product Requirements Document
 
-Cross-reference: see [coq-ecosystem-gaps.md](coq-ecosystem-gaps.md) for ecosystem context and initiative sequencing.
+Cross-reference: see [coq-ecosystem-opportunities.md](coq-ecosystem-opportunities.md) for ecosystem context and initiative sequencing.
 
 Lineage: Depends on Training Data Extraction for `(proof_state, premises_used)` pairs. Enhances Semantic Lemma Search by adding a neural retrieval channel to its hybrid ranking pipeline. Consumed by Proof Search & Automation for premise-augmented tactic candidate generation.
 

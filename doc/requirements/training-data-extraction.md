@@ -1,6 +1,6 @@
 # Training Data Extraction for Coq/Rocq — Product Requirements Document
 
-Cross-reference: see [coq-ecosystem-gaps.md](coq-ecosystem-gaps.md) for ecosystem context and initiative sequencing.
+Cross-reference: see [coq-ecosystem-opportunities.md](coq-ecosystem-opportunities.md) for ecosystem context and initiative sequencing.
 
 Lineage: The Proof Interaction Protocol identified proof trace export (R2-P2-1) and benchmark generation (R2-P2-2) as deferred capabilities. This initiative promotes and expands those capabilities into a complete extraction pipeline.
 
