@@ -13,7 +13,7 @@ The Coq/Rocq ecosystem has several unmet needs that hinder adoption and producti
 | Semantic Lemma Search | High | None | All Coq users | [semantic-lemma-search.md](semantic-lemma-search.md) |
 | Proof Interaction Protocol | Medium-High | None | Tool builders, AI researchers | [proof-interaction-protocol.md](proof-interaction-protocol.md) |
 | Training Data Extraction | High | Interaction Protocol | AI researchers, tool builders | [training-data-extraction.md](training-data-extraction.md) |
-| LLM Copilot | High | Extraction, Search | All Coq users | [llm-copilot.md](llm-copilot.md) |
+| Proof Search & Automation | High | Interaction Protocol, Search | All Coq users | [proof-search-automation.md](proof-search-automation.md) |
 | Neural Premise Selection | Medium | Extraction | CoqHammer users, researchers | — |
 | Proof Visualization Widgets | High | None | Educators, formalization developers | [proof-visualization-widgets.md](proof-visualization-widgets.md) |
 | CI/CD Tooling | Medium | None | All Coq project maintainers | — |
@@ -35,7 +35,7 @@ Phase 3 (AI Infrastructure):
   Training Data Extraction       -- depends on Interaction Protocol
 
 Phase 4 (AI Applications):
-  LLM Copilot                   -- depends on Extraction and Semantic Search
+  Proof Search & Automation      -- depends on Interaction Protocol and Semantic Search; optionally consumes Extraction
   Neural Premise Selection       -- depends on Extraction
 
 Phase 5 (Ecosystem Polish):
