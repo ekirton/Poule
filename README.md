@@ -98,15 +98,23 @@ Replace `/path/to/poule` with the absolute path to your clone.
 
 ### 3. Use with Claude Code
 
-Once configured, Claude Code has access to all Poule tools:
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) is Anthropic's agentic coding tool — you interact with it in natural language from your terminal. Poule extends Claude's capabilities through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/): when you ask Claude a question about Coq, it automatically calls the right Poule tools behind the scenes and presents the results in plain language. You never need to invoke Poule tools directly.
 
-| Category | Tools | Examples |
-|----------|-------|---------|
-| **Search** (7) | `search_by_name`, `search_by_type`, `search_by_structure`, `search_by_symbols`, `get_lemma`, `find_related`, `list_modules` | Find lemmas by name, type signature, or structural similarity |
-| **Proof** (12) | `open_proof_session`, `observe_proof_state`, `submit_tactic`, `extract_proof_trace`, `get_proof_premises`, ... | Interactively explore and modify proofs |
-| **Visualization** (4) | `visualize_proof_state`, `visualize_proof_tree`, `visualize_dependencies`, `visualize_proof_sequence` | Render proof structures as Mermaid diagrams |
+For example, you can ask Claude things like:
+- *"Find lemmas about list reversal being involutive"*
+- *"Open a proof session on my_proof in Foo.v and show me the current goal"*
+- *"What lemmas does Nat.add_comm depend on?"*
+- *"Visualize the proof tree for this theorem"*
 
-Search tools accept `limit` (default 50, max 200). Proof tools work independently of the search index.
+Claude will search the index, manage proof sessions, and generate diagrams on your behalf.
+
+**Capabilities provided to Claude:**
+
+| Category | What Claude can do |
+|----------|--------------------|
+| **Search** | Find lemmas by name, type signature, structural similarity, or symbol usage; navigate dependencies; browse modules |
+| **Proof interaction** | Open interactive proof sessions, observe goal states, submit tactics, step through proofs, extract traces with premise annotations |
+| **Visualization** | Render proof states, proof trees, dependency graphs, and step-by-step proof evolution as Mermaid diagrams |
 
 ### CLI
 
