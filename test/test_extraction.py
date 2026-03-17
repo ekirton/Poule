@@ -1501,11 +1501,14 @@ class TestVoToLogicalPath:
     """
 
     def test_stdlib_rocq9_produces_coq_prefix(self):
-        """user-contrib/Stdlib/Arith/PeanoNat.vo → Coq.Arith.PeanoNat"""
+        """user-contrib/Stdlib/Arith/PeanoNat.vo → Coq.Arith.PeanoNat (canonical)"""
         from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
 
         path = Path("/opt/coq/user-contrib/Stdlib/Arith/PeanoNat.vo")
-        assert CoqLspBackend._vo_to_logical_path(path) == "Coq.Arith.PeanoNat"
+        # _vo_to_logical_path returns the import path (no Coq. prefix)
+        assert CoqLspBackend._vo_to_logical_path(path) == "Arith.PeanoNat"
+        # _vo_to_canonical_module returns the canonical name (with Coq. prefix)
+        assert CoqLspBackend._vo_to_canonical_module(path) == "Coq.Arith.PeanoNat"
 
     def test_mathcomp_user_contrib(self):
         """user-contrib/mathcomp/ssreflect/ssrbool.vo → mathcomp.ssreflect.ssrbool"""
@@ -1522,11 +1525,14 @@ class TestVoToLogicalPath:
         assert CoqLspBackend._vo_to_logical_path(path) == "Init.Nat"
 
     def test_stdlib_nested_module(self):
-        """user-contrib/Stdlib/Init/Nat.vo → Coq.Init.Nat"""
+        """user-contrib/Stdlib/Init/Nat.vo → Coq.Init.Nat (canonical)"""
         from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
 
         path = Path("/opt/coq/user-contrib/Stdlib/Init/Nat.vo")
-        assert CoqLspBackend._vo_to_logical_path(path) == "Coq.Init.Nat"
+        # _vo_to_logical_path returns import path (stripped Stdlib prefix)
+        assert CoqLspBackend._vo_to_logical_path(path) == "Init.Nat"
+        # _vo_to_canonical_module returns canonical name
+        assert CoqLspBackend._vo_to_canonical_module(path) == "Coq.Init.Nat"
 
 
 class TestFQNDerivationInListDeclarations:

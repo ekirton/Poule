@@ -420,7 +420,7 @@ def run_extraction(
                     f"Extracting declarations [{idx}/{total_decls}]"
                 )
 
-            module_path = CoqLspBackend._vo_to_logical_path(vo_path)
+            module_path = CoqLspBackend._vo_to_canonical_module(vo_path)
 
             # Use pre-fetched data if available
             prefetched = decl_data.get(name)

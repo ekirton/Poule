@@ -1956,8 +1956,10 @@ class TestBatchedListDeclarations:
             )
 
         kinds = {r[0]: r[1] for r in result}
-        assert kinds["Nat.add"] == "definition"
-        assert kinds["nat"] == "inductive"
+        # list_declarations returns FQNs: canonical_module + "." + short_name
+        # For /coq/user-contrib/Stdlib/Init/Nat.vo, canonical module is Coq.Init.Nat
+        assert kinds["Coq.Init.Nat.Nat.add"] == "definition"
+        assert kinds["Coq.Init.Nat.nat"] == "inductive"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

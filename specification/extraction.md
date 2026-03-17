@@ -34,7 +34,7 @@ The system shall define a `Backend` protocol with operations:
 #### list_declarations(vo_path)
 
 - REQUIRES: `vo_path` is a path to a compiled `.vo` file.
-- ENSURES: Returns a list of `(name, kind, constr_t)` tuples for all declarations in the file. The `constr_t` value is backend-dependent: backends that provide kernel terms return a `ConstrNode`; backends that provide only metadata (e.g., coq-lsp Search output) return a dict containing at minimum `{"type_signature": str, "source": str}`.
+- ENSURES: Returns a list of `(name, kind, constr_t)` tuples for all declarations in the file. Each `name` shall be a fully qualified canonical name (e.g., `Coq.Arith.PeanoNat.Nat.add_comm`), matching the format required by the `declarations.name` field (see [index-entities.md](../doc/architecture/data-models/index-entities.md)). The `constr_t` value is backend-dependent: backends that provide kernel terms return a `ConstrNode`; backends that provide only metadata (e.g., coq-lsp Search output) return a dict containing at minimum `{"type_signature": str, "source": str}`.
 - MAINTAINS: The `kind` value for each declaration is determined by the kind detection mechanism (§4.1.1).
 
 #### 4.1.1 Kind Detection
@@ -79,6 +79,22 @@ The `About` response format is version-dependent:
 > **Given** a module `Decimal` in Rocq 9.x where `About` returns `Module Corelib.Init.Decimal`,
 > **When** `list_declarations` processes this declaration,
 > **Then** the kind value is `"module"` (excluded via §4.2).
+
+#### 4.1.2 Fully Qualified Name Derivation
+
+Backends that do not return fully qualified names directly (e.g., coq-lsp `Search` returns short names like `Nat.add_comm`) shall derive them during `list_declarations`. The derivation mechanism is backend-dependent:
+
+**coq-lsp backend:** The fully qualified name is constructed by prepending the `.vo` file's logical module path to the short name returned by `Search`. The logical module path is derived from the `.vo` file path using heuristic path parsing (stripping known prefixes such as `user-contrib/`, `theories/`, and version-specific prefixes like `Stdlib/`). The resulting name has the form `<logical_module_path>.<short_name>` (e.g., `Coq.Arith.PeanoNat` + `Nat.add_comm` → `Coq.Arith.PeanoNat.Nat.add_comm`).
+
+> **Given** a `.vo` file at `/path/to/user-contrib/Stdlib/Arith/PeanoNat.vo` containing a declaration `Nat.add_comm`,
+> **When** `list_declarations` processes this file,
+> **Then** the returned name is `Coq.Arith.PeanoNat.Nat.add_comm`.
+
+> **Given** a `.vo` file at `/path/to/user-contrib/mathcomp/ssreflect/ssrbool.vo` containing a declaration `negb_involutive`,
+> **When** `list_declarations` processes this file,
+> **Then** the returned name is `mathcomp.ssreflect.ssrbool.negb_involutive`.
+
+**SerAPI backend:** SerAPI returns fully qualified names directly; no additional derivation is needed.
 
 #### get_type(name)
 
@@ -126,11 +142,23 @@ Excluded forms have no kernel term and shall be silently skipped.
 
 The `module` field on each declaration shall be the logical path of the `.vo` file from which the declaration was extracted. It is NOT derived from string manipulation of the fully qualified name.
 
+The pipeline shall convert each `.vo` file path to a logical module path before storing it in the `module` field. The conversion uses the same heuristic path parsing described in §4.1.2 (stripping known prefixes, converting path segments to dot-separated components, removing the `.vo` extension).
+
+> **Given** a `.vo` file at `/path/to/user-contrib/Stdlib/Arith/PeanoNat.vo`,
+> **When** the pipeline derives the module path,
+> **Then** the `module` field value is `Coq.Arith.PeanoNat`.
+
+> **Given** a `.vo` file at `/path/to/user-contrib/mathcomp/ssreflect/ssrbool.vo`,
+> **When** the pipeline derives the module path,
+> **Then** the `module` field value is `mathcomp.ssreflect.ssrbool`.
+
+The pipeline shall NOT store raw filesystem paths (e.g., `/Users/.../PeanoNat.vo`) in the `module` field.
+
 ### 4.4 Pass 1 — Per-Declaration Processing
 
 For each declaration extracted from a `.vo` file:
 
-1. When `constr_t` contains kernel term data (i.e., is not a metadata dict): Parse `Constr.t` → `ConstrNode` (backend-specific; produces pre-resolved FQNs). When `constr_t` is metadata-only (a dict without kernel term data), skip steps 1–5 and store a partial result with no tree, empty symbol set, and empty WL vector.
+1. When `constr_t` contains kernel term data (i.e., is not a metadata dict): Parse `Constr.t` → `ConstrNode` (backend-specific; produces pre-resolved FQNs). When `constr_t` is metadata-only (a dict without kernel term data), skip steps 1–5 and store a partial result with no tree, empty symbol set, empty WL vector, and `node_count` = 1. These declarations are not matchable by structural, symbol, or WL-based search channels; they are reachable only via name-based search (`search_by_name`) and full-text search.
 2. `coq_normalize(constr_node)` → normalized `ExprTree`
 3. `cse_normalize(tree)` → CSE-reduced tree (recomputes depths, node_ids, node_count)
 4. `extract_consts(tree)` → symbol set
@@ -151,6 +179,12 @@ After all declarations are inserted:
 1. For each declaration, call `backend.get_dependencies(name)`
 2. Resolve target names to declaration IDs (skip unresolved targets — they reference declarations outside the indexed scope)
 3. Insert dependency edges in batches
+
+All dependency edges shall use the relation values defined in the `dependencies` entity ([index-entities.md](../doc/architecture/data-models/index-entities.md)): `"uses"` or `"instance_of"`. No other relation values shall be stored.
+
+**Tree-based dependency extraction** (when expression tree is available): `extract_dependencies(tree)` walks `LConst` nodes to produce `"uses"` edges and reads instance metadata for `"instance_of"` edges. These are direct structural references.
+
+**Metadata-only declarations** (no expression tree): The backend's `get_dependencies(name)` provides dependency information. When the backend uses `Print Assumptions` (coq-lsp), the output represents transitive axiom dependencies, not direct term references. These edges shall be stored with relation `"uses"` as an approximation. The approximation is acceptable because `Print Assumptions` output is a superset of direct references for most declarations, and the dependency graph is navigational (not scored).
 
 ### 4.6 Post-Processing
 

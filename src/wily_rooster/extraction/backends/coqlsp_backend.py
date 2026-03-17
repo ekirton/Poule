@@ -515,6 +515,10 @@ class CoqLspBackend:
         This is a heuristic: it takes the stem parts after a ``theories`` or
         ``user-contrib`` directory and joins them with dots.  For user
         projects it falls back to the file stem.
+
+        The returned path is suitable for ``Require Import`` and
+        ``Search _ inside`` Vernac commands.  For the canonical module
+        name used in storage, see :meth:`_vo_to_canonical_module`.
         """
         parts = vo_path.parts
         for marker_idx, part in enumerate(parts):
@@ -523,10 +527,40 @@ class CoqLspBackend:
                 break
             if part == "user-contrib":
                 relevant = parts[marker_idx + 1 :]
-                # Rocq 9.x stdlib lives at user-contrib/Stdlib/. The logical
-                # path uses the "Coq" prefix — e.g.
-                # user-contrib/Stdlib/Init/Nat.vo → Coq.Init.Nat.
+                # Rocq 9.x: omit "Stdlib" prefix for import paths —
+                # 'Search _ inside Stdlib.Init.Nat.' does not work,
+                # 'Search _ inside Init.Nat.' does.
                 if relevant and relevant[0] == "Stdlib":
+                    relevant = relevant[1:]
+                break
+        else:
+            relevant = parts[-2:] if len(parts) >= 2 else parts
+
+        module_parts = [
+            p[: -len(".vo")] if p.endswith(".vo") else p for p in relevant
+        ]
+        return ".".join(module_parts)
+
+    @staticmethod
+    def _vo_to_canonical_module(vo_path: Path) -> str:
+        """Derive the canonical module name for storage from a ``.vo`` path.
+
+        For Rocq 9.x stdlib (``user-contrib/Stdlib/``), the canonical
+        prefix is ``Coq`` — e.g.
+        ``user-contrib/Stdlib/Init/Nat.vo`` → ``Coq.Init.Nat``.
+
+        For other packages (e.g. MathComp), the canonical module is
+        the same as the import path.
+        """
+        parts = vo_path.parts
+        for marker_idx, part in enumerate(parts):
+            if part == "theories":
+                relevant = parts[marker_idx + 1 :]
+                break
+            if part == "user-contrib":
+                relevant = parts[marker_idx + 1 :]
+                if relevant and relevant[0] == "Stdlib":
+                    # Stdlib → Coq prefix for canonical names
                     relevant = ("Coq",) + relevant[1:]
                 break
         else:
@@ -641,10 +675,11 @@ class CoqLspBackend:
         """
         self._ensure_alive()
 
-        logical_path = self._vo_to_logical_path(vo_path)
+        import_path = self._vo_to_logical_path(vo_path)
+        canonical_module = self._vo_to_canonical_module(vo_path)
         text = (
-            f"Require Import {logical_path}.\n"
-            f"Search _ inside {logical_path}."
+            f"Require Import {import_path}.\n"
+            f"Search _ inside {import_path}."
         )
         diags, messages = self._run_vernac_query(text, query_line=1)
 
@@ -662,7 +697,7 @@ class CoqLspBackend:
 
         declarations: list[tuple[str, str, Any]] = []
         for (short_name, type_sig), kind in zip(search_results, kinds):
-            fqn = f"{logical_path}.{short_name}"
+            fqn = f"{canonical_module}.{short_name}"
             constr_t: dict[str, Any] = {
                 "name": fqn,
                 "type_signature": type_sig,
