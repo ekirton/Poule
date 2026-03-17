@@ -408,9 +408,6 @@ class TestResolveLibraryName:
         """Given no load path matches, returns bare filename without extension
         and emits a warning."""
         resolve_library_name = _import_resolve()
-        import logging
-        with pytest.warns(None) as _:
-            pass
         # Spec says "emits a warning" — we check the return value
         result = resolve_library_name(
             "/tmp/Scratch.vo",

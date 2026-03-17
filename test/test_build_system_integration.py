@@ -1056,12 +1056,13 @@ class TestPackageQueries:
         """Returns list of (name, version) pairs sorted alphabetically (§4.8)."""
         query = _import_query_installed_packages()
         opam_output = "coq 8.18.0\ncoq-mathcomp-ssreflect 2.1.0\ncoq-equations 1.3\n"
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
-            proc = AsyncMock()
-            proc.communicate.return_value = (opam_output.encode(), b"")
-            proc.returncode = 0
-            mock_proc.return_value = proc
-            result = await query()
+        with patch("shutil.which", return_value="/usr/bin/opam"):
+            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+                proc = AsyncMock()
+                proc.communicate.return_value = (opam_output.encode(), b"")
+                proc.returncode = 0
+                mock_proc.return_value = proc
+                result = await query()
         assert isinstance(result, list)
         assert all(isinstance(pair, tuple) and len(pair) == 2 for pair in result)
         names = [pair[0] for pair in result]
@@ -1083,12 +1084,13 @@ class TestPackageQueries:
             depends: coq
             all-versions: 2.1.0 2.0.0 1.19.0
         """)
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
-            proc = AsyncMock()
-            proc.communicate.return_value = (opam_show_output.encode(), b"")
-            proc.returncode = 0
-            mock_proc.return_value = proc
-            result = await query("coq-mathcomp-ssreflect")
+        with patch("shutil.which", return_value="/usr/bin/opam"):
+            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+                proc = AsyncMock()
+                proc.communicate.return_value = (opam_show_output.encode(), b"")
+                proc.returncode = 0
+                mock_proc.return_value = proc
+                result = await query("coq-mathcomp-ssreflect")
         assert isinstance(result, PackageInfo)
         assert result.name == "coq-mathcomp-ssreflect"
         assert result.installed_version is not None
@@ -1104,13 +1106,14 @@ class TestPackageQueries:
             FILE_NOT_WRITABLE, INVALID_PARAMETER, PACKAGE_NOT_FOUND,
             PROJECT_NOT_FOUND, TOOL_NOT_FOUND, BuildSystemError,
         ) = _import_errors()
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
-            proc = AsyncMock()
-            proc.communicate.return_value = (b"", b"No package named nonexistent")
-            proc.returncode = 1
-            mock_proc.return_value = proc
-            with pytest.raises(BuildSystemError) as exc_info:
-                await query("nonexistent")
+        with patch("shutil.which", return_value="/usr/bin/opam"):
+            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+                proc = AsyncMock()
+                proc.communicate.return_value = (b"", b"No package named nonexistent")
+                proc.returncode = 1
+                mock_proc.return_value = proc
+                with pytest.raises(BuildSystemError) as exc_info:
+                    await query("nonexistent")
         assert exc_info.value.code == PACKAGE_NOT_FOUND
 
     @pytest.mark.asyncio
@@ -1124,12 +1127,13 @@ class TestPackageQueries:
             depends: coq
             all-versions: 1.19.0 2.0.0 2.1.0
         """)
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
-            proc = AsyncMock()
-            proc.communicate.return_value = (opam_show_output.encode(), b"")
-            proc.returncode = 0
-            mock_proc.return_value = proc
-            result = await query("coq-mathcomp-ssreflect")
+        with patch("shutil.which", return_value="/usr/bin/opam"):
+            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+                proc = AsyncMock()
+                proc.communicate.return_value = (opam_show_output.encode(), b"")
+                proc.returncode = 0
+                mock_proc.return_value = proc
+                result = await query("coq-mathcomp-ssreflect")
         # Versions should be descending
         assert result.available_versions == sorted(result.available_versions, reverse=True)
 
@@ -1217,12 +1221,13 @@ class TestDependencyManagement:
             ConflictDetail, ConstraintSource, DependencyStatus,
             DetectionResult, MigrationResult, OpamMetadata, PackageInfo,
         ) = _import_types()
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
-            proc = AsyncMock()
-            proc.communicate.return_value = (b"The following actions would be performed:\n", b"")
-            proc.returncode = 0
-            mock_proc.return_value = proc
-            result = await check([("coq", ">= 8.18")])
+        with patch("shutil.which", return_value="/usr/bin/opam"):
+            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+                proc = AsyncMock()
+                proc.communicate.return_value = (b"The following actions would be performed:\n", b"")
+                proc.returncode = 0
+                mock_proc.return_value = proc
+                result = await check([("coq", ">= 8.18")])
         assert isinstance(result, DependencyStatus)
         assert result.satisfiable is True
         assert result.conflicts == []
@@ -1240,15 +1245,16 @@ class TestDependencyManagement:
             "The following dependencies couldn't be met:\n"
             "  - coq >= 8.18 (conflict with coq = 8.17.1 required by coq-stdpp)\n"
         )
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
-            proc = AsyncMock()
-            proc.communicate.return_value = (b"", conflict_output.encode())
-            proc.returncode = 1
-            mock_proc.return_value = proc
-            result = await check([
-                ("coq-mathcomp-ssreflect", ">= 2.0"),
-                ("coq-stdpp", ">= 1.9"),
-            ])
+        with patch("shutil.which", return_value="/usr/bin/opam"):
+            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+                proc = AsyncMock()
+                proc.communicate.return_value = (b"", conflict_output.encode())
+                proc.returncode = 1
+                mock_proc.return_value = proc
+                result = await check([
+                    ("coq-mathcomp-ssreflect", ">= 2.0"),
+                    ("coq-stdpp", ">= 1.9"),
+                ])
         assert result.satisfiable is False
         assert len(result.conflicts) >= 1
         assert isinstance(result.conflicts[0], ConflictDetail)
@@ -1261,14 +1267,15 @@ class TestDependencyManagement:
             BuildError, BuildRequest, BuildResult, BuildSystem,
             *_rest
         ) = _import_types()
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
-            proc = AsyncMock()
-            proc.communicate.return_value = (
-                b"coq-equations.1.3 installed\n", b""
-            )
-            proc.returncode = 0
-            mock_proc.return_value = proc
-            result = await install("coq-equations")
+        with patch("shutil.which", return_value="/usr/bin/opam"):
+            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+                proc = AsyncMock()
+                proc.communicate.return_value = (
+                    b"coq-equations.1.3 installed\n", b""
+                )
+                proc.returncode = 0
+                mock_proc.return_value = proc
+                result = await install("coq-equations")
         assert isinstance(result, BuildResult)
         assert result.success is True
 
@@ -1276,14 +1283,15 @@ class TestDependencyManagement:
     async def test_install_package_failure_returns_errors(self):
         """Failed install returns parsed BuildError records (§4.9)."""
         install = _import_install_package()
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
-            proc = AsyncMock()
-            proc.communicate.return_value = (
-                b"", b"Error: Package build failed during installation"
-            )
-            proc.returncode = 1
-            mock_proc.return_value = proc
-            result = await install("coq-broken-package")
+        with patch("shutil.which", return_value="/usr/bin/opam"):
+            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+                proc = AsyncMock()
+                proc.communicate.return_value = (
+                    b"", b"Error: Package build failed during installation"
+                )
+                proc.returncode = 1
+                mock_proc.return_value = proc
+                result = await install("coq-broken-package")
         assert result.success is False
 
     # --- Contract tests for subprocess mocks ---

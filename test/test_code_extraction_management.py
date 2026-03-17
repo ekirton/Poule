@@ -727,12 +727,12 @@ class TestWriteExtraction:
             )
             assert isinstance(result, WriteConfirmation)
             assert result.output_path == output_path
-            assert result.bytes_written == 20
+            assert result.bytes_written == 19
             with open(output_path) as f:
                 assert f.read() == "let add x y = x + y"
 
     def test_spec_example_write(self):
-        """Spec example: write 'let add x y = x + y' -> bytes_written=20 (Section 9)."""
+        """Spec example: write 'let add x y = x + y' -> bytes_written=19 (Section 9)."""
         write_extraction = _import_write_extraction()
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "double.ml")
@@ -740,7 +740,7 @@ class TestWriteExtraction:
                 code="let add x y = x + y",
                 output_path=output_path,
             )
-            assert result.bytes_written == 20
+            assert result.bytes_written == 19
 
     def test_overwrites_existing_file(self):
         """When file exists, it is overwritten (Section 4.4)."""

@@ -103,7 +103,7 @@ The result parser shall inspect Coq's stdout and stderr after extraction command
 
 > **Given** a prior ExtractionResult with `code = "let add x y = x + y"` and `output_path = "/project/extracted/add.ml"`
 > **When** `write_extraction(code, "/project/extracted/add.ml")` is called
-> **Then** the file `/project/extracted/add.ml` is created with the exact contents `let add x y = x + y`, and the response includes `bytes_written = 20`
+> **Then** the file `/project/extracted/add.ml` is created with the exact contents `let add x y = x + y`, and the response includes `bytes_written = 19`
 
 > **Given** `output_path = "relative/path.ml"` (not absolute)
 > **When** `write_extraction(code, "relative/path.ml")` is called
