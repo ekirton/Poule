@@ -1,20 +1,20 @@
 # Data Structures
 
-Core data structures shared across the Coq/Rocq semantic lemma search system.
+Core data structures shared across the Coq/Rocq semantic lemma search and proof interaction system.
 
-**Architecture**: [expression-tree.md](../doc/architecture/data-models/expression-tree.md), [index-entities.md](../doc/architecture/data-models/index-entities.md), [response-types.md](../doc/architecture/data-models/response-types.md)
+**Architecture**: [expression-tree.md](../doc/architecture/data-models/expression-tree.md), [index-entities.md](../doc/architecture/data-models/index-entities.md), [response-types.md](../doc/architecture/data-models/response-types.md), [proof-types.md](../doc/architecture/data-models/proof-types.md)
 
 ---
 
 ## 1. Purpose
 
-Define the canonical Python types for expression trees, node labels, enumerations, and response types used across all components — extraction, normalization, storage, retrieval, and MCP server.
+Define the canonical Python types for expression trees, node labels, enumerations, response types, and proof interaction types used across all components — extraction, normalization, storage, retrieval, MCP server, and proof session management.
 
 ## 2. Scope
 
-**In scope**: Enumerations (`SortKind`, `DeclKind`), node label hierarchy (abstract base + 15 concrete subtypes), `TreeNode`, `ExprTree`, response types (`SearchResult`, `LemmaDetail`, `Module`), and tree utility functions (`recompute_depths`, `assign_node_ids`, `node_count`).
+**In scope**: Enumerations (`SortKind`, `DeclKind`, `PremiseKind`), node label hierarchy (abstract base + 15 concrete subtypes), `TreeNode`, `ExprTree`, response types (`SearchResult`, `LemmaDetail`, `Module`), proof interaction types (`Session`, `ProofState`, `Goal`, `Hypothesis`, `ProofTrace`, `TraceStep`, `PremiseAnnotation`, `Premise`, `ProofStateDiff`, `GoalChange`, `HypothesisChange`), and tree utility functions (`recompute_depths`, `assign_node_ids`, `node_count`).
 
-**Out of scope**: Serialization format (owned by storage), normalization logic (owned by coq-normalization and cse-normalization), retrieval algorithms.
+**Out of scope**: Serialization format (owned by storage and proof-serialization), normalization logic (owned by coq-normalization and cse-normalization), retrieval algorithms, session management logic (owned by proof-session).
 
 ## 3. Definitions
 
@@ -139,9 +139,121 @@ Extends `SearchResult` with:
 | `name` | `str` | Required; fully qualified module name |
 | `decl_count` | `int` | Required; ≥ 0 |
 
+### 4.7 Proof Interaction Types
+
+Canonical definitions from [proof-types.md](../doc/architecture/data-models/proof-types.md). These types are produced by the Proof Session Manager, serialized by the Proof Serialization layer, and returned by the MCP Server.
+
+#### PremiseKind Enumeration
+
+The system shall define a `PremiseKind` enumeration with exactly four members: `LEMMA`, `HYPOTHESIS`, `CONSTRUCTOR`, `DEFINITION`. Each member's string value shall be the lowercase form (e.g., `PremiseKind.LEMMA` → `"lemma"`).
+
+#### Hypothesis
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `name` | `str` | Required; the hypothesis name as it appears in the proof context |
+| `type` | `str` | Required; the hypothesis's type as a Coq expression string |
+| `body` | `str` or `None` | Optional; the body for let-bound hypotheses; `None` for non-let hypotheses |
+
+#### Goal
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `index` | `int` | Required; non-negative; position in the parent ProofState's goals list |
+| `type` | `str` | Required; the goal's type as a Coq expression string |
+| `hypotheses` | `list[Hypothesis]` | Required; may be empty; ordered as Coq presents them |
+
+#### ProofState
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `schema_version` | `int` | Required; positive integer identifying the serialization format version |
+| `session_id` | `str` | Required; reference to the owning session |
+| `step_index` | `int` | Required; non-negative; 0 = initial state |
+| `is_complete` | `bool` | Required; true when no open goals remain |
+| `focused_goal_index` | `int` or `None` | Required; index into `goals`; `None` when `is_complete` is true |
+| `goals` | `list[Goal]` | Required; may be empty when proof is complete |
+
+#### TraceStep
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `step_index` | `int` | Required; non-negative; 0 for initial state, 1..N for tactic steps |
+| `tactic` | `str` or `None` | Required; `None` for step 0; the tactic string for steps 1..N |
+| `state` | `ProofState` | Required; the proof state after this step |
+
+#### ProofTrace
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `schema_version` | `int` | Required; positive integer |
+| `session_id` | `str` | Required |
+| `proof_name` | `str` | Required; fully qualified proof name |
+| `file_path` | `str` | Required; absolute path to the .v file |
+| `total_steps` | `int` | Required; positive integer (the number of tactics) |
+| `steps` | `list[TraceStep]` | Required; length must equal `total_steps + 1` |
+
+#### Premise
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `name` | `str` | Required; fully qualified canonical name |
+| `kind` | `str` | Required; one of: `"lemma"`, `"hypothesis"`, `"constructor"`, `"definition"` |
+
+#### PremiseAnnotation
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `step_index` | `int` | Required; positive integer; range [1, N] |
+| `tactic` | `str` | Required; the tactic string |
+| `premises` | `list[Premise]` | Required; may be empty |
+
+#### Session
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `session_id` | `str` | Required; unique across all active sessions |
+| `file_path` | `str` | Required; absolute path to the .v source file |
+| `proof_name` | `str` | Required; fully qualified name |
+| `current_step` | `int` | Required; non-negative |
+| `total_steps` | `int` or `None` | Required; `None` if proof is being constructed interactively |
+| `created_at` | `str` | Required; ISO 8601 format |
+| `last_active_at` | `str` | Required; ISO 8601 format |
+
+#### GoalChange (P1)
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `index` | `int` | Required; non-negative |
+| `before` | `str` | Required; the goal type before the tactic |
+| `after` | `str` | Required; the goal type after the tactic |
+
+#### HypothesisChange (P1)
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `name` | `str` | Required |
+| `type_before` | `str` | Required |
+| `type_after` | `str` | Required |
+| `body_before` | `str` or `None` | Required; `None` if not let-bound |
+| `body_after` | `str` or `None` | Required; `None` if not let-bound |
+
+#### ProofStateDiff (P1)
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `from_step` | `int` | Required; non-negative |
+| `to_step` | `int` | Required; must equal `from_step + 1` |
+| `goals_added` | `list[Goal]` | Required; may be empty |
+| `goals_removed` | `list[Goal]` | Required; may be empty |
+| `goals_changed` | `list[GoalChange]` | Required; may be empty |
+| `hypotheses_added` | `list[Hypothesis]` | Required; may be empty |
+| `hypotheses_removed` | `list[Hypothesis]` | Required; may be empty |
+| `hypotheses_changed` | `list[HypothesisChange]` | Required; may be empty |
+
 ## 5. Data Model
 
-All entities defined in this specification are value types with no persistence logic. They are serialized/deserialized by the storage layer and produced by the retrieval pipeline.
+All entities defined in this specification are value types with no persistence logic. Expression tree and response types are serialized/deserialized by the storage layer and produced by the retrieval pipeline. Proof interaction types are produced by the session manager and serialized by the proof serialization layer.
 
 ## 6. Interface Contracts
 
@@ -167,6 +279,12 @@ All entities defined in this specification are value types with no persistence l
 | `ExprTree.node_count < 1` | `ValueError`: node count must be positive |
 
 Validation shall occur at construction time.
+
+### Proof type validation errors
+
+| Condition | Error |
+|-----------|-------|
+| `Premise.kind` not in `{"lemma", "hypothesis", "constructor", "definition"}` | `ValueError`: kind must be one of lemma, hypothesis, constructor, definition |
 
 ## 8. Examples
 
@@ -207,11 +325,47 @@ LSort(SortKind.PROP) == LSort(SortKind.PROP)                # True
 hash(LConst("x")) == hash(LConst("x"))                      # True
 ```
 
+### Creating proof interaction types
+
+```
+state = ProofState(
+    schema_version=1, session_id="abc-123", step_index=0,
+    is_complete=False, focused_goal_index=0,
+    goals=[Goal(index=0, type="n + m = m + n",
+        hypotheses=[
+            Hypothesis(name="n", type="nat", body=None),
+            Hypothesis(name="m", type="nat", body=None),
+        ]
+    )]
+)
+```
+
+### Premise with valid kind
+
+```
+Premise(name="Coq.Arith.PeanoNat.Nat.add_comm", kind="lemma")      # valid
+Premise(name="IHn", kind="hypothesis")                               # valid
+```
+
+### ProofStateDiff
+
+```
+diff = ProofStateDiff(
+    from_step=2, to_step=3,
+    goals_added=[], goals_removed=[],
+    goals_changed=[GoalChange(index=0, before="S n + m = m + S n", after="S (n + m) = m + S n")],
+    hypotheses_added=[Hypothesis(name="H", type="n + m = m + n", body=None)],
+    hypotheses_removed=[], hypotheses_changed=[],
+)
+```
+
 ## 9. Language-Specific Notes (Python)
 
 - Use `@dataclass(frozen=True)` for all node label types to get `__eq__` and `__hash__` for free.
 - Use `@dataclass` (mutable) for `TreeNode` since `depth` and `node_id` are mutated in place.
 - Use `@dataclass` (mutable) for `ExprTree` since `node_count` may be recomputed after CSE.
-- Use `enum.Enum` for `SortKind` and `DeclKind`.
+- Use `enum.Enum` for `SortKind`, `DeclKind`, and `PremiseKind`.
 - Use `@dataclass(frozen=True)` for `SearchResult`, `LemmaDetail`, and `Module` — response types are immutable once created.
-- Package location: `src/wily_rooster/models/`.
+- Use `@dataclass` (mutable) for proof interaction types — `ProofState`, `Goal`, `Hypothesis`, `TraceStep`, `ProofTrace`, `PremiseAnnotation`, `Premise`, `Session`, `GoalChange`, `HypothesisChange`, `ProofStateDiff`.
+- Proof interaction types package location: `src/wily_rooster/session/types.py`.
+- Expression tree and response types package location: `src/wily_rooster/models/`.

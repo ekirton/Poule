@@ -1,20 +1,20 @@
 # MCP Server
 
-Thin adapter between Claude Code and the retrieval pipeline, exposing search tools via the Model Context Protocol.
+Thin adapter between Claude Code, the retrieval pipeline, and the proof session manager — exposing search and proof interaction tools via the Model Context Protocol.
 
-**Architecture**: [mcp-server.md](../doc/architecture/mcp-server.md), [component-boundaries.md](../doc/architecture/component-boundaries.md), [response-types.md](../doc/architecture/data-models/response-types.md)
+**Architecture**: [mcp-server.md](../doc/architecture/mcp-server.md), [component-boundaries.md](../doc/architecture/component-boundaries.md), [response-types.md](../doc/architecture/data-models/response-types.md), [proof-types.md](../doc/architecture/data-models/proof-types.md)
 
 ---
 
 ## 1. Purpose
 
-Define the MCP server that translates MCP tool calls into pipeline queries, validates inputs, formats responses, and manages index lifecycle on startup.
+Define the MCP server that translates MCP tool calls into pipeline queries and session manager operations, validates inputs, formats responses, manages index lifecycle on startup, and serializes proof interaction types.
 
 ## 2. Scope
 
-**In scope**: 7 tool handlers, input validation, error formatting, index state management, startup checks, response construction.
+**In scope**: 7 search tool handlers, 12 proof interaction tool handlers (11 P0 + 1 P1), input validation, error formatting, index state management, startup checks, response construction, proof state serialization.
 
-**Out of scope**: Search logic (owned by pipeline/channels), storage management (owned by storage), Coq expression parsing (owned by pipeline).
+**Out of scope**: Search logic (owned by pipeline/channels), storage management (owned by storage), Coq expression parsing (owned by pipeline), session state management (owned by proof-session), proof type definitions (owned by data-models/proof-types), serialization format details (owned by proof-serialization).
 
 ## 3. Definitions
 
@@ -23,6 +23,8 @@ Define the MCP server that translates MCP tool calls into pipeline queries, vali
 | MCP | Model Context Protocol — the communication protocol between Claude Code and tool servers |
 | Tool handler | A function that processes one MCP tool call and returns a formatted response |
 | Index state | The loaded state of the search index (ready, missing, or version-mismatched) |
+| Session manager | The stateful component managing interactive proof sessions (see proof-session spec) |
+| Proof state | A snapshot of goals and hypotheses at a single point in a proof |
 
 ## 4. Behavioral Requirements
 
@@ -30,7 +32,7 @@ Define the MCP server that translates MCP tool calls into pipeline queries, vali
 
 The server shall communicate via stdio transport, compatible with Claude Code's MCP configuration.
 
-### 4.2 Tool Signatures
+### 4.2 Search Tool Signatures
 
 #### search_by_name(pattern, limit=50)
 
@@ -85,9 +87,102 @@ All `find_related` results receive `score = 1.0` (relationship-based, not scored
 - REQUIRES: `prefix` is a string (may be empty).
 - ENSURES: Returns `Module[]` for all modules matching the prefix.
 
-### 4.3 Input Validation
+### 4.3 Proof Interaction Tool Signatures
 
-The server shall validate all inputs before delegating to the pipeline:
+All proof interaction tools delegate to the session manager. The MCP server does not manage proof session state directly. On `SessionError` from the session manager, the server translates the error code to the corresponding MCP error response.
+
+#### open_proof_session(file_path, proof_name)
+
+- REQUIRES: `file_path` is a non-empty string (absolute path to a .v file). `proof_name` is a non-empty string (fully qualified proof name).
+- ENSURES: Returns `{ session_id: string, state: ProofState }`. The session is registered and its Coq backend process is running.
+- Delegates to: `session_manager.create_session(file_path, proof_name)`
+- On file not found: returns `FILE_NOT_FOUND` error.
+- On proof not found in file: returns `PROOF_NOT_FOUND` error.
+
+> **Given** a valid .v file and proof name
+> **When** `open_proof_session` is called
+> **Then** the response contains a `session_id` string and a `ProofState` at step 0
+
+> **Given** a non-existent file path
+> **When** `open_proof_session` is called
+> **Then** the response is a `FILE_NOT_FOUND` error
+
+#### close_proof_session(session_id)
+
+- REQUIRES: `session_id` is a non-empty string.
+- ENSURES: Returns `{ closed: true }`. The session is removed and its backend process is terminated.
+- Delegates to: `session_manager.close_session(session_id)`
+- On unknown session: returns `SESSION_NOT_FOUND` error.
+
+#### list_proof_sessions()
+
+- REQUIRES: No parameters.
+- ENSURES: Returns `Session[]` for all active sessions.
+- Delegates to: `session_manager.list_sessions()`
+
+#### observe_proof_state(session_id)
+
+- REQUIRES: `session_id` is a non-empty string.
+- ENSURES: Returns the current `ProofState` for the session.
+- Delegates to: `session_manager.observe_state(session_id)`
+- On unknown/expired/crashed session: returns the appropriate session error.
+
+#### get_proof_state_at_step(session_id, step)
+
+- REQUIRES: `session_id` is a non-empty string. `step` is a non-negative integer.
+- ENSURES: Returns the `ProofState` at the given step index.
+- Delegates to: `session_manager.get_state_at_step(session_id, step)`
+- On step out of range: returns `STEP_OUT_OF_RANGE` error.
+
+#### extract_proof_trace(session_id)
+
+- REQUIRES: `session_id` is a non-empty string.
+- ENSURES: Returns the full `ProofTrace` for the session.
+- Delegates to: `session_manager.extract_trace(session_id)`
+
+#### submit_tactic(session_id, tactic)
+
+- REQUIRES: `session_id` is a non-empty string. `tactic` is a non-empty string.
+- ENSURES: Returns the resulting `ProofState` after applying the tactic.
+- Delegates to: `session_manager.submit_tactic(session_id, tactic)`
+- On tactic failure: returns `TACTIC_ERROR` with the Coq error message and the unchanged `ProofState`.
+
+#### step_backward(session_id)
+
+- REQUIRES: `session_id` is a non-empty string.
+- ENSURES: Returns the `ProofState` at the previous step.
+- Delegates to: `session_manager.step_backward(session_id)`
+- On already at initial state: returns `NO_PREVIOUS_STATE` error.
+
+#### step_forward(session_id)
+
+- REQUIRES: `session_id` is a non-empty string.
+- ENSURES: Returns `{ tactic: string, state: ProofState }` — the original tactic and resulting state.
+- Delegates to: `session_manager.step_forward(session_id)`
+- On proof already complete: returns `PROOF_COMPLETE` error.
+
+#### submit_tactic_batch(session_id, tactics) — P1
+
+- REQUIRES: `session_id` is a non-empty string. `tactics` is a non-empty list of non-empty strings.
+- ENSURES: Returns `{ tactic: string, state: ProofState }[]` — one entry per successful tactic. Stops on first failure; the failure entry includes `error` instead of `state`.
+- Delegates to: `session_manager.submit_tactic_batch(session_id, tactics)`
+
+#### get_proof_premises(session_id)
+
+- REQUIRES: `session_id` is a non-empty string.
+- ENSURES: Returns `PremiseAnnotation[]` for all tactic steps in the proof.
+- Delegates to: `session_manager.get_premises(session_id)`
+
+#### get_step_premises(session_id, step)
+
+- REQUIRES: `session_id` is a non-empty string. `step` is a positive integer (range [1, total_steps]).
+- ENSURES: Returns a single `PremiseAnnotation` for the given step.
+- Delegates to: `session_manager.get_step_premises(session_id, step)`
+- On step out of range: returns `STEP_OUT_OF_RANGE` error.
+
+### 4.4 Input Validation
+
+The server shall validate all inputs before delegating to the pipeline or session manager:
 
 | Validation | Rule |
 |-----------|------|
@@ -95,19 +190,25 @@ The server shall validate all inputs before delegating to the pipeline:
 | `limit` parameter | Clamped to [1, 200] (values < 1 become 1, values > 200 become 200) |
 | `symbols` list | Must be non-empty; each element must be non-empty after stripping |
 | `relation` parameter | Must be one of the four recognized values |
+| `session_id` parameter | Must be a non-empty string |
+| `step` parameter | Must be a non-negative integer (for `get_proof_state_at_step`); must be a positive integer (for `get_step_premises`) |
+| `tactic` parameter | Must be a non-empty string after stripping whitespace |
+| `tactics` list | Must be non-empty; each element must be a non-empty string after stripping |
 
 Invalid inputs that cannot be clamped shall return a `PARSE_ERROR` response.
 
-### 4.4 Index State Management
+### 4.5 Index State Management
 
 On startup, the server shall check the index in this order:
 
-1. Does the database file exist at the configured path? If not → all tool calls return `INDEX_MISSING`.
+1. Does the database file exist at the configured path? If not → all search tool calls return `INDEX_MISSING`.
 2. Does `schema_version` in `index_meta` match the tool's expected version? If not → trigger full re-index (in Phase 1, this translates to `INDEX_VERSION_MISMATCH` directing user to re-index manually).
 3. Phase 1: `coq_version` and `mathcomp_version` are stored for informational purposes only. Library version checks are deferred to Phase 2.
 4. All checks pass → create `PipelineContext` (loads WL histograms, inverted index, symbol frequencies into memory) → begin serving queries.
 
-### 4.5 Response Formatting
+Proof interaction tools do not depend on the search index. They shall function even when the index is missing or version-mismatched.
+
+### 4.6 Response Formatting
 
 All successful responses shall be formatted as MCP content with `type: "text"` containing a JSON-serialized result.
 
@@ -117,6 +218,19 @@ All successful responses shall be formatted as MCP content with `type: "text"` c
 ```
 
 `DeclKind` values are serialized as lowercase strings (e.g., `"lemma"`, `"theorem"`).
+
+Proof interaction responses shall use the JSON serialization format defined in the proof-serialization specification. `ProofState`, `ProofTrace`, `PremiseAnnotation`, and `Session` objects are serialized using the corresponding `serialize_*` functions from the serialization layer.
+
+### 4.7 Proof Error Response Enrichment
+
+When a proof interaction tool returns a `TACTIC_ERROR`, the response shall include both the error object and the unchanged `ProofState` in the response body. This allows the LLM to report both the error and the current state without a separate `observe_proof_state` call.
+
+```json
+{
+  "content": [{"type": "text", "text": "{\"error\": {\"code\": \"TACTIC_ERROR\", \"message\": \"...\", \"state\": {...}}}"}],
+  "isError": true
+}
+```
 
 ## 5. Error Specification
 
@@ -129,6 +243,8 @@ All error responses use MCP's standard error format:
 }
 ```
 
+### 5.1 Search Errors
+
 | Condition | Error Code | Message Template |
 |-----------|-----------|-----------------|
 | No index database | `INDEX_MISSING` | `Index database not found at {path}. Run the indexing command to create it.` |
@@ -139,11 +255,28 @@ All error responses use MCP's standard error format:
 
 Both server-side validation errors and pipeline-side parse errors use `PARSE_ERROR`. The `message` field distinguishes the origin.
 
+### 5.2 Proof Interaction Errors
+
+| Condition | Error Code | Message Template |
+|-----------|-----------|-----------------|
+| Session ID not found | `SESSION_NOT_FOUND` | `Proof session {session_id} not found or has expired.` |
+| Session timed out (auto-closed) | `SESSION_EXPIRED` | `Proof session {session_id} was closed after 30 minutes of inactivity.` |
+| File not found (open session) | `FILE_NOT_FOUND` | `File not found: {file_path}` |
+| Proof not found in file | `PROOF_NOT_FOUND` | `Proof {proof_name} not found in {file_path}.` |
+| Tactic failed in Coq | `TACTIC_ERROR` | `Tactic failed: {coq_error_message}` |
+| Step index out of range | `STEP_OUT_OF_RANGE` | `Step {k} is out of range [0, {total_steps}].` |
+| Already at initial state | `NO_PREVIOUS_STATE` | `Cannot step backward: already at the initial proof state.` |
+| Already at final step | `PROOF_COMPLETE` | `Cannot step forward: proof is already complete at step {total_steps}.` |
+| Backend process crashed | `BACKEND_CRASHED` | `The Coq backend for session {session_id} has crashed. Close the session and open a new one.` |
+
+The MCP server translates `SessionError` exceptions from the session manager into the corresponding MCP error response by mapping `SessionError.code` to the error codes above.
+
 ## 6. Non-Functional Requirements
 
-- The server is a thin adapter — it shall not implement search logic, manage storage directly, or parse Coq expressions.
+- The server is a thin adapter — it shall not implement search logic, manage storage directly, parse Coq expressions, or manage proof session state.
 - Startup time includes loading WL histograms into memory (~100MB for 100K declarations).
 - Stdio transport for Claude Code compatibility.
+- Proof interaction tools are available immediately on startup, independent of index state.
 
 ## 7. Examples
 
@@ -160,7 +293,7 @@ Response:
 
 ### Error: index missing
 
-Request: any tool call when database does not exist
+Request: any search tool call when database does not exist
 
 Response:
 ```json
@@ -182,10 +315,48 @@ Response:
 }
 ```
 
+### Successful open_proof_session
+
+Request: `open_proof_session(file_path="/path/to/Nat.v", proof_name="Nat.add_comm")`
+
+Response:
+```json
+{
+  "content": [{"type": "text", "text": "{\"session_id\": \"abc123\", \"state\": {\"schema_version\": 1, \"session_id\": \"abc123\", \"step_index\": 0, \"is_complete\": false, \"focused_goal_index\": 0, \"goals\": [{\"index\": 0, \"type\": \"forall n m : nat, n + m = m + n\", \"hypotheses\": []}]}}"}]
+}
+```
+
+### Error: tactic failed
+
+Request: `submit_tactic(session_id="abc123", tactic="invalid_tactic.")`
+
+Response:
+```json
+{
+  "content": [{"type": "text", "text": "{\"error\": {\"code\": \"TACTIC_ERROR\", \"message\": \"Tactic failed: No such tactic.\", \"state\": {\"schema_version\": 1, \"session_id\": \"abc123\", \"step_index\": 0, \"is_complete\": false, \"focused_goal_index\": 0, \"goals\": [...]}}}"}],
+  "isError": true
+}
+```
+
+### Error: session not found
+
+Request: `observe_proof_state(session_id="nonexistent")`
+
+Response:
+```json
+{
+  "content": [{"type": "text", "text": "{\"error\": {\"code\": \"SESSION_NOT_FOUND\", \"message\": \"Proof session nonexistent not found or has expired.\"}}"}],
+  "isError": true
+}
+```
+
 ## 8. Language-Specific Notes (Python)
 
 - Use the `mcp` Python SDK for MCP protocol handling and stdio transport.
 - Use `@server.tool()` decorator pattern for tool registration.
 - Use `asyncio` for the server event loop.
-- JSON serialization via `dataclasses.asdict()` + `json.dumps()` for response types.
+- JSON serialization via `dataclasses.asdict()` + `json.dumps()` for search response types.
+- Proof interaction responses use `serialize_*` functions from `wily_rooster.serialization.serialize`.
+- Proof interaction handler functions are `async` to match the session manager's async interface.
 - Package location: `src/wily_rooster/server/`.
+- Handler naming convention: `handle_<tool_name>` (e.g., `handle_open_proof_session`).

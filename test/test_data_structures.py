@@ -1288,3 +1288,285 @@ class TestSpecExampleEquality:
         from wily_rooster.models.labels import LConst
 
         assert hash(LConst("x")) == hash(LConst("x"))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 10. Proof Interaction Types (Spec §4.7)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _import_proof_types():
+    from wily_rooster.session.types import (
+        Goal,
+        GoalChange,
+        Hypothesis,
+        HypothesisChange,
+        Premise,
+        PremiseAnnotation,
+        ProofState,
+        ProofStateDiff,
+        ProofTrace,
+        Session,
+        TraceStep,
+    )
+    return (
+        Goal, GoalChange, Hypothesis, HypothesisChange, Premise,
+        PremiseAnnotation, ProofState, ProofStateDiff, ProofTrace,
+        Session, TraceStep,
+    )
+
+
+class TestHypothesisType:
+    """Hypothesis: name, type, optional body."""
+
+    def test_construction_without_body(self):
+        *_, Hypothesis = _import_proof_types()[2:3]
+        Hypothesis = _import_proof_types()[2]
+        h = Hypothesis(name="n", type="nat")
+        assert h.name == "n"
+        assert h.type == "nat"
+        assert h.body is None
+
+    def test_construction_with_body(self):
+        Hypothesis = _import_proof_types()[2]
+        h = Hypothesis(name="x", type="nat", body="S O")
+        assert h.body == "S O"
+
+    def test_body_defaults_to_none(self):
+        Hypothesis = _import_proof_types()[2]
+        h = Hypothesis(name="n", type="nat")
+        assert h.body is None
+
+
+class TestGoalType:
+    """Goal: index, type, hypotheses list."""
+
+    def test_construction_with_hypotheses(self):
+        Goal, _, Hypothesis = _import_proof_types()[0], None, _import_proof_types()[2]
+        Goal = _import_proof_types()[0]
+        Hypothesis = _import_proof_types()[2]
+        g = Goal(
+            index=0,
+            type="n + m = m + n",
+            hypotheses=[Hypothesis(name="n", type="nat")],
+        )
+        assert g.index == 0
+        assert g.type == "n + m = m + n"
+        assert len(g.hypotheses) == 1
+
+    def test_empty_hypotheses_by_default(self):
+        Goal = _import_proof_types()[0]
+        g = Goal(index=0, type="True")
+        assert g.hypotheses == []
+
+
+class TestProofStateType:
+    """ProofState: schema_version, session_id, step_index, is_complete, focused_goal_index, goals."""
+
+    def test_construction_incomplete_proof(self):
+        (Goal, _, Hypothesis, _, _, _, ProofState, *_) = _import_proof_types()
+        ps = ProofState(
+            schema_version=1,
+            session_id="abc-123",
+            step_index=0,
+            is_complete=False,
+            focused_goal_index=0,
+            goals=[Goal(index=0, type="n = n")],
+        )
+        assert ps.schema_version == 1
+        assert ps.session_id == "abc-123"
+        assert ps.step_index == 0
+        assert ps.is_complete is False
+        assert ps.focused_goal_index == 0
+        assert len(ps.goals) == 1
+
+    def test_construction_complete_proof(self):
+        (_, _, _, _, _, _, ProofState, *_) = _import_proof_types()
+        ps = ProofState(
+            schema_version=1,
+            session_id="abc-123",
+            step_index=5,
+            is_complete=True,
+            focused_goal_index=None,
+        )
+        assert ps.is_complete is True
+        assert ps.focused_goal_index is None
+        assert ps.goals == []
+
+
+class TestTraceStepType:
+    """TraceStep: step_index, tactic (null for step 0), state."""
+
+    def test_step_zero_has_null_tactic(self):
+        (_, _, _, _, _, _, ProofState, _, _, _, TraceStep) = _import_proof_types()
+        state = ProofState(
+            schema_version=1, session_id="s", step_index=0,
+            is_complete=False, focused_goal_index=0,
+        )
+        ts = TraceStep(step_index=0, tactic=None, state=state)
+        assert ts.tactic is None
+        assert ts.step_index == 0
+
+    def test_step_nonzero_has_tactic(self):
+        (_, _, _, _, _, _, ProofState, _, _, _, TraceStep) = _import_proof_types()
+        state = ProofState(
+            schema_version=1, session_id="s", step_index=1,
+            is_complete=False, focused_goal_index=0,
+        )
+        ts = TraceStep(step_index=1, tactic="intro n.", state=state)
+        assert ts.tactic == "intro n."
+
+
+class TestProofTraceType:
+    """ProofTrace: schema_version, session_id, proof_name, file_path, total_steps, steps."""
+
+    def test_construction(self):
+        (_, _, _, _, _, _, ProofState, _, ProofTrace, _, TraceStep) = _import_proof_types()
+        state0 = ProofState(
+            schema_version=1, session_id="s", step_index=0,
+            is_complete=False, focused_goal_index=0,
+        )
+        trace = ProofTrace(
+            schema_version=1,
+            session_id="s",
+            proof_name="Nat.add_comm",
+            file_path="/path/to/Nat.v",
+            total_steps=0,
+            steps=[TraceStep(step_index=0, tactic=None, state=state0)],
+        )
+        assert trace.proof_name == "Nat.add_comm"
+        assert trace.total_steps == 0
+        assert len(trace.steps) == 1
+
+
+class TestPremiseType:
+    """Premise: name, kind."""
+
+    def test_construction_valid_kind(self):
+        Premise = _import_proof_types()[4]
+        p = Premise(name="Coq.Arith.PeanoNat.Nat.add_comm", kind="lemma")
+        assert p.name == "Coq.Arith.PeanoNat.Nat.add_comm"
+        assert p.kind == "lemma"
+
+    @pytest.mark.parametrize("kind", ["lemma", "hypothesis", "constructor", "definition"])
+    def test_all_valid_kinds_accepted(self, kind):
+        Premise = _import_proof_types()[4]
+        p = Premise(name="test", kind=kind)
+        assert p.kind == kind
+
+
+class TestPremiseAnnotationType:
+    """PremiseAnnotation: step_index, tactic, premises list."""
+
+    def test_construction_with_premises(self):
+        Premise = _import_proof_types()[4]
+        PremiseAnnotation = _import_proof_types()[5]
+        pa = PremiseAnnotation(
+            step_index=1,
+            tactic="rewrite Nat.add_comm.",
+            premises=[Premise(name="Nat.add_comm", kind="lemma")],
+        )
+        assert pa.step_index == 1
+        assert pa.tactic == "rewrite Nat.add_comm."
+        assert len(pa.premises) == 1
+
+    def test_empty_premises_by_default(self):
+        PremiseAnnotation = _import_proof_types()[5]
+        pa = PremiseAnnotation(step_index=1, tactic="reflexivity.")
+        assert pa.premises == []
+
+
+class TestSessionType:
+    """Session: metadata for an active proof session."""
+
+    def test_construction(self):
+        Session = _import_proof_types()[9]
+        s = Session(
+            session_id="abc-123",
+            file_path="/path/to/Nat.v",
+            proof_name="Nat.add_comm",
+            current_step=3,
+            total_steps=5,
+            created_at="2026-03-17T14:00:00Z",
+            last_active_at="2026-03-17T14:05:00Z",
+        )
+        assert s.session_id == "abc-123"
+        assert s.total_steps == 5
+
+    def test_total_steps_can_be_none(self):
+        Session = _import_proof_types()[9]
+        s = Session(
+            session_id="abc",
+            file_path="/f.v",
+            proof_name="P",
+            current_step=0,
+            total_steps=None,
+            created_at="2026-03-17T14:00:00Z",
+            last_active_at="2026-03-17T14:00:00Z",
+        )
+        assert s.total_steps is None
+
+
+class TestGoalChangeType:
+    """GoalChange: index, before, after."""
+
+    def test_construction(self):
+        GoalChange = _import_proof_types()[1]
+        gc = GoalChange(index=0, before="S n + m = m + S n", after="S (n + m) = m + S n")
+        assert gc.index == 0
+        assert gc.before == "S n + m = m + S n"
+        assert gc.after == "S (n + m) = m + S n"
+
+
+class TestHypothesisChangeType:
+    """HypothesisChange: name, type_before, type_after, body_before, body_after."""
+
+    def test_construction_type_change(self):
+        HypothesisChange = _import_proof_types()[3]
+        hc = HypothesisChange(
+            name="IHn",
+            type_before="n + m = m + n",
+            type_after="S n + m = m + S n",
+        )
+        assert hc.name == "IHn"
+        assert hc.body_before is None
+        assert hc.body_after is None
+
+    def test_construction_body_change(self):
+        HypothesisChange = _import_proof_types()[3]
+        hc = HypothesisChange(
+            name="x",
+            type_before="nat",
+            type_after="nat",
+            body_before="O",
+            body_after="S O",
+        )
+        assert hc.body_before == "O"
+        assert hc.body_after == "S O"
+
+
+class TestProofStateDiffType:
+    """ProofStateDiff: from_step, to_step, and 6 change lists."""
+
+    def test_construction_empty_diff(self):
+        ProofStateDiff = _import_proof_types()[7]
+        diff = ProofStateDiff(from_step=2, to_step=3)
+        assert diff.from_step == 2
+        assert diff.to_step == 3
+        assert diff.goals_added == []
+        assert diff.goals_removed == []
+        assert diff.goals_changed == []
+        assert diff.hypotheses_added == []
+        assert diff.hypotheses_removed == []
+        assert diff.hypotheses_changed == []
+
+    def test_construction_with_changes(self):
+        (Goal, GoalChange, Hypothesis, _, _, _, _, ProofStateDiff, *_) = _import_proof_types()
+        diff = ProofStateDiff(
+            from_step=2,
+            to_step=3,
+            goals_changed=[GoalChange(index=0, before="A", after="B")],
+            hypotheses_added=[Hypothesis(name="H", type="nat")],
+        )
+        assert len(diff.goals_changed) == 1
+        assert len(diff.hypotheses_added) == 1

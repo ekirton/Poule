@@ -1,10 +1,12 @@
 # Wily Rooster
 
-Semantic lemma search for Coq/Rocq libraries, exposed as an MCP server for Claude Code.
+Semantic lemma search and interactive proof exploration for Coq/Rocq libraries, exposed as an MCP server for Claude Code.
 
-Wily Rooster indexes compiled Coq `.vo` libraries into a SQLite database and provides structural, symbol-based, lexical, and type-based search through a multi-channel retrieval pipeline with reciprocal rank fusion.
+Wily Rooster indexes compiled Coq `.vo` libraries into a SQLite database and provides structural, symbol-based, lexical, and type-based search through a multi-channel retrieval pipeline with reciprocal rank fusion. It also provides an interactive proof session protocol for observing proof states, submitting tactics, and extracting premise annotations.
 
 ## Features
+
+### Search
 
 - **Structural search** — find declarations with similar expression tree structure using Weisfeiler-Lehman graph kernels, tree edit distance, and collapse matching
 - **Symbol search** — MePo-style iterative relevance filtering based on weighted symbol overlap
@@ -13,12 +15,23 @@ Wily Rooster indexes compiled Coq `.vo` libraries into a SQLite database and pro
 - **Dependency navigation** — explore `uses`, `used_by`, `same_module`, and `same_typeclass` relationships
 - **Module browsing** — list and filter indexed Coq modules
 
+### Proof Interaction
+
+- **Session management** — open, close, and list interactive proof sessions against `.v` files
+- **Proof state observation** — view goals, hypotheses, and focused goal at any step
+- **Tactic submission** — submit tactics and receive the resulting proof state or structured errors
+- **Step navigation** — step forward through existing proofs or backward to undo
+- **Proof trace extraction** — extract the full sequence of states and tactics for a completed proof
+- **Premise annotation** — identify which lemmas, hypotheses, constructors, and definitions each tactic used
+- **Batch tactics** — submit multiple tactics in a single request (P1)
+- **Concurrent sessions** — multiple independent proof sessions with isolated state
+
 ## Requirements
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (recommended package manager)
-- Coq/Rocq 8.19+ (for indexing)
-- coq-lsp or SerAPI (for `.vo` file extraction)
+- Coq/Rocq 8.19+ (for indexing and proof interaction)
+- coq-lsp or SerAPI (for `.vo` file extraction and proof backend)
 
 ## Installation
 
@@ -169,7 +182,9 @@ Replace `/path/to/wily-rooster` with the absolute path to your cloned repository
 
 ## MCP Tools
 
-Once configured, Claude Code has access to 7 search tools:
+Once configured, Claude Code has access to 7 search tools and 12 proof interaction tools:
+
+### Search Tools
 
 | Tool | Description | Example |
 |------|-------------|---------|
@@ -183,32 +198,62 @@ Once configured, Claude Code has access to 7 search tools:
 
 All search tools accept an optional `limit` parameter (default 50, max 200).
 
+### Proof Interaction Tools
+
+| Tool | Description |
+|------|-------------|
+| `open_proof_session` | Start an interactive session for a named proof in a `.v` file |
+| `close_proof_session` | Terminate a session and release its Coq backend process |
+| `list_proof_sessions` | List all active proof sessions with metadata |
+| `observe_proof_state` | Get the current proof state (goals, hypotheses, focused goal) |
+| `get_proof_state_at_step` | Get the proof state at a specific step index |
+| `extract_proof_trace` | Get the full proof trace (all states + tactics) |
+| `submit_tactic` | Submit a tactic and receive the resulting proof state |
+| `step_backward` | Undo the last tactic, returning to the previous state |
+| `step_forward` | Replay the next tactic from the original proof script |
+| `submit_tactic_batch` | Submit multiple tactics in sequence (P1) |
+| `get_proof_premises` | Get premise annotations for all tactic steps |
+| `get_step_premises` | Get premise annotations for a single step |
+
+Proof interaction tools work independently of the search index — no indexing is required.
+
 ## Architecture
 
 ```
-Claude Code / LLM
-  │ MCP tool calls (stdio)
-  ▼
-MCP Server (thin adapter)
-  │ Internal function calls
-  ▼
-Retrieval Pipeline
-  │ SQLite queries
-  ▼
-Storage (SQLite database)
-  ▲
-  │ Writes during indexing
+Claude Code / LLM          Terminal user
+  |                           |
+  | MCP tool calls (stdio)    | CLI subcommands
+  v                           v
+MCP Server                  CLI
+  |         |                 |
+  | search  | proof           | search
+  | queries | session ops     | queries
+  v         v                 v
+Retrieval   Proof Session   Retrieval
+Pipeline    Manager         Pipeline
+  |           |                |
+  | SQLite    | coq-lsp /      | SQLite
+  | queries   | SerAPI         | queries
+  v           v                v
+Storage     Coq Backend      Storage
+(SQLite)    Processes        (SQLite)
+  ^         (per-session)
+  |
+  | Writes during indexing
 Coq Library Extraction
-  │ coq-lsp / SerAPI
-  ▼
+  |
+  | coq-lsp / SerAPI
+  v
 Compiled .vo files
 ```
+
+The search subsystem (Retrieval Pipeline + Storage) and proof interaction subsystem (Proof Session Manager + Coq Backend Processes) are independent at runtime. Search does not require proof sessions, and proof interaction does not require a search index.
 
 ### Retrieval Channels
 
 | Channel | Method | Use Case |
 |---------|--------|----------|
-| WL Kernel | Weisfeiler-Lehman histogram cosine similarity | Fast structural screening (100K → 500 candidates) |
+| WL Kernel | Weisfeiler-Lehman histogram cosine similarity | Fast structural screening (100K -> 500 candidates) |
 | MePo | Iterative symbol-relevance with inverse-frequency weighting | Symbol-based discovery |
 | FTS5 | SQLite full-text search with BM25 | Name and text matching |
 | TED | Zhang-Shasha tree edit distance | Fine structural ranking (≤ 50 nodes) |
@@ -231,6 +276,9 @@ uv run pytest test/test_data_structures.py -v
 
 # Run with coverage
 uv run pytest --cov=wily_rooster
+
+# Skip tests requiring Coq installation
+uv run pytest -m "not requires_coq"
 ```
 
 ### Project Structure
@@ -244,7 +292,10 @@ src/wily_rooster/
 ├── fusion/          # Score fusion (weighted sum, RRF, collapse match)
 ├── pipeline/        # Query orchestration
 ├── extraction/      # Offline .vo file extraction
-└── server/          # MCP server (handlers, validation, errors)
+├── session/         # Proof session manager, types, errors
+├── serialization/   # Proof state JSON serialization + diff computation
+├── server/          # MCP server (handlers, validation, errors)
+└── cli/             # CLI commands and output formatting
 ```
 
 ### Documentation Layers

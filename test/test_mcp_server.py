@@ -1148,3 +1148,704 @@ class TestDataclassSerialization:
         assert result.get("isError") is not True
         parsed = json.loads(result["content"][0]["text"])
         assert parsed[0]["name"] == "A"
+
+
+# ===========================================================================
+# Proof Interaction Handlers (Spec §4.3)
+# ===========================================================================
+
+def _import_proof_handlers():
+    from wily_rooster.server.handlers import (
+        handle_open_proof_session,
+        handle_close_proof_session,
+        handle_list_proof_sessions,
+        handle_observe_proof_state,
+        handle_get_proof_state_at_step,
+        handle_extract_proof_trace,
+        handle_submit_tactic,
+        handle_step_backward,
+        handle_step_forward,
+        handle_submit_tactic_batch,
+        handle_get_proof_premises,
+        handle_get_step_premises,
+    )
+    return (
+        handle_open_proof_session,
+        handle_close_proof_session,
+        handle_list_proof_sessions,
+        handle_observe_proof_state,
+        handle_get_proof_state_at_step,
+        handle_extract_proof_trace,
+        handle_submit_tactic,
+        handle_step_backward,
+        handle_step_forward,
+        handle_submit_tactic_batch,
+        handle_get_proof_premises,
+        handle_get_step_premises,
+    )
+
+
+def _import_proof_errors():
+    from wily_rooster.server.errors import (
+        SESSION_NOT_FOUND,
+        SESSION_EXPIRED,
+        FILE_NOT_FOUND,
+        PROOF_NOT_FOUND,
+        TACTIC_ERROR,
+        STEP_OUT_OF_RANGE,
+        NO_PREVIOUS_STATE,
+        PROOF_COMPLETE,
+        BACKEND_CRASHED,
+    )
+    return (
+        SESSION_NOT_FOUND, SESSION_EXPIRED, FILE_NOT_FOUND, PROOF_NOT_FOUND,
+        TACTIC_ERROR, STEP_OUT_OF_RANGE, NO_PREVIOUS_STATE, PROOF_COMPLETE,
+        BACKEND_CRASHED,
+    )
+
+
+def _import_session_error():
+    from wily_rooster.session.errors import SessionError
+    return SessionError
+
+
+def _make_proof_state(
+    session_id: str = "abc123",
+    step_index: int = 0,
+    is_complete: bool = False,
+):
+    """Build a ProofState dict for mock returns."""
+    from wily_rooster.session.types import ProofState, Goal
+    return ProofState(
+        schema_version=1,
+        session_id=session_id,
+        step_index=step_index,
+        is_complete=is_complete,
+        focused_goal_index=0 if not is_complete else None,
+        goals=[Goal(index=0, type="n = n")] if not is_complete else [],
+    )
+
+
+def _make_mock_session_manager():
+    """Create a mock session manager for handler tests."""
+    mgr = AsyncMock()
+    return mgr
+
+
+def _make_proof_handler_ctx(*, index_ready: bool = True, session_manager=None):
+    """Create a mock context with both pipeline and session manager."""
+    ctx = _make_mock_pipeline_context(index_ready=index_ready)
+    ctx.session_manager = session_manager or _make_mock_session_manager()
+    return ctx
+
+
+# ===========================================================================
+# Proof error code constants
+# ===========================================================================
+
+class TestProofErrorCodeConstants:
+    """Proof interaction error code constants are strings."""
+
+    def test_all_proof_error_codes_are_strings(self):
+        codes = _import_proof_errors()
+        for code in codes:
+            assert isinstance(code, str)
+
+    def test_session_not_found_value(self):
+        (SESSION_NOT_FOUND, *_) = _import_proof_errors()
+        assert SESSION_NOT_FOUND == "SESSION_NOT_FOUND"
+
+    def test_session_expired_value(self):
+        (_, SESSION_EXPIRED, *_) = _import_proof_errors()
+        assert SESSION_EXPIRED == "SESSION_EXPIRED"
+
+    def test_file_not_found_value(self):
+        (_, _, FILE_NOT_FOUND, *_) = _import_proof_errors()
+        assert FILE_NOT_FOUND == "FILE_NOT_FOUND"
+
+    def test_proof_not_found_value(self):
+        (_, _, _, PROOF_NOT_FOUND, *_) = _import_proof_errors()
+        assert PROOF_NOT_FOUND == "PROOF_NOT_FOUND"
+
+    def test_tactic_error_value(self):
+        (_, _, _, _, TACTIC_ERROR, *_) = _import_proof_errors()
+        assert TACTIC_ERROR == "TACTIC_ERROR"
+
+    def test_step_out_of_range_value(self):
+        (_, _, _, _, _, STEP_OUT_OF_RANGE, *_) = _import_proof_errors()
+        assert STEP_OUT_OF_RANGE == "STEP_OUT_OF_RANGE"
+
+    def test_no_previous_state_value(self):
+        (_, _, _, _, _, _, NO_PREVIOUS_STATE, *_) = _import_proof_errors()
+        assert NO_PREVIOUS_STATE == "NO_PREVIOUS_STATE"
+
+    def test_proof_complete_value(self):
+        (_, _, _, _, _, _, _, PROOF_COMPLETE, _) = _import_proof_errors()
+        assert PROOF_COMPLETE == "PROOF_COMPLETE"
+
+    def test_backend_crashed_value(self):
+        (*_, BACKEND_CRASHED) = _import_proof_errors()
+        assert BACKEND_CRASHED == "BACKEND_CRASHED"
+
+
+# ===========================================================================
+# handle_open_proof_session
+# ===========================================================================
+
+class TestHandleOpenProofSession:
+    """handle_open_proof_session: delegates to session manager."""
+
+    @pytest.mark.asyncio
+    async def test_successful_open(self):
+        (handle_open, *_) = _import_proof_handlers()
+        state = _make_proof_state()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.create_session.return_value = ("abc123", state)
+
+        result = await handle_open(
+            ctx, file_path="/path/to/Nat.v", proof_name="Nat.add_comm",
+        )
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert "session_id" in parsed
+        assert "state" in parsed
+
+    @pytest.mark.asyncio
+    async def test_empty_file_path_returns_parse_error(self):
+        (handle_open, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+
+        result = await handle_open(ctx, file_path="", proof_name="Nat.add_comm")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "PARSE_ERROR"
+
+    @pytest.mark.asyncio
+    async def test_empty_proof_name_returns_parse_error(self):
+        (handle_open, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+
+        result = await handle_open(ctx, file_path="/path.v", proof_name="")
+
+        assert result["isError"] is True
+
+    @pytest.mark.asyncio
+    async def test_file_not_found_error(self):
+        (handle_open, *_) = _import_proof_handlers()
+        SessionError = _import_session_error()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.create_session.side_effect = SessionError(
+            "FILE_NOT_FOUND", "File not found: /bad/path.v"
+        )
+
+        result = await handle_open(ctx, file_path="/bad/path.v", proof_name="P")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "FILE_NOT_FOUND"
+
+    @pytest.mark.asyncio
+    async def test_proof_not_found_error(self):
+        (handle_open, *_) = _import_proof_handlers()
+        SessionError = _import_session_error()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.create_session.side_effect = SessionError(
+            "PROOF_NOT_FOUND", "Proof not found"
+        )
+
+        result = await handle_open(ctx, file_path="/path.v", proof_name="Bad")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "PROOF_NOT_FOUND"
+
+
+# ===========================================================================
+# handle_close_proof_session
+# ===========================================================================
+
+class TestHandleCloseProofSession:
+    """handle_close_proof_session: delegates to session manager."""
+
+    @pytest.mark.asyncio
+    async def test_successful_close(self):
+        (_, handle_close, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.close_session.return_value = None
+
+        result = await handle_close(ctx, session_id="abc123")
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed["closed"] is True
+
+    @pytest.mark.asyncio
+    async def test_unknown_session_returns_error(self):
+        (_, handle_close, *_) = _import_proof_handlers()
+        SessionError = _import_session_error()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.close_session.side_effect = SessionError(
+            "SESSION_NOT_FOUND", "nonexistent"
+        )
+
+        result = await handle_close(ctx, session_id="nonexistent")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "SESSION_NOT_FOUND"
+
+    @pytest.mark.asyncio
+    async def test_empty_session_id_returns_parse_error(self):
+        (_, handle_close, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+
+        result = await handle_close(ctx, session_id="")
+
+        assert result["isError"] is True
+
+
+# ===========================================================================
+# handle_list_proof_sessions
+# ===========================================================================
+
+class TestHandleListProofSessions:
+    """handle_list_proof_sessions: returns all active sessions."""
+
+    @pytest.mark.asyncio
+    async def test_returns_session_list(self):
+        (_, _, handle_list, *_) = _import_proof_handlers()
+        from wily_rooster.session.types import Session
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.list_sessions.return_value = [
+            Session(
+                session_id="abc",
+                file_path="/f.v",
+                proof_name="P",
+                current_step=0,
+                total_steps=5,
+                created_at="2026-03-17T14:00:00Z",
+                last_active_at="2026-03-17T14:00:00Z",
+            )
+        ]
+
+        result = await handle_list(ctx)
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert isinstance(parsed, list)
+        assert len(parsed) == 1
+        assert parsed[0]["session_id"] == "abc"
+
+    @pytest.mark.asyncio
+    async def test_empty_list_when_no_sessions(self):
+        (_, _, handle_list, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.list_sessions.return_value = []
+
+        result = await handle_list(ctx)
+
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed == []
+
+
+# ===========================================================================
+# handle_observe_proof_state
+# ===========================================================================
+
+class TestHandleObserveProofState:
+    """handle_observe_proof_state: returns current proof state."""
+
+    @pytest.mark.asyncio
+    async def test_returns_proof_state(self):
+        (_, _, _, handle_observe, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.observe_state.return_value = _make_proof_state()
+
+        result = await handle_observe(ctx, session_id="abc123")
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert "step_index" in parsed
+        assert "goals" in parsed
+
+    @pytest.mark.asyncio
+    async def test_session_not_found_error(self):
+        (_, _, _, handle_observe, *_) = _import_proof_handlers()
+        SessionError = _import_session_error()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.observe_state.side_effect = SessionError(
+            "SESSION_NOT_FOUND", "nonexistent"
+        )
+
+        result = await handle_observe(ctx, session_id="nonexistent")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "SESSION_NOT_FOUND"
+
+    @pytest.mark.asyncio
+    async def test_empty_session_id_returns_parse_error(self):
+        (_, _, _, handle_observe, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+
+        result = await handle_observe(ctx, session_id="")
+
+        assert result["isError"] is True
+
+
+# ===========================================================================
+# handle_get_proof_state_at_step
+# ===========================================================================
+
+class TestHandleGetProofStateAtStep:
+    """handle_get_proof_state_at_step: returns proof state at step k."""
+
+    @pytest.mark.asyncio
+    async def test_returns_state_at_step(self):
+        (_, _, _, _, handle_get_at_step, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.get_state_at_step.return_value = _make_proof_state(step_index=3)
+
+        result = await handle_get_at_step(ctx, session_id="abc123", step=3)
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed["step_index"] == 3
+
+    @pytest.mark.asyncio
+    async def test_step_out_of_range(self):
+        (_, _, _, _, handle_get_at_step, *_) = _import_proof_handlers()
+        SessionError = _import_session_error()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.get_state_at_step.side_effect = SessionError(
+            "STEP_OUT_OF_RANGE", "Step 99 out of range"
+        )
+
+        result = await handle_get_at_step(ctx, session_id="abc123", step=99)
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "STEP_OUT_OF_RANGE"
+
+
+# ===========================================================================
+# handle_extract_proof_trace
+# ===========================================================================
+
+class TestHandleExtractProofTrace:
+    """handle_extract_proof_trace: returns full proof trace."""
+
+    @pytest.mark.asyncio
+    async def test_returns_trace(self):
+        (_, _, _, _, _, handle_extract, *_) = _import_proof_handlers()
+        from wily_rooster.session.types import ProofTrace, TraceStep
+        state0 = _make_proof_state(step_index=0)
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.extract_trace.return_value = ProofTrace(
+            schema_version=1,
+            session_id="abc123",
+            proof_name="P",
+            file_path="/f.v",
+            total_steps=0,
+            steps=[TraceStep(step_index=0, tactic=None, state=state0)],
+        )
+
+        result = await handle_extract(ctx, session_id="abc123")
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert "steps" in parsed
+        assert parsed["total_steps"] == 0
+
+
+# ===========================================================================
+# handle_submit_tactic
+# ===========================================================================
+
+class TestHandleSubmitTactic:
+    """handle_submit_tactic: submits tactic, returns resulting state."""
+
+    @pytest.mark.asyncio
+    async def test_successful_tactic(self):
+        (_, _, _, _, _, _, handle_submit, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.submit_tactic.return_value = _make_proof_state(step_index=1)
+
+        result = await handle_submit(ctx, session_id="abc123", tactic="intro n.")
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed["step_index"] == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_tactic_returns_parse_error(self):
+        (_, _, _, _, _, _, handle_submit, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+
+        result = await handle_submit(ctx, session_id="abc123", tactic="")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "PARSE_ERROR"
+
+    @pytest.mark.asyncio
+    async def test_tactic_error_returns_error_response(self):
+        (_, _, _, _, _, _, handle_submit, *_) = _import_proof_handlers()
+        SessionError = _import_session_error()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.submit_tactic.side_effect = SessionError(
+            "TACTIC_ERROR", "No such tactic."
+        )
+
+        result = await handle_submit(ctx, session_id="abc123", tactic="bad_tactic.")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "TACTIC_ERROR"
+
+
+# ===========================================================================
+# handle_step_backward
+# ===========================================================================
+
+class TestHandleStepBackward:
+    """handle_step_backward: returns previous state."""
+
+    @pytest.mark.asyncio
+    async def test_successful_step_backward(self):
+        (_, _, _, _, _, _, _, handle_back, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.step_backward.return_value = _make_proof_state(step_index=0)
+
+        result = await handle_back(ctx, session_id="abc123")
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed["step_index"] == 0
+
+    @pytest.mark.asyncio
+    async def test_at_initial_state_returns_error(self):
+        (_, _, _, _, _, _, _, handle_back, *_) = _import_proof_handlers()
+        SessionError = _import_session_error()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.step_backward.side_effect = SessionError(
+            "NO_PREVIOUS_STATE", "Already at initial state"
+        )
+
+        result = await handle_back(ctx, session_id="abc123")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "NO_PREVIOUS_STATE"
+
+
+# ===========================================================================
+# handle_step_forward
+# ===========================================================================
+
+class TestHandleStepForward:
+    """handle_step_forward: returns tactic and resulting state."""
+
+    @pytest.mark.asyncio
+    async def test_successful_step_forward(self):
+        (_, _, _, _, _, _, _, _, handle_fwd, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.step_forward.return_value = (
+            "intro n.",
+            _make_proof_state(step_index=1),
+        )
+
+        result = await handle_fwd(ctx, session_id="abc123")
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed["tactic"] == "intro n."
+        assert "state" in parsed
+
+    @pytest.mark.asyncio
+    async def test_proof_complete_returns_error(self):
+        (_, _, _, _, _, _, _, _, handle_fwd, *_) = _import_proof_handlers()
+        SessionError = _import_session_error()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.step_forward.side_effect = SessionError(
+            "PROOF_COMPLETE", "No more steps"
+        )
+
+        result = await handle_fwd(ctx, session_id="abc123")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "PROOF_COMPLETE"
+
+
+# ===========================================================================
+# handle_submit_tactic_batch (P1)
+# ===========================================================================
+
+class TestHandleSubmitTacticBatch:
+    """handle_submit_tactic_batch: batch tactic submission."""
+
+    @pytest.mark.asyncio
+    async def test_successful_batch(self):
+        (_, _, _, _, _, _, _, _, _, handle_batch, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.submit_tactic_batch.return_value = [
+            {"tactic": "intro n.", "state": _make_proof_state(step_index=1), "error": None},
+            {"tactic": "reflexivity.", "state": _make_proof_state(step_index=2, is_complete=True), "error": None},
+        ]
+
+        result = await handle_batch(
+            ctx, session_id="abc123", tactics=["intro n.", "reflexivity."],
+        )
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert isinstance(parsed, list)
+        assert len(parsed) == 2
+
+    @pytest.mark.asyncio
+    async def test_empty_tactics_returns_parse_error(self):
+        (_, _, _, _, _, _, _, _, _, handle_batch, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+
+        result = await handle_batch(ctx, session_id="abc123", tactics=[])
+
+        assert result["isError"] is True
+
+
+# ===========================================================================
+# handle_get_proof_premises
+# ===========================================================================
+
+class TestHandleGetProofPremises:
+    """handle_get_proof_premises: returns premise annotations for all steps."""
+
+    @pytest.mark.asyncio
+    async def test_returns_annotations(self):
+        (_, _, _, _, _, _, _, _, _, _, handle_premises, _) = _import_proof_handlers()
+        from wily_rooster.session.types import PremiseAnnotation, Premise
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.get_premises.return_value = [
+            PremiseAnnotation(
+                step_index=1,
+                tactic="rewrite Nat.add_comm.",
+                premises=[Premise(name="Nat.add_comm", kind="lemma")],
+            )
+        ]
+
+        result = await handle_premises(ctx, session_id="abc123")
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert isinstance(parsed, list)
+        assert len(parsed) == 1
+
+
+# ===========================================================================
+# handle_get_step_premises
+# ===========================================================================
+
+class TestHandleGetStepPremises:
+    """handle_get_step_premises: returns premise annotation for a single step."""
+
+    @pytest.mark.asyncio
+    async def test_returns_single_annotation(self):
+        (*_, handle_step_premises) = _import_proof_handlers()
+        from wily_rooster.session.types import PremiseAnnotation
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.get_step_premises.return_value = PremiseAnnotation(
+            step_index=1,
+            tactic="reflexivity.",
+        )
+
+        result = await handle_step_premises(ctx, session_id="abc123", step=1)
+
+        assert result.get("isError") is not True
+        parsed = json.loads(result["content"][0]["text"])
+        assert parsed["step_index"] == 1
+
+    @pytest.mark.asyncio
+    async def test_step_out_of_range(self):
+        (*_, handle_step_premises) = _import_proof_handlers()
+        SessionError = _import_session_error()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.get_step_premises.side_effect = SessionError(
+            "STEP_OUT_OF_RANGE", "Step 99 out of range"
+        )
+
+        result = await handle_step_premises(ctx, session_id="abc123", step=99)
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "STEP_OUT_OF_RANGE"
+
+
+# ===========================================================================
+# Proof tools work without search index (Spec §4.5)
+# ===========================================================================
+
+class TestProofToolsIndexIndependent:
+    """Proof interaction tools shall function even when the index is missing."""
+
+    @pytest.mark.asyncio
+    async def test_observe_state_works_without_index(self):
+        (_, _, _, handle_observe, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx(index_ready=False)
+        ctx.session_manager.observe_state.return_value = _make_proof_state()
+
+        result = await handle_observe(ctx, session_id="abc123")
+
+        # Should NOT return INDEX_MISSING — proof tools are index-independent
+        assert result.get("isError") is not True
+
+    @pytest.mark.asyncio
+    async def test_open_session_works_without_index(self):
+        (handle_open, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx(index_ready=False)
+        ctx.session_manager.create_session.return_value = ("abc123", _make_proof_state())
+
+        result = await handle_open(
+            ctx, file_path="/path.v", proof_name="P",
+        )
+
+        assert result.get("isError") is not True
+
+
+# ===========================================================================
+# SessionError → MCP error translation
+# ===========================================================================
+
+class TestSessionErrorTranslation:
+    """The MCP server translates SessionError into MCP error responses."""
+
+    @pytest.mark.asyncio
+    async def test_session_expired_translated(self):
+        (_, _, _, handle_observe, *_) = _import_proof_handlers()
+        SessionError = _import_session_error()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.observe_state.side_effect = SessionError(
+            "SESSION_EXPIRED", "abc123"
+        )
+
+        result = await handle_observe(ctx, session_id="abc123")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "SESSION_EXPIRED"
+
+    @pytest.mark.asyncio
+    async def test_backend_crashed_translated(self):
+        (_, _, _, handle_observe, *_) = _import_proof_handlers()
+        SessionError = _import_session_error()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.observe_state.side_effect = SessionError(
+            "BACKEND_CRASHED", "abc123"
+        )
+
+        result = await handle_observe(ctx, session_id="abc123")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "BACKEND_CRASHED"
