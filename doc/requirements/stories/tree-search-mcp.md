@@ -1,6 +1,6 @@
 # User Stories: Semantic Lemma Search
 
-Derived from [doc/requirements/coq-ecosystem-gaps.md](../coq-ecosystem-gaps.md).
+Derived from [doc/requirements/semantic-lemma-search.md](../semantic-lemma-search.md).
 
 ---
 

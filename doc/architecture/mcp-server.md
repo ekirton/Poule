@@ -1,9 +1,9 @@
 # MCP Server
 
-The thin adapter layer between Claude Code and the search backend. The [CLI](cli.md) is a peer adapter that provides the same search capabilities for terminal users.
+The thin adapter layer between Claude Code, the search backend, and the proof session manager. The [CLI](cli.md) is a peer adapter that provides the same search capabilities for terminal users.
 
-**Feature**: [MCP Tool Surface](../features/mcp-tool-surface.md)
-**Stories**: [Epic 2: MCP Server and Tool Surface](../requirements/stories/tree-search-mcp.md#epic-2-mcp-server-and-tool-surface)
+**Feature**: [MCP Tool Surface](../features/mcp-tool-surface.md), [Proof Interaction MCP Tools](../features/proof-mcp-tools.md)
+**Stories**: [Epic 2: MCP Server and Tool Surface](../requirements/stories/tree-search-mcp.md#epic-2-mcp-server-and-tool-surface), [Epic 6: MCP Tool Surface](../requirements/stories/proof-interaction-protocol.md#epic-6-mcp-tool-surface)
 
 ---
 
@@ -77,16 +77,80 @@ LemmaDetail = SearchResult & {
 }
 ```
 
+## Proof Interaction Tool Signatures
+
+```typescript
+// Session management
+open_proof_session(
+  file_path: string,     // absolute path to .v file
+  proof_name: string     // fully qualified proof name
+) → { session_id: string, state: ProofState }
+
+close_proof_session(
+  session_id: string
+) → { closed: true }
+
+list_proof_sessions() → Session[]
+
+// State observation
+observe_proof_state(
+  session_id: string
+) → ProofState
+
+get_proof_state_at_step(
+  session_id: string,
+  step: number           // 0 ≤ step ≤ total_steps
+) → ProofState
+
+extract_proof_trace(
+  session_id: string
+) → ProofTrace
+
+// Tactic interaction
+submit_tactic(
+  session_id: string,
+  tactic: string         // Coq tactic string
+) → ProofState
+
+step_backward(
+  session_id: string
+) → ProofState
+
+step_forward(
+  session_id: string
+) → { tactic: string, state: ProofState }
+
+// Batch tactic submission (P1 — should-have)
+submit_tactic_batch(
+  session_id: string,
+  tactics: string[]      // Coq tactic strings, executed in order
+) → { tactic: string, state: ProofState }[]  // one entry per successful tactic; stops on first failure
+
+// Premise extraction
+get_proof_premises(
+  session_id: string
+) → PremiseAnnotation[]
+
+get_step_premises(
+  session_id: string,
+  step: number           // 1 ≤ step ≤ total_steps
+) → PremiseAnnotation
+```
+
+Proof interaction response types are defined in [data-models/proof-types.md](data-models/proof-types.md). Serialization format is defined in [proof-serialization.md](proof-serialization.md).
+
 ## Server Responsibilities
 
 The MCP server is a thin adapter. It:
 - Validates inputs (non-empty strings, limit range clamping to [1, 200])
 - Delegates Coq expression parsing to the retrieval pipeline — pipeline parse errors are translated to `PARSE_ERROR` responses
 - Translates MCP tool calls to search backend queries
-- Formats search backend results into MCP response objects
-- Handles errors (unknown declarations, parse failures) with structured error responses
+- Delegates proof interaction tool calls to the [Proof Session Manager](proof-session.md)
+- Formats search backend and session manager results into MCP response objects
+- Serializes proof interaction types using the [proof serialization](proof-serialization.md) conventions
+- Handles errors (unknown declarations, parse failures, session errors) with structured error responses
 
-It does **not** implement search logic, manage storage, parse Coq expressions, or interact with Coq directly.
+It does **not** implement search logic, manage storage, parse Coq expressions, or manage proof session state directly.
 
 ### `find_related` query strategies
 
@@ -115,8 +179,19 @@ All error responses use MCP's standard error format:
 | Library version changed (stale index detected) | `INDEX_VERSION_MISMATCH` | Installed library versions do not match the index. Re-index manually to update. |
 | `get_lemma` with unknown name | `NOT_FOUND` | Declaration `{name}` not found in the index. |
 | Malformed query expression | `PARSE_ERROR` | Failed to parse expression: `{details}` (both server-side validation and pipeline-side parse errors use `PARSE_ERROR`; the `message` field distinguishes the origin) |
+| Session ID not found or expired | `SESSION_NOT_FOUND` | Proof session `{session_id}` not found or has expired. |
+| Session timed out (auto-closed) | `SESSION_EXPIRED` | Proof session `{session_id}` was closed after 30 minutes of inactivity. |
+| File not found (open session) | `FILE_NOT_FOUND` | File not found: `{file_path}` |
+| Proof not found in file (open session) | `PROOF_NOT_FOUND` | Proof `{proof_name}` not found in `{file_path}`. |
+| Tactic failed in Coq | `TACTIC_ERROR` | Tactic failed: `{coq_error_message}` (proof state unchanged; the unchanged ProofState is included in the response alongside the error) |
+| Step index out of range | `STEP_OUT_OF_RANGE` | Step `{k}` is out of range [0, `{total_steps}`]. |
+| Already at initial state (step backward) | `NO_PREVIOUS_STATE` | Cannot step backward: already at the initial proof state. |
+| Already at final step (step forward) | `PROOF_COMPLETE` | Cannot step forward: proof is already complete at step `{total_steps}`. |
+| Backend process crashed | `BACKEND_CRASHED` | The Coq backend for session `{session_id}` has crashed. Close the session and open a new one. |
 
 On startup, the server checks the index in this order:
 1. Does the database file exist? If not → `INDEX_MISSING`.
 2. Does the `schema_version` in `index_meta` match the tool's expected version? If not → full re-index.
 3. Do the library versions in `index_meta` match the currently installed versions? If not → `INDEX_VERSION_MISMATCH`; the user must re-index manually. Phase 1 validates `schema_version` only. `coq_version` and `mathcomp_version` are stored for informational purposes; library version checks are deferred to Phase 2.
+
+Proof interaction errors include the unchanged ProofState in the response body (alongside the error object) when the session is still active. This allows the LLM to report both the error and the current state to the user without a separate `observe_proof_state` call.
