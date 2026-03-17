@@ -172,6 +172,8 @@ uv run python -m wily_rooster.cli replay-proof arith.v add_comm --json --premise
 
 No search index is needed — `replay-proof` works directly with `.v` files through the Coq backend.
 
+> **Note:** The Coq backend integration is not yet implemented. The `replay-proof` CLI command and its `SessionManager` interface are complete, but the backend module that communicates with the Coq process is still in development.
+
 ### 4. Start the MCP Server
 
 ```bash
