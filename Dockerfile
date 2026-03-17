@@ -6,9 +6,13 @@ FROM python:3.11-slim-bookworm AS coq-base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bubblewrap \
+        bzip2 \
         mercurial \
         darcs \
         gcc \
+        libc6-dev \
+        libgmp-dev \
+        pkg-config \
         make \
         m4 \
         unzip \
