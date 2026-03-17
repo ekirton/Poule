@@ -1,6 +1,6 @@
-# Poule (Hen)
+# Poule à Coq
 
-*Utilities for Coq (Rooster)*
+*Poule ("Hen") are utilities for Coq ("Rooster")*
 
 Semantic lemma search, interactive proof exploration, and proof visualization for Coq/Rocq libraries — delivered as an MCP server for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
