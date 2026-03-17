@@ -17,4 +17,4 @@ fi
 # restart it independently without exiting Claude.
 poule-mcp start
 
-exec claude --dangerously-skip-permissions --model claude-opus-4-6
+exec claude --dangerously-skip-permissions --model opus
