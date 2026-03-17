@@ -117,10 +117,26 @@ Replace `/path/to/poule` with the absolute path to your clone.
 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) is Anthropic's agentic coding tool — you interact with it in natural language from your terminal. Poule extends Claude's capabilities through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/): when you ask Claude a question about Coq, it automatically calls the right Poule tools behind the scenes and presents the results in plain language. You never need to invoke Poule tools directly.
 
 For example, you can ask Claude things like:
+
+**Search:**
 - *"Find lemmas about list reversal being involutive"*
-- *"Open a proof session on my_proof in Foo.v and show me the current goal"*
-- *"What lemmas does Nat.add_comm depend on?"*
-- *"Visualize the proof tree for this theorem"*
+- *"Search for lemmas with type `forall n : nat, n + 0 = n`"*
+- *"What's in the Coq.Arith module?"*
+
+**Proof interaction:**
+- *"Open a proof session on `rev_involutive` in `examples/lists.v` and show me the current goal"*
+- *"Step through the proof of `add_comm` in `examples/arith.v` and explain each tactic"*
+- *"Try applying `intros` then `induction n` in my current proof session"*
+
+**Dependencies:**
+- *"What lemmas does `Nat.add_comm` depend on?"*
+- *"Which lemmas use `Nat.add_0_r`?"*
+- *"Show me other lemmas in the same module as `List.rev_append`"*
+
+**Visualization:**
+- *"Visualize the proof tree for `app_nil_r` in `examples/lists.v`"*
+- *"Show me the dependency graph around `Nat.add_comm`"*
+- *"Render the step-by-step proof evolution of `modus_ponens` in `examples/logic.v`"*
 
 Claude will search the index, manage proof sessions, and generate diagrams on your behalf.
 
