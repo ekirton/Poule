@@ -498,7 +498,7 @@ class CoqLspBackend:
                 if "Closed under the global context" not in all_text:
                     for match in _ASSUMPTION_RE.finditer(all_text):
                         dep_name = match.group(1)
-                        deps.append((dep_name, "assumes"))
+                        deps.append((dep_name, "uses"))
 
                 result[name] = (statement, deps)
 
@@ -524,10 +524,10 @@ class CoqLspBackend:
             if part == "user-contrib":
                 relevant = parts[marker_idx + 1 :]
                 # Rocq 9.x stdlib lives at user-contrib/Stdlib/. The logical
-                # path for Search must omit the "Stdlib" prefix — e.g.
-                # user-contrib/Stdlib/Init/Nat.vo → Init.Nat, not Stdlib.Init.Nat.
+                # path uses the "Coq" prefix — e.g.
+                # user-contrib/Stdlib/Init/Nat.vo → Coq.Init.Nat.
                 if relevant and relevant[0] == "Stdlib":
-                    relevant = relevant[1:]
+                    relevant = ("Coq",) + relevant[1:]
                 break
         else:
             relevant = parts[-2:] if len(parts) >= 2 else parts
@@ -661,13 +661,14 @@ class CoqLspBackend:
         kinds = self._batch_get_kinds(names)
 
         declarations: list[tuple[str, str, Any]] = []
-        for (name, type_sig), kind in zip(search_results, kinds):
+        for (short_name, type_sig), kind in zip(search_results, kinds):
+            fqn = f"{logical_path}.{short_name}"
             constr_t: dict[str, Any] = {
-                "name": name,
+                "name": fqn,
                 "type_signature": type_sig,
                 "source": "coq-lsp",
             }
-            declarations.append((name, kind, constr_t))
+            declarations.append((fqn, kind, constr_t))
 
         return declarations
 
@@ -725,5 +726,5 @@ class CoqLspBackend:
         deps: list[tuple[str, str]] = []
         for match in _ASSUMPTION_RE.finditer(all_text):
             dep_name = match.group(1)
-            deps.append((dep_name, "assumes"))
+            deps.append((dep_name, "uses"))
         return deps

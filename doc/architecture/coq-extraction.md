@@ -41,9 +41,15 @@ SQLite database (see storage.md)
          declarations_fts, index_meta
 ```
 
+### Fully qualified name derivation
+
+Backends that return short names (e.g., coq-lsp `Search` returns `Nat.add_comm` rather than `Coq.Arith.PeanoNat.Nat.add_comm`) derive fully qualified names by prepending the `.vo` file's logical module path. The logical module path is derived from the filesystem path using heuristic prefix stripping (see below). The resulting name has the form `<logical_module_path>.<short_name>`.
+
 ### Module path derivation
 
 The `module` field on each declaration is the logical path of the `.vo` file from which the declaration was extracted — not derived from string manipulation of the fully qualified name. For nested modules, the `.vo` file is the source of truth.
+
+The logical path is derived from the `.vo` file's filesystem path by stripping known directory prefixes (`user-contrib/`, `theories/`), removing version-specific prefixes (e.g., `Stdlib/`), converting path separators to dots, and removing the `.vo` extension.
 
 ### Kind detection
 

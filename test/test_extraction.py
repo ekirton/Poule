@@ -1485,3 +1485,232 @@ class TestDeclarationDeduplication:
 
         # Both unique declarations should be processed
         assert mock_process.call_count == 2
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 14. FQN Derivation — §4.1.2
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestVoToLogicalPath:
+    """_vo_to_logical_path derives correct logical module paths from .vo paths.
+
+    Spec §4.1.2: The logical module path is derived from the .vo file path
+    using heuristic path parsing (stripping known prefixes such as
+    user-contrib/, theories/, and version-specific prefixes like Stdlib/).
+    """
+
+    def test_stdlib_rocq9_produces_coq_prefix(self):
+        """user-contrib/Stdlib/Arith/PeanoNat.vo → Coq.Arith.PeanoNat"""
+        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        path = Path("/opt/coq/user-contrib/Stdlib/Arith/PeanoNat.vo")
+        assert CoqLspBackend._vo_to_logical_path(path) == "Coq.Arith.PeanoNat"
+
+    def test_mathcomp_user_contrib(self):
+        """user-contrib/mathcomp/ssreflect/ssrbool.vo → mathcomp.ssreflect.ssrbool"""
+        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        path = Path("/opt/coq/user-contrib/mathcomp/ssreflect/ssrbool.vo")
+        assert CoqLspBackend._vo_to_logical_path(path) == "mathcomp.ssreflect.ssrbool"
+
+    def test_theories_directory(self):
+        """theories/Init/Nat.vo → Init.Nat"""
+        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        path = Path("/opt/coq/theories/Init/Nat.vo")
+        assert CoqLspBackend._vo_to_logical_path(path) == "Init.Nat"
+
+    def test_stdlib_nested_module(self):
+        """user-contrib/Stdlib/Init/Nat.vo → Coq.Init.Nat"""
+        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        path = Path("/opt/coq/user-contrib/Stdlib/Init/Nat.vo")
+        assert CoqLspBackend._vo_to_logical_path(path) == "Coq.Init.Nat"
+
+
+class TestFQNDerivationInListDeclarations:
+    """list_declarations returns fully qualified names by prepending the
+    logical module path to short names from Search output.
+
+    Spec §4.1.2: The fully qualified name is constructed by prepending the
+    .vo file's logical module path to the short name returned by Search.
+    """
+
+    def test_short_names_get_module_path_prepended(self):
+        """Given Search returns Nat.add_comm, the returned name should be
+        Coq.Arith.PeanoNat.Nat.add_comm."""
+        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend()
+        # Patch internal methods to avoid needing a real coq-lsp process
+        backend._ensure_alive = Mock()
+        backend._run_vernac_query = Mock(return_value=(
+            [],
+            [{"text": "Nat.add_comm : forall n m, n + m = m + n", "level": 3}],
+        ))
+        backend._batch_get_kinds = Mock(return_value=["lemma"])
+
+        vo_path = Path("/opt/coq/user-contrib/Stdlib/Arith/PeanoNat.vo")
+        decls = backend.list_declarations(vo_path)
+
+        assert len(decls) == 1
+        name, _kind, _constr_t = decls[0]
+        assert name == "Coq.Arith.PeanoNat.Nat.add_comm", (
+            f"Expected FQN, got short name: {name}"
+        )
+
+    def test_mathcomp_short_names_get_module_path_prepended(self):
+        """Given Search returns negb_involutive, the returned name should be
+        mathcomp.ssreflect.ssrbool.negb_involutive."""
+        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend()
+        backend._ensure_alive = Mock()
+        backend._run_vernac_query = Mock(return_value=(
+            [],
+            [{"text": "negb_involutive : forall b, negb (negb b) = b", "level": 3}],
+        ))
+        backend._batch_get_kinds = Mock(return_value=["lemma"])
+
+        vo_path = Path("/opt/coq/user-contrib/mathcomp/ssreflect/ssrbool.vo")
+        decls = backend.list_declarations(vo_path)
+
+        assert len(decls) == 1
+        name, _kind, _constr_t = decls[0]
+        assert name == "mathcomp.ssreflect.ssrbool.negb_involutive", (
+            f"Expected FQN, got short name: {name}"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 15. Module Path in Pipeline Output — §4.3
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestModulePathIsLogicalInPipeline:
+    """run_extraction passes logical module paths (not filesystem paths) to
+    process_declaration.
+
+    Spec §4.3: The pipeline shall NOT store raw filesystem paths (e.g.,
+    /Users/.../PeanoNat.vo) in the module field.
+    """
+
+    def test_module_path_is_logical_not_filesystem(self, tmp_path):
+        """The module_path arg to process_declaration must be a dot-separated
+        logical path, not a raw filesystem path."""
+        from wily_rooster.extraction.pipeline import run_extraction
+
+        backend = _make_mock_backend()
+        backend.list_declarations.return_value = [
+            ("Coq.Init.Nat.add", "Definition", {"type_signature": "nat -> nat -> nat", "source": "coq-lsp"}),
+        ]
+
+        result_mock = Mock()
+        result_mock.name = "Coq.Init.Nat.add"
+        result_mock.kind = "definition"
+        result_mock.symbol_set = []
+        result_mock.dependency_names = []
+
+        writer = _make_mock_writer()
+        writer.batch_insert.return_value = {"Coq.Init.Nat.add": 1}
+
+        db_path = tmp_path / "index.db"
+
+        with (
+            patch(
+                "wily_rooster.extraction.pipeline.discover_libraries",
+                return_value=[Path("/opt/coq/user-contrib/Stdlib/Init/Nat.vo")],
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.create_backend",
+                return_value=backend,
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.create_writer",
+                return_value=writer,
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.process_declaration",
+                return_value=result_mock,
+            ) as mock_process,
+        ):
+            run_extraction(targets=["stdlib"], db_path=db_path)
+
+        assert mock_process.call_count == 1
+        _args, kwargs = mock_process.call_args
+        # module_path is the 5th positional arg
+        module_path = _args[4] if len(_args) > 4 else kwargs.get("module_path", _args[4])
+        assert "/" not in module_path, (
+            f"module_path is a filesystem path: {module_path}"
+        )
+        assert not module_path.endswith(".vo"), (
+            f"module_path ends with .vo: {module_path}"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 16. Dependency Relation Values — §4.5
+# ═══════════════════════════════════════════════════════════════════════════
+
+_VALID_RELATIONS = {"uses", "instance_of"}
+
+
+class TestDependencyRelationValues:
+    """Dependency edges use only valid relation values from the data model.
+
+    Spec §4.5: All dependency edges shall use the relation values defined in
+    the dependencies entity (index-entities.md): "uses" or "instance_of".
+    No other relation values shall be stored.
+
+    Data model (index-entities.md): dependencies.relation is an enumeration:
+    "uses" or "instance_of".
+    """
+
+    def test_get_dependencies_returns_valid_relations(self):
+        """get_dependencies must return 'uses', not 'assumes'."""
+        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend()
+        backend._ensure_alive = Mock()
+        backend._run_vernac_query = Mock(return_value=(
+            [],
+            [{"text": "  Coq.Init.Nat.add : nat -> nat -> nat", "level": 3}],
+        ))
+
+        deps = backend.get_dependencies("Coq.Arith.PeanoNat.Nat.add_comm")
+        assert len(deps) > 0
+        for _target, relation in deps:
+            assert relation in _VALID_RELATIONS, (
+                f"Invalid relation value: {relation!r} (expected one of {_VALID_RELATIONS})"
+            )
+
+    def test_query_declaration_data_returns_valid_relations(self):
+        """query_declaration_data must return 'uses', not 'assumes'."""
+        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend()
+        backend._ensure_alive = Mock()
+
+        # Mock _run_vernac_batch to return Print + Print Assumptions output
+        def fake_batch(commands):
+            results = []
+            for cmd in commands:
+                if cmd.startswith("Print Assumptions"):
+                    results.append([
+                        {"text": "  Coq.Init.Nat.add : nat -> nat -> nat", "level": 3}
+                    ])
+                else:
+                    results.append([{"text": "some statement", "level": 3}])
+            return results
+
+        backend._run_vernac_batch = Mock(side_effect=fake_batch)
+
+        data = backend.query_declaration_data(["Coq.Arith.PeanoNat.Nat.add_comm"])
+        assert "Coq.Arith.PeanoNat.Nat.add_comm" in data
+        _statement, deps = data["Coq.Arith.PeanoNat.Nat.add_comm"]
+        assert len(deps) > 0
+        for _target, relation in deps:
+            assert relation in _VALID_RELATIONS, (
+                f"Invalid relation value: {relation!r} (expected one of {_VALID_RELATIONS})"
+            )
