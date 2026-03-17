@@ -618,7 +618,7 @@ class TestRenderDependencies:
         assert "flowchart TD" in result.mermaid
 
     def test_truncation_adds_summary_node(self):
-        """Spec §4.4: truncation adds summary node '… and {N} more dependencies'."""
+        """Spec §4.4: truncation adds summary node '… and {N} more'."""
         *_, render_dependencies, _ = _import_renderer()
         deps = [{"name": f"dep_{i}", "kind": "lemma"} for i in range(20)]
         adj = {"root": deps}

@@ -117,6 +117,7 @@ The renderer shall reconstruct the tree structure by comparing consecutive proof
 
 1. The root node is the theorem statement from `trace.steps[0].state.goals[0].type`.
 2. For each step k (1..N), compare `trace.steps[k-1].state.goals` with `trace.steps[k].state.goals`:
+   - Goal identity: two goals are identical if they have the same index AND the same type string. When comparing step k-1 with step k, a goal from k-1 is considered "present in k" if a goal at any index with the same type exists in k (allowing for reordering by Coq tactics like `Focus` and `swap`).
    - Goals present in step k-1 but absent in step k → discharged by tactic k
    - Goals present in step k but absent in step k-1 → introduced by tactic k
    - The parent of introduced goals is the focused goal of step k-1's state
@@ -148,6 +149,7 @@ BFS traversal:
 2. For each node at depth d < max_depth, expand its dependencies from `adjacency_list`.
 3. Stop expanding a node if total accumulated nodes exceed `max_nodes`.
 4. Set `truncated=true` if any nodes were suppressed due to `max_nodes`.
+5. When truncation occurs, N = the number of nodes remaining in the BFS frontier (discovered but not yet expanded) at the point truncation was triggered.
 
 Node shapes by kind:
 
@@ -162,7 +164,7 @@ The root node (`theorem_name`) shall use a distinct style (bold border or differ
 
 When `theorem_name` is not present in `adjacency_list`, the renderer shall return a single-node diagram with just the theorem name.
 
-When truncation occurs, the renderer shall add a summary node labeled `… and {N} more dependencies` connected to the node(s) whose children were suppressed.
+When truncation occurs, the renderer shall add a summary node labeled `… and {N} more` connected to the node(s) whose children were suppressed, where N is the number of unexpanded frontier nodes at truncation time.
 
 > **Given** a theorem `Nat.add_comm` with 3 direct dependencies (`Nat.add_0_r`, `Nat.add_succ_r`, `eq_ind`) at depth 1
 > **When** `render_dependencies` is called with max_depth=1, max_nodes=50
@@ -268,7 +270,7 @@ The renderer does not raise exceptions for valid input types. Instead, degenerat
 | Proof trace with 0 steps | Diagram of the initial state only |
 | Dependency graph with no edges for the named theorem | Single-node diagram with just the theorem name |
 | Sanitizer encounters unrepresentable Unicode | Replace character with `?` |
-| Generated diagram exceeds 200 nodes | Truncate with `… and N more nodes` summary node; set `truncated=true` |
+| Generated diagram exceeds 200 nodes | Truncate with `… and {N} more` summary node (N = unexpanded frontier size); set `truncated=true` |
 | `max_label_length` ≤ 0 | Treat as default (80) |
 | `max_depth` ≤ 0 | Treat as default (2) |
 | `max_nodes` ≤ 0 | Treat as default (50) |
@@ -360,7 +362,7 @@ Output (entry at index 1):
 
 Input: Dependency graph with 200 transitive dependencies, max_nodes=50
 
-Output: Diagram with 50 nodes + summary node `… and 150 more dependencies`, `truncated=true`
+Output: Diagram with 50 nodes + summary node `… and {N} more` (where N is the number of discovered-but-unexpanded frontier nodes at truncation), `truncated=true`
 
 ## 10. Language-Specific Notes (Python)
 

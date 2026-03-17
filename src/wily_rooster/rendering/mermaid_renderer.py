@@ -329,7 +329,7 @@ def render_dependencies(
     # Truncation summary node
     if truncated and suppressed_count > 0:
         summary_idx = len(visited)
-        lines.append(f'    n{summary_idx}[{_quote_label(f"… and {suppressed_count} more dependencies")}]')
+        lines.append(f'    n{summary_idx}[{_quote_label(f"… and {suppressed_count} more")}]')
 
     return RenderedDiagram(
         mermaid="\n".join(lines),

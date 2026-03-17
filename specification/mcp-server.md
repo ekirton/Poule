@@ -241,17 +241,18 @@ All visualization tools delegate diagram generation to the Mermaid renderer. The
 
 - REQUIRES: `session_id` is a non-empty string. `detail_level` is one of `"summary"`, `"standard"`, `"detailed"` (default: `"standard"`).
 - ENSURES: Returns `{ diagrams: SequenceEntry[] }` where each entry contains `step_index`, `tactic`, and `mermaid`.
-- Resolves proof trace: delegates to `session_manager.extract_trace(session_id)`.
+- Resolves proof trace: delegates to `session_manager.extract_trace(session_id)`. This requires the session to have an original script (completed proof). If the session has no original script (interactive session), `extract_trace` returns a `STEP_OUT_OF_RANGE` error, which the handler propagates as a `PROOF_INCOMPLETE` error.
 - Delegates rendering to: `renderer.render_proof_sequence(trace, detail_level)`
 - On unknown/expired session: returns the appropriate session error.
+- On session with no original script: returns `PROOF_INCOMPLETE` error.
 
 > **Given** a session with a completed proof of 3 steps
 > **When** `visualize_proof_sequence(session_id)` is called
 > **Then** the response contains 4 diagrams (initial state + 3 tactic steps), each with diff annotations
 
-> **Given** a session with an in-progress proof at step 2
+> **Given** an interactive session with no original script
 > **When** `visualize_proof_sequence(session_id)` is called
-> **Then** the response contains 3 diagrams (initial state + 2 steps observed so far)
+> **Then** the response is a `PROOF_INCOMPLETE` error
 
 ### 4.5 Input Validation
 
@@ -363,6 +364,7 @@ The MCP server translates `SessionError` exceptions from the session manager int
 | Condition | Error Code | Message Template |
 |-----------|-----------|-----------------|
 | Proof not complete (visualize_proof_tree) | `PROOF_INCOMPLETE` | `Cannot visualize proof tree: proof in session {session_id} is not yet complete.` |
+| No original script (visualize_proof_sequence) | `PROOF_INCOMPLETE` | `Cannot visualize proof sequence: session {session_id} has no original proof script.` |
 | Declaration not found (visualize_dependencies) | `NOT_FOUND` | `Declaration {name} not found in the index.` |
 | Diagram truncated (max_nodes exceeded) | `DIAGRAM_TRUNCATED` | `Diagram truncated at {max_nodes} nodes. Reduce max_depth or max_nodes for a smaller diagram.` |
 

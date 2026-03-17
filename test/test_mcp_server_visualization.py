@@ -541,6 +541,23 @@ class TestHandleVisualizeProofSequence:
         parsed = json.loads(result)
         assert parsed.get("error", {}).get("code") == "SESSION_NOT_FOUND"
 
+    async def test_no_original_script_returns_proof_incomplete(self):
+        """Spec §4.4: session with no original script returns PROOF_INCOMPLETE."""
+        *_, handle_vis_seq = _import_handlers()
+        from wily_rooster.session.errors import SessionError, STEP_OUT_OF_RANGE
+        mgr = AsyncMock()
+        mgr.extract_trace = AsyncMock(
+            side_effect=SessionError(STEP_OUT_OF_RANGE, "no complete proof to trace"),
+        )
+        renderer = _make_mock_renderer()
+        result = await handle_vis_seq(
+            session_id="interactive",
+            session_manager=mgr,
+            renderer=renderer,
+        )
+        parsed = json.loads(result)
+        assert parsed.get("error", {}).get("code") == "PROOF_INCOMPLETE"
+
     async def test_completed_proof_returns_total_steps_plus_1_entries(self):
         """Spec §4.4 example: completed proof of 3 steps → 4 diagrams."""
         *_, handle_vis_seq = _import_handlers()

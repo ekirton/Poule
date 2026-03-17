@@ -505,6 +505,11 @@ async def handle_visualize_proof_sequence(
     try:
         trace = await session_manager.extract_trace(session_id)
     except SessionError as exc:
+        if exc.code == "STEP_OUT_OF_RANGE":
+            return _format_json_error(
+                PROOF_INCOMPLETE,
+                f"Cannot visualize proof sequence: session {session_id} has no original proof script.",
+            )
         return _format_json_error(exc.code, exc.message)
 
     entries = renderer.render_proof_sequence(trace, dl)
