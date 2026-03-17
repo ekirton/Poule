@@ -39,6 +39,33 @@ from poule.server.handlers import (
     handle_visualize_dependencies,
     handle_visualize_proof_sequence,
 )
+from poule.server.handlers_wrappers import (
+    handle_coq_query,
+    handle_notation_query,
+    handle_audit_assumptions,
+    handle_audit_module,
+    handle_compare_assumptions,
+    handle_inspect_universes,
+    handle_inspect_definition_constraints,
+    handle_diagnose_universe_error,
+    handle_list_instances,
+    handle_list_typeclasses,
+    handle_trace_resolution,
+    handle_transitive_closure,
+    handle_impact_analysis,
+    handle_detect_cycles,
+    handle_module_summary,
+    handle_generate_documentation,
+    handle_extract_code,
+    handle_check_proof,
+    handle_build_project,
+    handle_query_packages,
+    handle_add_dependency,
+    handle_tactic_lookup,
+    handle_suggest_tactics,
+    handle_inspect_hint_db,
+    handle_compare_tactics,
+)
 from poule.storage.errors import IndexNotFoundError, IndexVersionError
 
 logger = logging.getLogger("poule.server")
@@ -430,6 +457,354 @@ TOOL_DEFINITIONS = [
             "required": ["session_id"],
         },
     ),
+    # --- Wrapper tools ---
+    Tool(
+        name="coq_query",
+        description="Execute a Coq vernacular introspection command (Print, Check, About, Locate, Search, Compute, Eval).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "enum": ["Print", "Check", "About", "Locate", "Search", "Compute", "Eval"],
+                },
+                "argument": {"type": "string"},
+                "session_id": {"type": "string"},
+            },
+            "required": ["command", "argument"],
+        },
+    ),
+    Tool(
+        name="notation_query",
+        description="Inspect Coq notations, scopes, and visibility.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "subcommand": {
+                    "type": "string",
+                    "enum": ["print_notation", "locate_notation", "print_scope", "print_visibility"],
+                },
+                "input": {
+                    "type": "string",
+                    "description": "Notation string or scope name (not used for print_visibility)",
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Active proof session ID",
+                },
+            },
+            "required": ["subcommand", "session_id"],
+        },
+    ),
+    Tool(
+        name="audit_assumptions",
+        description="Audit axiom dependencies for a Coq theorem using Print Assumptions.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "session_id": {"type": "string"},
+            },
+            "required": ["name", "session_id"],
+        },
+    ),
+    Tool(
+        name="audit_module",
+        description="Audit all theorems in a Coq module for axiom dependencies.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "module": {"type": "string"},
+                "session_id": {"type": "string"},
+                "flag_categories": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": ["module", "session_id"],
+        },
+    ),
+    Tool(
+        name="compare_assumptions",
+        description="Compare axiom dependency profiles across multiple Coq theorems.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "session_id": {"type": "string"},
+            },
+            "required": ["names", "session_id"],
+        },
+    ),
+    Tool(
+        name="inspect_universes",
+        description="Retrieve the full universe constraint graph from the current Coq environment.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="inspect_definition_constraints",
+        description="Retrieve universe constraints for a specific Coq definition.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "session_id": {"type": "string"},
+            },
+            "required": ["name", "session_id"],
+        },
+    ),
+    Tool(
+        name="diagnose_universe_error",
+        description="Diagnose a Coq universe inconsistency error.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "error_message": {"type": "string"},
+                "session_id": {"type": "string"},
+            },
+            "required": ["error_message", "session_id"],
+        },
+    ),
+    Tool(
+        name="list_instances",
+        description="List registered instances of a Coq typeclass.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "typeclass_name": {"type": "string"},
+                "session_id": {"type": "string"},
+            },
+            "required": ["typeclass_name", "session_id"],
+        },
+    ),
+    Tool(
+        name="list_typeclasses",
+        description="List all registered typeclasses in the current Coq session.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="trace_resolution",
+        description="Trace typeclass instance resolution in the current Coq session.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="transitive_closure",
+        description="Compute the transitive closure of dependencies from a declaration.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "max_depth": {"type": "integer"},
+                "scope_filter": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="impact_analysis",
+        description="Compute the impact set (reverse transitive closure) from a declaration.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "max_depth": {"type": "integer"},
+                "scope_filter": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="detect_cycles",
+        description="Detect dependency cycles in the indexed Coq project.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="module_summary",
+        description="Generate a dependency summary grouped by module.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="generate_documentation",
+        description="Generate literate documentation from a Coq source file using Alectryon.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string"},
+                "format": {
+                    "type": "string",
+                    "enum": ["html", "rst", "latex"],
+                    "description": "Output format (default: html)",
+                },
+                "output_path": {"type": "string"},
+            },
+            "required": ["file_path"],
+        },
+    ),
+    Tool(
+        name="extract_code",
+        description="Extract a Coq definition to OCaml, Haskell, or Scheme.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+                "definition_name": {"type": "string"},
+                "language": {
+                    "type": "string",
+                    "enum": ["ocaml", "haskell", "scheme"],
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "description": "Use Recursive Extraction (default: false)",
+                },
+                "output_path": {"type": "string"},
+            },
+            "required": ["session_id", "definition_name", "language"],
+        },
+    ),
+    Tool(
+        name="check_proof",
+        description="Run the independent Coq proof checker (coqchk) on a compiled file.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Absolute path to a .vo file",
+                },
+                "include_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "load_paths": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {"type": "string"}},
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds (default: 300)",
+                },
+            },
+            "required": ["file_path"],
+        },
+    ),
+    Tool(
+        name="build_project",
+        description="Execute a Coq project build using make or dune.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "project_dir": {"type": "string"},
+                "target": {"type": "string"},
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds (default: 300)",
+                },
+            },
+            "required": ["project_dir"],
+        },
+    ),
+    Tool(
+        name="query_packages",
+        description="List installed opam packages.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="add_dependency",
+        description="Add an opam dependency to the project's .opam file.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "project_dir": {"type": "string"},
+                "package_name": {"type": "string"},
+                "version": {
+                    "type": "string",
+                    "description": "Version constraint (optional)",
+                },
+            },
+            "required": ["project_dir", "package_name"],
+        },
+    ),
+    Tool(
+        name="tactic_lookup",
+        description="Look up a Coq tactic definition and metadata.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "session_id": {"type": "string"},
+            },
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="suggest_tactics",
+        description="Get contextual tactic suggestions for the current proof state.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+                "limit": {
+                    "type": "integer",
+                    "description": "Max suggestions to return (default: 10)",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="inspect_hint_db",
+        description="Inspect a Coq hint database.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "db_name": {"type": "string"},
+                "session_id": {"type": "string"},
+            },
+            "required": ["db_name"],
+        },
+    ),
+    Tool(
+        name="compare_tactics",
+        description="Compare two or more Coq tactics structurally.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "session_id": {"type": "string"},
+            },
+            "required": ["names"],
+        },
+    ),
 ]
 
 
@@ -528,6 +903,12 @@ class _PipelineFacade:
         reader = self._ctx.reader
         rows = reader.list_modules(prefix)
         return [{"name": r["module"], "decl_count": r["count"]} for r in rows]
+
+    def build_graph(self):
+        from poule.analysis.graph import build_graph
+        if not hasattr(self, "_graph_cache"):
+            self._graph_cache = build_graph(index_reader=self._ctx.reader)
+        return self._graph_cache
 
 
 class _MermaidFacade:
@@ -694,6 +1075,155 @@ def _dispatch_tool(ctx: _ServerContext, name: str, arguments: dict):
             session_manager=ctx.session_manager,
             renderer=ctx.renderer,
             detail_level=arguments.get("detail_level"),
+        )
+    # Wrapper tools (async — return coroutine, awaited by call_tool)
+    elif name == "coq_query":
+        return handle_coq_query(
+            ctx,
+            command=arguments.get("command", ""),
+            argument=arguments.get("argument", ""),
+            session_id=arguments.get("session_id", ""),
+        )
+    elif name == "notation_query":
+        return handle_notation_query(
+            ctx,
+            subcommand=arguments.get("subcommand", ""),
+            input=arguments.get("input", ""),
+            session_id=arguments.get("session_id", ""),
+        )
+    elif name == "audit_assumptions":
+        return handle_audit_assumptions(
+            ctx,
+            name=arguments.get("name", ""),
+            session_id=arguments.get("session_id", ""),
+        )
+    elif name == "audit_module":
+        return handle_audit_module(
+            ctx,
+            module=arguments.get("module", ""),
+            session_id=arguments.get("session_id", ""),
+            flag_categories=arguments.get("flag_categories", []),
+        )
+    elif name == "compare_assumptions":
+        return handle_compare_assumptions(
+            ctx,
+            names=arguments.get("names", []),
+            session_id=arguments.get("session_id", ""),
+        )
+    elif name == "inspect_universes":
+        return handle_inspect_universes(
+            ctx,
+            session_id=arguments.get("session_id", ""),
+        )
+    elif name == "inspect_definition_constraints":
+        return handle_inspect_definition_constraints(
+            ctx,
+            name=arguments.get("name", ""),
+            session_id=arguments.get("session_id", ""),
+        )
+    elif name == "diagnose_universe_error":
+        return handle_diagnose_universe_error(
+            ctx,
+            error_message=arguments.get("error_message", ""),
+            session_id=arguments.get("session_id", ""),
+        )
+    elif name == "list_instances":
+        return handle_list_instances(
+            ctx,
+            typeclass_name=arguments.get("typeclass_name", ""),
+            session_id=arguments.get("session_id", ""),
+        )
+    elif name == "list_typeclasses":
+        return handle_list_typeclasses(
+            ctx,
+            session_id=arguments.get("session_id", ""),
+        )
+    elif name == "trace_resolution":
+        return handle_trace_resolution(
+            ctx,
+            session_id=arguments.get("session_id", ""),
+        )
+    elif name == "transitive_closure":
+        return handle_transitive_closure(
+            ctx,
+            name=arguments.get("name", ""),
+            max_depth=arguments.get("max_depth"),
+            scope_filter=arguments.get("scope_filter"),
+        )
+    elif name == "impact_analysis":
+        return handle_impact_analysis(
+            ctx,
+            name=arguments.get("name", ""),
+            max_depth=arguments.get("max_depth"),
+            scope_filter=arguments.get("scope_filter"),
+        )
+    elif name == "detect_cycles":
+        return handle_detect_cycles(ctx)
+    elif name == "module_summary":
+        return handle_module_summary(ctx)
+    elif name == "generate_documentation":
+        return handle_generate_documentation(
+            ctx,
+            file_path=arguments.get("file_path", ""),
+            format=arguments.get("format"),
+            output_path=arguments.get("output_path"),
+        )
+    elif name == "extract_code":
+        return handle_extract_code(
+            ctx,
+            session_id=arguments.get("session_id", ""),
+            definition_name=arguments.get("definition_name", ""),
+            language=arguments.get("language", ""),
+            recursive=arguments.get("recursive"),
+            output_path=arguments.get("output_path"),
+        )
+    elif name == "check_proof":
+        return handle_check_proof(
+            ctx,
+            file_path=arguments.get("file_path", ""),
+            include_paths=arguments.get("include_paths"),
+            load_paths=arguments.get("load_paths"),
+            timeout=arguments.get("timeout"),
+        )
+    elif name == "build_project":
+        return handle_build_project(
+            ctx,
+            project_dir=arguments.get("project_dir", ""),
+            target=arguments.get("target"),
+            timeout=arguments.get("timeout"),
+        )
+    elif name == "query_packages":
+        return handle_query_packages(ctx)
+    elif name == "add_dependency":
+        return handle_add_dependency(
+            ctx,
+            project_dir=arguments.get("project_dir", ""),
+            package_name=arguments.get("package_name", ""),
+            version=arguments.get("version"),
+        )
+    elif name == "tactic_lookup":
+        return handle_tactic_lookup(
+            ctx,
+            name=arguments.get("name", ""),
+            session_id=arguments.get("session_id"),
+        )
+    elif name == "suggest_tactics":
+        return handle_suggest_tactics(
+            ctx,
+            session_id=arguments.get("session_id", ""),
+            limit=arguments.get("limit"),
+        )
+    elif name == "inspect_hint_db":
+        return handle_inspect_hint_db(
+            ctx,
+            db_name=arguments.get("db_name", ""),
+            session_id=arguments.get("session_id"),
+        )
+    elif name == "compare_tactics":
+        return handle_compare_tactics(
+            ctx,
+            names=arguments.get("names", []),
+            session_id=arguments.get("session_id"),
         )
     else:
         from poule.server.errors import format_error, PARSE_ERROR

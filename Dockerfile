@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         mercurial \
         darcs \
         gcc \
+        g++ \
         libc6-dev \
         libgmp-dev \
         pkg-config \
@@ -36,9 +37,14 @@ RUN opam switch create coq ocaml-base-compiler.4.14.2 && \
     opam install -y coq.8.19.2 coq-lsp coq-hammer coq-dpdgraph dune && \
     opam clean -a -c -s --logs
 
-# Move opam to /opt so it's accessible to any user
-RUN mv /root/.opam /opt/opam && chmod -R a+rX /opt/opam
+# Move opam to /opt so it's accessible to any user,
+# then rewrite hardcoded /root/.opam paths so ocamlfind and coq-lsp work
+# for non-root users.
+RUN mv /root/.opam /opt/opam && chmod -R a+rX /opt/opam && \
+    find /opt/opam -type f \( -name "*.conf" -o -name "*.config" -o -name "*.install" \) \
+         -exec sed -i 's|/root/\.opam|/opt/opam|g' {} +
 ENV OPAMROOT=/opt/opam
+ENV OCAMLFIND_CONF=/opt/opam/coq/lib/findlib.conf
 ENV PATH="/opt/opam/coq/bin:${PATH}"
 
 # ============================================================================
@@ -65,6 +71,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
         gh \
         jq \
         wget \
+        rsync \
+        vim \
+        emacs-nox \
         ripgrep \
         fd-find \
         bat \

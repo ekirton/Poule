@@ -2,12 +2,14 @@
 
 ## Setup
 
-### Requirements
+### Requirements (host)
 
 - [Docker](https://docs.docker.com/get-docker/)
 - [Git](https://git-scm.com/)
 - An [Anthropic API key](https://console.anthropic.com/) or Claude Code login
 - [`npm`](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) (for Claude Code version detection)
+
+No local Coq, Python, or opam installation is needed. All development happens inside the container, which provides the full Coq/Rocq toolchain, coq-lsp, MathComp, Python environment, and Claude Code.
 
 ### Clone and build
 
@@ -15,8 +17,6 @@
 git clone https://github.com/ekirton/poule.git
 cd poule
 ```
-
-The first time you run the launcher, it builds the Docker image and downloads the Coq search index automatically. No local Coq, Python, or opam installation is needed — everything runs inside the container.
 
 ### Using the launcher
 
@@ -27,13 +27,24 @@ Add the `bin/` directory to your PATH:
 export PATH="/path/to/poule/bin:$PATH"
 ```
 
-Then from any Coq project directory:
+The first time you run `poule`, it builds the Docker image automatically.
+
+### Developer workflow
+
+All development is done inside the container. From the project root:
 
 ```bash
-cd ~/Projects/my-coq-project
-poule                           # Start interactive shell
-poule claude                    # Run Claude Code directly
-poule coqc --version            # Run a command in the container
+poule                           # Start interactive shell (your primary dev environment)
+```
+
+Inside the container shell, the project source is mounted at its host path and a pre-built Python environment is available at `/app`. The full Coq toolchain, coq-lsp, and all Python dependencies are available without any local installation.
+
+```bash
+poule --dev uv run pytest                   # Run tests with live source (recommended)
+poule --dev uv run pytest -v                # Verbose test output
+poule uv run --project /app pytest          # Run tests (baked-in source)
+poule coqc --version                        # Run a Coq command in the container
+poule claude                                # Run Claude Code directly
 ```
 
 The launcher manages:
@@ -163,18 +174,29 @@ src/poule/
 
 ## Running Tests
 
+Tests run inside the container, which provides the full Coq toolchain — all tests can run without exclusions.
+
 ```bash
-# Run all tests
-uv run pytest
+# Dev mode: live source, no rebuild needed after editing
+poule --dev uv run pytest
+
+# Normal mode (source is baked in — rebuild to pick up changes)
+poule uv run --project /app pytest
 
 # Run tests for a specific module
-uv run pytest test/test_data_structures.py -v
+poule --dev uv run pytest test/test_data_structures.py -v
 
 # Run with coverage
-uv run pytest --cov=poule
+poule --dev uv run pytest --cov=poule
+```
 
-# Skip tests requiring Coq installation
-uv run pytest -m "not requires_coq"
+`--dev` mounts `src/` and `test/` directly into the container, so edits on the host are immediately visible without rebuilding. It must be run from the poule project root (the directory containing `src/` and `test/`).
+
+Or enter the container shell first and run directly:
+
+```bash
+poule --dev
+uv run pytest
 ```
 
 ## Publishing Releases

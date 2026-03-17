@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Poule Launcher
-# Usage: poule [--rebuild|--rebuild-all] [--no-auto-update] [command]
+# Usage: poule [--rebuild|--rebuild-all] [--no-auto-update] [--dev] [command]
 # Runs Claude Code in a Docker container with the Coq toolchain and Poule MCP server
 
 set -euo pipefail
@@ -13,6 +13,7 @@ PROJECT_DIR="$SCRIPT_DIR/.."
 REBUILD=false
 REBUILD_ALL=false
 NO_AUTO_UPDATE=false
+DEV=false
 ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -30,6 +31,10 @@ while [[ $# -gt 0 ]]; do
             NO_AUTO_UPDATE=true
             shift
             ;;
+        --dev)
+            DEV=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: poule [OPTIONS] [COMMAND]"
             echo ""
@@ -39,6 +44,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --rebuild          Update Claude CLI and rebuild (uses cache)"
             echo "  --rebuild-all      Full rebuild from scratch (no cache)"
             echo "  --no-auto-update   Skip automatic rebuild when new version is detected"
+            echo "  --dev              Live-mount src/ and test/ (run from poule project root)"
             echo "  --help, -h         Show this help message"
             echo ""
             echo "EXAMPLES:"
@@ -46,6 +52,7 @@ while [[ $# -gt 0 ]]; do
             echo "  poule claude                   Run Claude Code directly"
             echo "  poule --rebuild                Update Claude CLI"
             echo "  poule coqc --version           Run a command in the container"
+            echo "  poule --dev uv run pytest      Run tests with live-mounted source"
             exit 0
             ;;
         *)
@@ -63,6 +70,13 @@ if [ "$CURRENT_DIR" = "$HOME" ]; then
     echo "Error: Cannot mount home directory for security reasons."
     echo "Please run from within a specific project directory."
     echo "Example: cd ~/Projects/my-coq-project && poule"
+    exit 1
+fi
+
+# Dev mode guard: must be run from the poule project root
+if [ "$DEV" = true ] && [ ! -d "$CURRENT_DIR/src/poule" ]; then
+    echo "Error: --dev must be run from the poule project root."
+    echo "Expected to find src/poule/ in: $CURRENT_DIR"
     exit 1
 fi
 
@@ -88,22 +102,24 @@ if command -v npm >/dev/null 2>&1; then
     CLAUDE_LATEST=$(npm view @anthropic-ai/claude-code version 2>/dev/null || echo "")
 fi
 
-# Determine if a build is needed
+# Determine if a build is needed (skipped in --dev mode)
 IMAGE_EXISTS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -c "poule:latest" || echo "0")
 NEED_BUILD=false
 BUILD_REASON=""
 DEFERRED_UPDATE=false
 
-if [ "$IMAGE_EXISTS" -eq 0 ]; then
-    NEED_BUILD=true
-    BUILD_REASON="initial"
-elif [ "$REBUILD" = true ]; then
-    NEED_BUILD=true
-    BUILD_REASON="requested"
-elif [ -n "$CLAUDE_LATEST" ] && [ "$NO_AUTO_UPDATE" != true ]; then
-    INSTALLED=$(docker inspect --format '{{index .Config.Labels "claude.code.version"}}' poule:latest 2>/dev/null)
-    if [ -n "$INSTALLED" ] && [ "$INSTALLED" != "$CLAUDE_LATEST" ] && [ "$INSTALLED" != "latest" ]; then
-        DEFERRED_UPDATE=true
+if [ "$DEV" != true ]; then
+    if [ "$IMAGE_EXISTS" -eq 0 ]; then
+        NEED_BUILD=true
+        BUILD_REASON="initial"
+    elif [ "$REBUILD" = true ]; then
+        NEED_BUILD=true
+        BUILD_REASON="requested"
+    elif [ -n "$CLAUDE_LATEST" ] && [ "$NO_AUTO_UPDATE" != true ]; then
+        INSTALLED=$(docker inspect --format '{{index .Config.Labels "claude.code.version"}}' poule:latest 2>/dev/null)
+        if [ -n "$INSTALLED" ] && [ "$INSTALLED" != "$CLAUDE_LATEST" ] && [ "$INSTALLED" != "latest" ]; then
+            DEFERRED_UPDATE=true
+        fi
     fi
 fi
 
@@ -132,9 +148,40 @@ if [ "$NEED_BUILD" = true ]; then
     fi
 fi
 
-# Display Claude Code version info
-INSTALLED=$(docker inspect --format '{{index .Config.Labels "claude.code.version"}}' poule:latest 2>/dev/null)
-if [ -n "$CLAUDE_LATEST" ] && [ -n "$INSTALLED" ] && [ "$INSTALLED" != "latest" ]; then
+# Dev mode: build/use poule:dev image (app-deps stage, no source baked in)
+if [ "$DEV" = true ]; then
+    DEV_IMAGE_EXISTS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -c "poule:dev" || echo "0")
+    DEV_NEED_BUILD=false
+
+    if [ "$DEV_IMAGE_EXISTS" -eq 0 ]; then
+        DEV_NEED_BUILD=true
+    elif [ "$REBUILD" = true ]; then
+        DEV_NEED_BUILD=true
+    fi
+
+    if [ "$DEV_NEED_BUILD" = true ]; then
+        echo "Building Poule dev image (app-deps stage)..."
+        DEV_BUILD_ARGS=(
+            --target app-deps
+            --build-arg HOST_UID="$HOST_UID"
+            --build-arg HOST_GID="$HOST_GID"
+            --build-arg HOST_USER="$HOST_USER"
+            --build-arg HOST_GROUP="$HOST_GROUP"
+            --build-arg CLAUDE_CODE_VERSION="${CLAUDE_LATEST:-latest}"
+        )
+        if [ "$REBUILD_ALL" = true ]; then
+            DEV_BUILD_ARGS+=(--no-cache)
+        fi
+        if ! docker build -t poule:dev "${DEV_BUILD_ARGS[@]}" "$PROJECT_DIR"; then
+            echo "Error: Dev image build failed."
+            exit 1
+        fi
+    fi
+fi
+
+# Display Claude Code version info (normal mode only)
+INSTALLED=$(docker inspect --format '{{index .Config.Labels "claude.code.version"}}' poule:latest 2>/dev/null || echo "")
+if [ "$DEV" != true ] && [ -n "$CLAUDE_LATEST" ] && [ -n "$INSTALLED" ] && [ "$INSTALLED" != "latest" ]; then
     if [ "$INSTALLED" = "$CLAUDE_LATEST" ]; then
         echo "Claude Code v${INSTALLED} (latest)"
     elif [ "$DEFERRED_UPDATE" = true ]; then
@@ -142,7 +189,7 @@ if [ -n "$CLAUDE_LATEST" ] && [ -n "$INSTALLED" ] && [ "$INSTALLED" != "latest" 
     else
         echo "Claude Code v${INSTALLED} (v${CLAUDE_LATEST} available — run with --rebuild to update)"
     fi
-elif [ -n "$INSTALLED" ] && [ "$INSTALLED" != "latest" ]; then
+elif [ "$DEV" != true ] && [ -n "$INSTALLED" ] && [ "$INSTALLED" != "latest" ]; then
     echo "Claude Code v${INSTALLED}"
 fi
 
@@ -274,7 +321,33 @@ fi
 INIT_CMD='mkdir -p ~/.local/bin ~/.local/share && ln -sf "$(ls -d /opt/claude/versions/* | head -1)" ~/.local/bin/claude && ln -sf /opt/claude ~/.local/share/claude'
 
 # Run container
-if [ ${#ARGS[@]} -eq 0 ]; then
+if [ "$DEV" = true ]; then
+    # Dev mode: live-mount src/ and test/ from project root, working dir /app
+    if [ ${#ARGS[@]} -eq 0 ]; then
+        echo "Starting Poule dev environment (live source mount)"
+        docker run -it --rm \
+            -v "$CURRENT_DIR/src:/app/src" \
+            -v "$CURRENT_DIR/test:/app/test" \
+            -v "$CONTAINER_HOME:/home/$HOST_USER" \
+            -v "$DATA_DIR:/data" \
+            -w /app \
+            -e ANTHROPIC_API_KEY \
+            -e TZ="${TZ:-UTC}" \
+            poule:dev \
+            zsh -c "$INIT_CMD; exec zsh"
+    else
+        docker run --rm \
+            -v "$CURRENT_DIR/src:/app/src" \
+            -v "$CURRENT_DIR/test:/app/test" \
+            -v "$CONTAINER_HOME:/home/$HOST_USER" \
+            -v "$DATA_DIR:/data" \
+            -w /app \
+            -e ANTHROPIC_API_KEY \
+            -e TZ="${TZ:-UTC}" \
+            poule:dev \
+            zsh -c "$INIT_CMD; ${ARGS[*]}"
+    fi
+elif [ ${#ARGS[@]} -eq 0 ]; then
     echo "Starting Poule environment in: $CURRENT_DIR"
     docker run -it --rm \
         -v "$CURRENT_DIR:$CURRENT_DIR" \
