@@ -1,5 +1,68 @@
 # Development
 
+## Setup
+
+### Requirements
+
+- [Docker](https://docs.docker.com/get-docker/)
+- [Git](https://git-scm.com/)
+- An [Anthropic API key](https://console.anthropic.com/) or Claude Code login
+- [`npm`](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) (for Claude Code version detection)
+
+### Clone and build
+
+```bash
+git clone https://github.com/ekirton/poule.git
+cd poule
+```
+
+The first time you run the launcher, it builds the Docker image and downloads the Coq search index automatically. No local Coq, Python, or opam installation is needed — everything runs inside the container.
+
+### Using the launcher
+
+Add the `bin/` directory to your PATH:
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+export PATH="/path/to/poule/bin:$PATH"
+```
+
+Then from any Coq project directory:
+
+```bash
+cd ~/Projects/my-coq-project
+poule                           # Start interactive shell
+poule claude                    # Run Claude Code directly
+poule coqc --version            # Run a command in the container
+```
+
+The launcher manages:
+- Image builds with proper host user mapping
+- Persistent home directory at `~/poule-home/`
+- Claude Code MCP server auto-configuration
+- Search index download on first run
+- Automatic Claude Code updates (deferred to session exit)
+
+### Updating
+
+```bash
+poule --rebuild              # Update Claude CLI (uses cache)
+poule --rebuild-all          # Full rebuild from scratch
+```
+
+To download a newer search index:
+
+```bash
+rm ~/poule-home/data/index.db
+poule   # Triggers automatic re-download
+```
+
+To also download the neural premise selection model:
+
+```bash
+poule uv run --project /app python -m poule.cli download-index --output ~/data/index.db --include-model
+```
+
 ## Architecture
 
 ```mermaid

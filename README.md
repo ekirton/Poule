@@ -41,18 +41,69 @@ Poule indexes compiled Coq `.vo` libraries into a SQLite database and provides m
 
 ## Quick Start
 
-Requires [Docker](https://docs.docker.com/get-docker/). From any Coq project directory:
+Requires [Docker](https://docs.docker.com/get-docker/) and an [Anthropic API key](https://console.anthropic.com/).
 
 ```bash
-git clone https://github.com/ekirton/poule.git
-export PATH="/path/to/poule/bin:$PATH"
+docker pull ghcr.io/ekirton/poule
 
 cd ~/Projects/my-coq-project
-poule       # Builds image, downloads index, starts shell
+docker run -it --rm \
+  -v "$PWD:$PWD" -w "$PWD" \
+  -e ANTHROPIC_API_KEY \
+  ghcr.io/ekirton/poule
+
 claude      # Inside the container — start Claude Code
 ```
 
-On first run, `poule` builds the Docker image (Coq 8.19.2, coq-lsp, Claude Code) and downloads the search index. Everything runs inside the container — no local Coq or Python installation required. See [INSTALLATION.md](INSTALLATION.md) for details.
+Everything runs inside the container — no local Coq, Python, or opam installation required.
+
+### Persistent home directory
+
+Poule stores Claude Code settings, shell history, authentication tokens, and the search index in a persistent home directory. Mount a volume to preserve state across sessions:
+
+```bash
+docker run -it --rm \
+  -v "$PWD:$PWD" -w "$PWD" \
+  -v ~/poule-home:/home/poule \
+  -e ANTHROPIC_API_KEY \
+  ghcr.io/ekirton/poule
+```
+
+```
+~/poule-home/
+├── .claude/          # Claude Code settings, MCP config, auth
+├── .ssh/             # SSH keys (copy yours here if needed)
+├── .gitconfig        # Git configuration
+├── .zsh_history      # Shell history
+└── data/
+    └── index.db      # Coq search index
+```
+
+To set up git and SSH inside the container, copy your existing config:
+
+```bash
+cp ~/.gitconfig ~/poule-home/.gitconfig
+cp -r ~/.ssh ~/poule-home/.ssh
+```
+
+### Launcher script
+
+For a more ergonomic workflow, developers can use the `poule` launcher script, which handles image builds, persistent home setup, index downloads, and auto-updates. See [DEVELOPMENT.md](DEVELOPMENT.md) for details.
+
+### Updating
+
+To pull a newer container image:
+
+```bash
+docker pull ghcr.io/ekirton/poule
+```
+
+To download a newer search index:
+
+```bash
+rm ~/poule-home/data/index.db
+# Re-enter the container — triggers automatic re-download
+```
 
 ## Use with Claude Code
 
@@ -115,13 +166,8 @@ For the full list of MCP tools and their parameters, see [MCP Tools Reference](d
 All search and proof replay features are also available as standalone commands inside the container:
 
 ```bash
-poule uv run --project /app python -m poule.cli search-by-name --db /data/index.db "Nat.add_comm"
-poule uv run --project /app python -m poule.cli search-by-type --db /data/index.db "nat -> nat -> nat"
-```
-
-Or from the interactive shell:
-
-```bash
+uv run --project /app python -m poule.cli search-by-name --db /data/index.db "Nat.add_comm"
+uv run --project /app python -m poule.cli search-by-type --db /data/index.db "nat -> nat -> nat"
 uv run --project /app python -m poule.cli --help
 ```
 
