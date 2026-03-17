@@ -2,19 +2,19 @@
 
 Core data structures shared across the Coq/Rocq semantic lemma search and proof interaction system.
 
-**Architecture**: [expression-tree.md](../doc/architecture/data-models/expression-tree.md), [index-entities.md](../doc/architecture/data-models/index-entities.md), [response-types.md](../doc/architecture/data-models/response-types.md), [proof-types.md](../doc/architecture/data-models/proof-types.md)
+**Architecture**: [expression-tree.md](../doc/architecture/data-models/expression-tree.md), [index-entities.md](../doc/architecture/data-models/index-entities.md), [response-types.md](../doc/architecture/data-models/response-types.md), [proof-types.md](../doc/architecture/data-models/proof-types.md), [extraction-types.md](../doc/architecture/data-models/extraction-types.md)
 
 ---
 
 ## 1. Purpose
 
-Define the canonical Python types for expression trees, node labels, enumerations, response types, and proof interaction types used across all components — extraction, normalization, storage, retrieval, MCP server, and proof session management.
+Define the canonical Python types for expression trees, node labels, enumerations, response types, proof interaction types, and extraction types used across all components — extraction, normalization, storage, retrieval, MCP server, proof session management, and batch extraction pipeline.
 
 ## 2. Scope
 
-**In scope**: Enumerations (`SortKind`, `DeclKind`, `PremiseKind`), node label hierarchy (abstract base + 15 concrete subtypes), `TreeNode`, `ExprTree`, response types (`SearchResult`, `LemmaDetail`, `Module`), proof interaction types (`Session`, `ProofState`, `Goal`, `Hypothesis`, `ProofTrace`, `TraceStep`, `PremiseAnnotation`, `Premise`, `ProofStateDiff`, `GoalChange`, `HypothesisChange`), and tree utility functions (`recompute_depths`, `assign_node_ids`, `node_count`).
+**In scope**: Enumerations (`SortKind`, `DeclKind`, `PremiseKind`, `ErrorKind`), node label hierarchy (abstract base + 15 concrete subtypes), `TreeNode`, `ExprTree`, response types (`SearchResult`, `LemmaDetail`, `Module`), proof interaction types (`Session`, `ProofState`, `Goal`, `Hypothesis`, `ProofTrace`, `TraceStep`, `PremiseAnnotation`, `Premise`, `ProofStateDiff`, `GoalChange`, `HypothesisChange`), extraction types (`ExtractionRecord`, `ExtractionStep`, `ExtractionDiff`, `ExtractionError`, `CampaignMetadata`, `ProjectMetadata`, `ExtractionSummary`, `ProjectSummary`, `FileSummary`, `DependencyEntry`, `DependencyRef`, `QualityReport`, `DistributionStats`, `TacticFrequency`, `ProjectQualityReport`, `ScopeFilter`), and tree utility functions (`recompute_depths`, `assign_node_ids`, `node_count`).
 
-**Out of scope**: Serialization format (owned by storage and proof-serialization), normalization logic (owned by coq-normalization and cse-normalization), retrieval algorithms, session management logic (owned by proof-session).
+**Out of scope**: Serialization format (owned by storage, proof-serialization, and extraction-output), normalization logic (owned by coq-normalization and cse-normalization), retrieval algorithms, session management logic (owned by proof-session), campaign orchestration (owned by extraction-campaign).
 
 ## 3. Definitions
 
@@ -251,9 +251,187 @@ The system shall define a `PremiseKind` enumeration with exactly four members: `
 | `hypotheses_removed` | `list[Hypothesis]` | Required; may be empty |
 | `hypotheses_changed` | `list[HypothesisChange]` | Required; may be empty |
 
+### 4.8 Extraction Types
+
+Canonical definitions from [extraction-types.md](../doc/architecture/data-models/extraction-types.md). These types are produced by the Extraction Campaign Orchestrator, serialized by the Extraction Output layer, and consumed by downstream reporting and ML pipelines.
+
+#### ErrorKind Enumeration
+
+The system shall define an `ErrorKind` enumeration with exactly five members: `TIMEOUT`, `BACKEND_CRASH`, `TACTIC_FAILURE`, `LOAD_FAILURE`, `UNKNOWN`. Each member's string value shall be the lowercase form with underscores (e.g., `ErrorKind.BACKEND_CRASH` → `"backend_crash"`).
+
+#### ExtractionRecord
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `schema_version` | `int` | Required; positive integer |
+| `record_type` | `str` | Required; literal `"proof_trace"` |
+| `theorem_name` | `str` | Required; fully qualified name |
+| `source_file` | `str` | Required; path relative to project root |
+| `project_id` | `str` | Required |
+| `total_steps` | `int` | Required; non-negative |
+| `steps` | `list[ExtractionStep]` | Required; length must equal `total_steps + 1` |
+
+- MAINTAINS: `len(steps) == total_steps + 1`. `steps[0].tactic` is `None`. `steps[k].tactic` for k >= 1 is non-null.
+
+#### ExtractionStep
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `step_index` | `int` | Required; non-negative; 0 = initial state |
+| `tactic` | `str` or `None` | Required; `None` for step 0 |
+| `goals` | `list[Goal]` | Required; reuses Goal from §4.7 |
+| `focused_goal_index` | `int` or `None` | Required; `None` when proof is complete |
+| `premises` | `list[Premise]` | Required; empty for step 0 |
+| `diff` | `ExtractionDiff` or `None` | Required; `None` for step 0 or when diffs disabled (P1) |
+
+#### ExtractionDiff (P1)
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `goals_added` | `list[Goal]` | Required; may be empty |
+| `goals_removed` | `list[Goal]` | Required; may be empty |
+| `goals_changed` | `list[GoalChange]` | Required; may be empty |
+| `hypotheses_added` | `list[Hypothesis]` | Required; may be empty |
+| `hypotheses_removed` | `list[Hypothesis]` | Required; may be empty |
+| `hypotheses_changed` | `list[HypothesisChange]` | Required; may be empty |
+
+Structurally identical to ProofStateDiff (§4.7) but omits `from_step` and `to_step` (implicit from the containing ExtractionStep's `step_index`).
+
+#### ExtractionError
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `schema_version` | `int` | Required; positive integer |
+| `record_type` | `str` | Required; literal `"extraction_error"` |
+| `theorem_name` | `str` | Required; fully qualified name |
+| `source_file` | `str` | Required; path relative to project root |
+| `project_id` | `str` | Required |
+| `error_kind` | `str` | Required; one of: `"timeout"`, `"backend_crash"`, `"tactic_failure"`, `"load_failure"`, `"unknown"` |
+| `error_message` | `str` | Required; human-readable description |
+
+#### CampaignMetadata
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `schema_version` | `int` | Required; positive integer |
+| `record_type` | `str` | Required; literal `"campaign_metadata"` |
+| `extraction_tool_version` | `str` | Required; semantic version string |
+| `extraction_timestamp` | `str` | Required; ISO 8601 with seconds precision and `Z` suffix |
+| `projects` | `list[ProjectMetadata]` | Required; non-empty |
+
+#### ProjectMetadata
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `project_id` | `str` | Required; unique within a campaign |
+| `project_path` | `str` | Required; absolute path |
+| `coq_version` | `str` | Required |
+| `commit_hash` | `str` or `None` | Required; `None` if not a git repository |
+
+#### ExtractionSummary
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `schema_version` | `int` | Required; positive integer |
+| `record_type` | `str` | Required; literal `"extraction_summary"` |
+| `total_theorems_found` | `int` | Required; non-negative |
+| `total_extracted` | `int` | Required; non-negative |
+| `total_failed` | `int` | Required; non-negative |
+| `total_skipped` | `int` | Required; non-negative |
+| `per_project` | `list[ProjectSummary]` | Required |
+
+- MAINTAINS: `total_extracted + total_failed + total_skipped == total_theorems_found`.
+
+#### ProjectSummary
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `project_id` | `str` | Required |
+| `theorems_found` | `int` | Required; non-negative |
+| `extracted` | `int` | Required; non-negative |
+| `failed` | `int` | Required; non-negative |
+| `skipped` | `int` | Required; non-negative |
+| `per_file` | `list[FileSummary]` | Required |
+
+- MAINTAINS: `extracted + failed + skipped == theorems_found`.
+
+#### FileSummary
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `source_file` | `str` | Required; path relative to project root |
+| `theorems_found` | `int` | Required; non-negative |
+| `extracted` | `int` | Required; non-negative |
+| `failed` | `int` | Required; non-negative |
+| `skipped` | `int` | Required; non-negative |
+
+- MAINTAINS: `extracted + failed + skipped == theorems_found`.
+
+#### DependencyEntry (P1)
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `theorem_name` | `str` | Required; fully qualified name |
+| `source_file` | `str` | Required; path relative to project root |
+| `project_id` | `str` | Required |
+| `depends_on` | `list[DependencyRef]` | Required; deduplicated by name, ordered by first appearance |
+
+#### DependencyRef (P1)
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `name` | `str` | Required; fully qualified name |
+| `kind` | `str` | Required; one of: `"theorem"`, `"lemma"`, `"definition"`, `"axiom"`, `"constructor"`, `"inductive"` |
+
+#### QualityReport (P1)
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `premise_coverage` | `float` | Required; range [0.0, 1.0] |
+| `proof_length_distribution` | `DistributionStats` | Required |
+| `tactic_vocabulary` | `list[TacticFrequency]` | Required; sorted by `count` descending |
+| `per_project` | `list[ProjectQualityReport]` | Required |
+
+#### DistributionStats (P1)
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `min` | `int` | Required; non-negative |
+| `max` | `int` | Required; non-negative |
+| `mean` | `float` | Required |
+| `median` | `float` | Required |
+| `p25` | `float` | Required; 25th percentile |
+| `p75` | `float` | Required; 75th percentile |
+| `p95` | `float` | Required; 95th percentile |
+
+#### TacticFrequency (P1)
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `tactic` | `str` | Required; lowercased keyword |
+| `count` | `int` | Required; positive |
+
+#### ProjectQualityReport (P1)
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `project_id` | `str` | Required |
+| `premise_coverage` | `float` | Required; range [0.0, 1.0] |
+| `proof_length_distribution` | `DistributionStats` | Required |
+| `theorem_count` | `int` | Required; non-negative |
+
+#### ScopeFilter (P1)
+
+| Field | Type | Constraint |
+|-------|------|-----------|
+| `name_pattern` | `str` or `None` | Optional; glob or regex pattern for theorem name matching |
+| `module_prefixes` | `list[str]` or `None` | Optional; list of module prefixes to include |
+
+- MAINTAINS: When both fields are set, both must match (conjunction). When neither is set, all theorems are included.
+
 ## 5. Data Model
 
-All entities defined in this specification are value types with no persistence logic. Expression tree and response types are serialized/deserialized by the storage layer and produced by the retrieval pipeline. Proof interaction types are produced by the session manager and serialized by the proof serialization layer.
+All entities defined in this specification are value types with no persistence logic. Expression tree and response types are serialized/deserialized by the storage layer and produced by the retrieval pipeline. Proof interaction types are produced by the session manager and serialized by the proof serialization layer. Extraction types are produced by the campaign orchestrator and serialized by the extraction output layer.
 
 ## 6. Interface Contracts
 
@@ -285,6 +463,16 @@ Validation shall occur at construction time.
 | Condition | Error |
 |-----------|-------|
 | `Premise.kind` not in `{"lemma", "hypothesis", "constructor", "definition"}` | `ValueError`: kind must be one of lemma, hypothesis, constructor, definition |
+
+### Extraction type validation errors
+
+| Condition | Error |
+|-----------|-------|
+| `ExtractionRecord` with `len(steps) != total_steps + 1` | `ValueError`: step count mismatch |
+| `ExtractionStep` at index 0 with non-null tactic | `ValueError`: step 0 must have null tactic |
+| `ExtractionStep` at index > 0 with null tactic | `ValueError`: steps 1..N must have non-null tactic |
+| `ExtractionError.error_kind` not in valid set | `ValueError`: error_kind must be one of timeout, backend_crash, tactic_failure, load_failure, unknown |
+| `DependencyRef.kind` not in valid set | `ValueError`: kind must be one of theorem, lemma, definition, axiom, constructor, inductive |
 
 ## 8. Examples
 
@@ -359,6 +547,50 @@ diff = ProofStateDiff(
 )
 ```
 
+### Creating extraction types
+
+```
+record = ExtractionRecord(
+    schema_version=1, record_type="proof_trace",
+    theorem_name="Coq.Init.Logic.eq_refl", source_file="theories/Init/Logic.v",
+    project_id="coq-stdlib", total_steps=1,
+    steps=[
+        ExtractionStep(step_index=0, tactic=None,
+            goals=[Goal(index=0, type="x = x", hypotheses=[
+                Hypothesis(name="A", type="Type", body=None),
+                Hypothesis(name="x", type="A", body=None),
+            ])],
+            focused_goal_index=0, premises=[], diff=None),
+        ExtractionStep(step_index=1, tactic="reflexivity.",
+            goals=[], focused_goal_index=None, premises=[], diff=None),
+    ]
+)
+```
+
+### ExtractionError
+
+```
+error = ExtractionError(
+    schema_version=1, record_type="extraction_error",
+    theorem_name="Coq.Arith.PeanoNat.Nat.sub_diag",
+    source_file="theories/Arith/PeanoNat.v", project_id="coq-stdlib",
+    error_kind="timeout", error_message="Proof extraction exceeded 60s time limit"
+)
+```
+
+### DependencyEntry
+
+```
+entry = DependencyEntry(
+    theorem_name="Coq.Arith.PeanoNat.Nat.add_comm",
+    source_file="theories/Arith/PeanoNat.v", project_id="coq-stdlib",
+    depends_on=[
+        DependencyRef(name="Coq.Arith.PeanoNat.Nat.add_0_r", kind="lemma"),
+        DependencyRef(name="Coq.Init.Datatypes.nat", kind="inductive"),
+    ]
+)
+```
+
 ## 9. Language-Specific Notes (Python)
 
 - Use `@dataclass(frozen=True)` for all node label types to get `__eq__` and `__hash__` for free.
@@ -367,5 +599,8 @@ diff = ProofStateDiff(
 - Use `enum.Enum` for `SortKind`, `DeclKind`, and `PremiseKind`.
 - Use `@dataclass(frozen=True)` for `SearchResult`, `LemmaDetail`, and `Module` — response types are immutable once created.
 - Use `@dataclass` (mutable) for proof interaction types — `ProofState`, `Goal`, `Hypothesis`, `TraceStep`, `ProofTrace`, `PremiseAnnotation`, `Premise`, `Session`, `GoalChange`, `HypothesisChange`, `ProofStateDiff`.
+- Use `@dataclass(frozen=True)` for extraction types that are immutable once created — `ExtractionRecord`, `ExtractionStep`, `ExtractionDiff`, `ExtractionError`, `CampaignMetadata`, `ProjectMetadata`, `ExtractionSummary`, `ProjectSummary`, `FileSummary`, `DependencyEntry`, `DependencyRef`, `QualityReport`, `DistributionStats`, `TacticFrequency`, `ProjectQualityReport`, `ScopeFilter`.
+- Use `enum.Enum` for `ErrorKind`.
 - Proof interaction types package location: `src/wily_rooster/session/types.py`.
 - Expression tree and response types package location: `src/wily_rooster/models/`.
+- Extraction types package location: `src/wily_rooster/extraction/types.py`.

@@ -1,8 +1,8 @@
 # CLI
 
-Command-line interface for indexing and search operations against the Coq/Rocq declaration index.
+Command-line interface for indexing, search, proof replay, and batch extraction operations against the Coq/Rocq declaration index and proof developments.
 
-**Architecture**: [cli.md](../doc/architecture/cli.md), [component-boundaries.md](../doc/architecture/component-boundaries.md), [response-types.md](../doc/architecture/data-models/response-types.md)
+**Architecture**: [cli.md](../doc/architecture/cli.md), [component-boundaries.md](../doc/architecture/component-boundaries.md), [response-types.md](../doc/architecture/data-models/response-types.md), [extraction-types.md](../doc/architecture/data-models/extraction-types.md)
 
 ---
 
@@ -12,9 +12,9 @@ Define the CLI layer that accepts user commands from the terminal, validates inp
 
 ## 2. Scope
 
-**In scope**: 7 search subcommands, 1 proof replay subcommand, shared option handling, input validation, human-readable and JSON output formatting, index state checks, error reporting.
+**In scope**: 7 search subcommands, 1 proof replay subcommand, 3 extraction subcommands, shared option handling, input validation, human-readable and JSON output formatting, index state checks, error reporting.
 
-**Out of scope**: Search logic (owned by pipeline/channels), storage management (owned by storage), Coq expression parsing (owned by pipeline), MCP protocol handling (owned by MCP server).
+**Out of scope**: Search logic (owned by pipeline/channels), storage management (owned by storage), Coq expression parsing (owned by pipeline), MCP protocol handling (owned by MCP server), extraction logic (owned by extraction-campaign), output serialization (owned by extraction-output).
 
 ## 3. Definitions
 
@@ -194,6 +194,110 @@ JSON with `--premises`: `{"trace": <parsed trace object>, "premises": [<parsed p
 
 3. GIVEN `test.v` does not exist WHEN `replay-proof test.v add_comm` is run THEN stderr contains "File not found" and exit code is 1.
 
+### 4.7 extract(project_dirs, output_path, options)
+
+- REQUIRES: `project_dirs` is a non-empty list of directory paths. `output_path` is a non-empty string. All project directories exist on disk.
+- ENSURES: Creates an Extraction Campaign Orchestrator. Delegates campaign execution to `run_campaign(project_dirs, output_path, options)`. Prints a human-readable extraction summary to stderr on completion. Exits with code 0 on success (including partial success with some failures). Exits with code 1 when all proofs fail or a project directory does not exist. Exits with code 2 on invalid usage.
+- Delegates to: `ExtractionCampaignOrchestrator.run_campaign`.
+
+**Options:**
+
+| Option | Type | Default | Validation |
+|--------|------|---------|------------|
+| `--output` | path | required | Parent directory must exist |
+| `--name-pattern` | string | null | Must be a valid glob or regex when provided (P1) |
+| `--modules` | comma-separated string | null | Each module prefix must be non-empty (P1) |
+| `--incremental` | flag | false | Requires existing output file and checkpoint (P1) |
+| `--resume` | flag | false | Requires existing output file and checkpoint (P1) |
+| `--include-diffs` | flag | false | — (P1) |
+| `--timeout` | integer | 60 | Must be positive; per-proof timeout in seconds |
+
+- MAINTAINS: `--incremental` and `--resume` are mutually exclusive. When both are set, the CLI shall print an error to stderr and exit with code 2.
+
+> **Given** two project directories `/stdlib` and `/mathcomp`
+> **When** `extract /stdlib /mathcomp --output combined.jsonl` is run
+> **Then** a JSON Lines output file is written at `combined.jsonl`, a summary is printed to stderr, and exit code is 0
+
+> **Given** a project directory `/nonexistent` that does not exist
+> **When** `extract /nonexistent --output out.jsonl` is run
+> **Then** an error is printed to stderr and exit code is 1
+
+> **Given** `--incremental` and `--resume` are both set
+> **When** `extract /stdlib --output out.jsonl --incremental --resume` is run
+> **Then** an error is printed to stderr and exit code is 2
+
+**Output behavior:**
+
+- The JSON Lines output file is written to `--output`. The CLI does not write extraction records to stdout.
+- Progress information is printed to stderr during extraction (e.g., `Extracting theorem 42/1000...`).
+- On completion, a human-readable summary is printed to stderr:
+
+```
+Extraction complete.
+  Theorems found:    1000
+  Extracted:          950
+  Failed:              45
+  Skipped:              5
+  Output: /path/to/output.jsonl
+```
+
+### 4.8 extract-deps(extraction_output_path, output_path)
+
+- REQUIRES: `extraction_output_path` is a non-empty string pointing to a valid JSON Lines extraction output file. `output_path` is a non-empty string.
+- ENSURES: Reads ExtractionRecords from the input. Computes a DependencyEntry for each. Writes DependencyEntries as JSON Lines to `output_path`. Prints a summary to stderr. Exits with code 0.
+- On invalid input file: prints error to stderr, exits with code 1.
+- Delegates to: `extract_dependency_graph(extraction_output_path, output_path)`.
+
+> **Given** an extraction output with 100 ExtractionRecords
+> **When** `extract-deps extraction.jsonl --output deps.jsonl` is run
+> **Then** `deps.jsonl` contains 100 DependencyEntry lines and exit code is 0
+
+> **Given** an extraction output that is not valid JSON Lines
+> **When** `extract-deps bad_input.jsonl --output deps.jsonl` is run
+> **Then** an error with the invalid line number is printed to stderr and exit code is 1
+
+### 4.9 quality-report(extraction_output_path)
+
+- REQUIRES: `extraction_output_path` is a non-empty string pointing to a valid JSON Lines extraction output file.
+- ENSURES: Reads ExtractionRecords from the input. Computes a QualityReport. Formats and prints the report to stdout (or to `--output` file if specified). Exits with code 0.
+- On invalid input file: prints error to stderr, exits with code 1.
+- Delegates to: `generate_quality_report(extraction_output_path)`.
+
+**Options:**
+
+| Option | Type | Default | Validation |
+|--------|------|---------|------------|
+| `--json` | flag | false | — |
+| `--output` | path | null | Parent directory must exist when provided |
+
+**Output formatting:**
+
+Human-readable (default):
+```
+Quality Report
+==============
+Premise coverage: 87.0%
+Proof length: min=1, max=342, mean=12.4, median=8.0, p25=4.0, p75=16.0, p95=45.0
+
+Top tactics:
+  apply       24500
+  rewrite     18200
+  simpl       15800
+
+Per-project:
+  coq-stdlib  (4500 theorems, 89.0% premise coverage)
+```
+
+JSON (`--json`): a single QualityReport JSON object (compact format).
+
+> **Given** an extraction output with 1000 ExtractionRecords
+> **When** `quality-report extraction.jsonl` is run
+> **Then** a human-readable quality report is printed to stdout and exit code is 0
+
+> **Given** an extraction output with 1000 ExtractionRecords
+> **When** `quality-report extraction.jsonl --json` is run
+> **Then** a QualityReport JSON object is printed to stdout and exit code is 0
+
 ## 5. Error Specification
 
 | Condition | Exit code | stderr message |
@@ -207,6 +311,13 @@ JSON with `--premises`: `{"trace": <parsed trace object>, "premises": [<parsed p
 | File not found (replay-proof) | 1 | `File not found: {path}` |
 | Proof not found (replay-proof) | 1 | `Proof not found: {name}` |
 | Backend crashed (replay-proof) | 1 | `Backend crashed during proof replay.` |
+| Project directory not found (extract) | 1 | `Project directory not found: {path}` |
+| All proofs failed (extract) | 1 | `Extraction failed: all {n} proofs failed.` |
+| Some proofs failed (extract) | 0 | Summary printed to stderr with failure count |
+| No proofs found (extract) | 0 | `Warning: no proofs found in the specified projects.` |
+| Invalid extraction input (extract-deps, quality-report) | 1 | `Invalid JSON Lines at line {n}: {details}` |
+| Checkpoint corrupted (extract --resume) | 0 | `Warning: checkpoint corrupted, falling back to full extraction.` |
+| Mutually exclusive flags (extract) | 2 | `--incremental and --resume cannot be used together.` |
 
 Errors are always printed to stderr. Successful output is always printed to stdout. This separation supports piping and redirection.
 
@@ -301,6 +412,49 @@ $ echo $?
 1
 ```
 
+### extract (success)
+
+```
+$ wily-rooster extract /path/to/stdlib --output stdlib.jsonl
+Extracting theorem 1/4550...
+Extracting theorem 2/4550...
+...
+Extraction complete.
+  Theorems found:    4550
+  Extracted:         4500
+  Failed:              50
+  Skipped:              0
+  Output: /path/to/stdlib.jsonl
+$ echo $?
+0
+```
+
+### extract (project not found)
+
+```
+$ wily-rooster extract /nonexistent --output out.jsonl
+Project directory not found: /nonexistent
+$ echo $?
+1
+```
+
+### extract-deps
+
+```
+$ wily-rooster extract-deps stdlib.jsonl --output deps.jsonl
+Processed 4500 extraction records.
+Wrote 4500 dependency entries to deps.jsonl.
+$ echo $?
+0
+```
+
+### quality-report (JSON)
+
+```
+$ wily-rooster quality-report stdlib.jsonl --json
+{"premise_coverage":0.87,"proof_length_distribution":{"min":1,"max":342,"mean":12.4,"median":8.0,"p25":4.0,"p75":16.0,"p95":45.0},"tactic_vocabulary":[{"tactic":"apply","count":24500}],"per_project":[{"project_id":"coq-stdlib","premise_coverage":0.89,"proof_length_distribution":{"min":1,"max":200,"mean":10.2,"median":7.0,"p25":3.0,"p75":14.0,"p95":38.0},"theorem_count":4500}]}
+```
+
 ## 8. Language-Specific Notes (Python)
 
 - Use `click` for argument parsing (consistent with the existing extraction CLI).
@@ -310,5 +464,6 @@ $ echo $?
 - Reuse `SearchResult`, `LemmaDetail`, `Module` from `wily_rooster.models.responses`.
 - JSON serialization via `dataclasses.asdict()` + `json.dumps()` (same as MCP server).
 - For proof replay: use `SessionManager` from `wily_rooster.session.manager`, `serialize_proof_trace` and `serialize_premise_annotation` from `wily_rooster.serialization.serialize`.
+- For extraction: use `ExtractionCampaignOrchestrator` from `wily_rooster.extraction.campaign`, `extract_dependency_graph` from `wily_rooster.extraction.dependency_graph`, `generate_quality_report` from `wily_rooster.extraction.reporting`.
 - Use `asyncio.run()` to bridge Click's sync execution model to the async `SessionManager` API.
 - Package location: `src/wily_rooster/cli/`.
