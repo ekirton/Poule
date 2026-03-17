@@ -114,6 +114,56 @@ uv run pytest --cov=poule
 uv run pytest -m "not requires_coq"
 ```
 
+## Publishing Releases
+
+Prebuilt search indexes and neural model checkpoints are distributed via [GitHub Releases](https://github.com/ekirton/poule/releases). Users can download them with `uv run python -m poule.cli download-index` instead of building from source.
+
+### When to publish
+
+Publish a new release when any of these change:
+- Coq version (new stdlib declarations)
+- MathComp version (new library content)
+- Index schema version (storage layer changes)
+- Neural model (retrained or improved checkpoint)
+
+### Prerequisites
+
+- [`gh`](https://cli.github.com/) CLI, authenticated (`gh auth login`)
+- `sqlite3` (reads version metadata from the index)
+- `shasum` (computes checksums)
+
+### Publishing
+
+1. Build the index:
+
+```bash
+uv run python -m poule.extraction --target stdlib+mathcomp --db index.db --progress
+```
+
+2. Publish with the index only:
+
+```bash
+./scripts/publish-release.sh index.db
+```
+
+3. Or include the neural model:
+
+```bash
+./scripts/publish-release.sh index.db --model path/to/neural-premise-selector.onnx
+```
+
+The script reads `schema_version`, `coq_version`, and `mathcomp_version` from the database's `index_meta` table, computes SHA-256 checksums, generates a `manifest.json`, and creates a tagged release. The tag format is `index-v{schema}-coq{coq_version}-mc{mathcomp_version}` (e.g., `index-v1-coq8.19-mc2.2.0`).
+
+### Release assets
+
+| Asset | Description |
+|-------|-------------|
+| `index.db` | SQLite search index |
+| `manifest.json` | Version metadata and SHA-256 checksums |
+| `neural-premise-selector.onnx` | INT8 ONNX model (optional) |
+
+The download client (`src/poule/cli/download.py`) fetches `manifest.json` first, then downloads assets and verifies checksums before placing files. See [`specification/prebuilt-distribution.md`](specification/prebuilt-distribution.md) for the full protocol.
+
 ## Documentation Layers
 
 | Layer | Location | Purpose |
