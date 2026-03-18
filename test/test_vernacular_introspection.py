@@ -30,32 +30,32 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_coq_query():
-    from poule.query.handler import coq_query
+    from Poule.query.handler import coq_query
     return coq_query
 
 
 def _import_build_vernacular():
-    from poule.query.dispatch import build_vernacular
+    from Poule.query.dispatch import build_vernacular
     return build_vernacular
 
 
 def _import_parse_output():
-    from poule.query.parser import parse_output
+    from Poule.query.parser import parse_output
     return parse_output
 
 
 def _import_classify_error():
-    from poule.query.errors import classify_error
+    from Poule.query.errors import classify_error
     return classify_error
 
 
 def _import_types():
-    from poule.query.types import QueryResult, Command
+    from Poule.query.types import QueryResult, Command
     return QueryResult, Command
 
 
 def _import_server_errors():
-    from poule.server.errors import format_error
+    from Poule.server.errors import format_error
     return format_error
 
 
@@ -91,7 +91,7 @@ def _make_mock_session_manager(
 
     Returns an AsyncMock whose submit_vernacular method returns raw Coq output.
     """
-    from poule.session.errors import SESSION_NOT_FOUND, SessionError
+    from Poule.session.errors import SESSION_NOT_FOUND, SessionError
 
     manager = AsyncMock()
 
@@ -217,7 +217,7 @@ class TestCoqQueryEntryPoint:
     @pytest.mark.asyncio
     async def test_contract_session_manager_submit_vernacular(self):
         """Contract test: real session manager accepts vernacular command strings."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         # Real session manager must expose submit_vernacular(session_id, vernacular_str)
         assert hasattr(manager, "submit_vernacular")
@@ -226,7 +226,7 @@ class TestCoqQueryEntryPoint:
     @pytest.mark.asyncio
     async def test_contract_process_pool_send_command(self):
         """Contract test: real process pool accepts command strings and returns output."""
-        from poule.query.process_pool import ProcessPool
+        from Poule.query.process_pool import ProcessPool
         pool = ProcessPool()
         assert hasattr(pool, "send_command")
 
@@ -404,7 +404,7 @@ class TestExecutionRouting:
     @pytest.mark.asyncio
     async def test_contract_session_manager_read_only(self):
         """Contract test: real session manager's submit_vernacular does not mutate state."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         # Verify the interface contract: submit_vernacular exists and is read-only
         assert callable(getattr(SessionManager, "submit_vernacular", None))
 
@@ -412,7 +412,7 @@ class TestExecutionRouting:
     @pytest.mark.asyncio
     async def test_contract_process_pool_lifecycle(self):
         """Contract test: process pool acquires and releases processes per invocation."""
-        from poule.query.process_pool import ProcessPool
+        from Poule.query.process_pool import ProcessPool
         pool = ProcessPool()
         assert callable(getattr(pool, "send_command", None))
 
@@ -631,7 +631,7 @@ class TestInterfaceContracts:
     @pytest.mark.asyncio
     async def test_contract_session_submit_vernacular_interface(self):
         """Contract test: real session manager.submit_vernacular(session_id, str) -> str."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         assert callable(getattr(manager, "submit_vernacular", None))
 
@@ -639,7 +639,7 @@ class TestInterfaceContracts:
     @pytest.mark.asyncio
     async def test_contract_process_pool_send_command_interface(self):
         """Contract test: real process pool.send_command(str) -> str."""
-        from poule.query.process_pool import ProcessPool
+        from Poule.query.process_pool import ProcessPool
         pool = ProcessPool()
         assert callable(getattr(pool, "send_command", None))
 
@@ -743,8 +743,8 @@ class TestSessionErrors:
     @pytest.mark.asyncio
     async def test_contract_session_not_found_real(self):
         """Contract test: real session manager raises on invalid session_id."""
-        from poule.session.manager import SessionManager
-        from poule.session.errors import SessionError, SESSION_NOT_FOUND
+        from Poule.session.manager import SessionManager
+        from Poule.session.errors import SessionError, SESSION_NOT_FOUND
         manager = SessionManager()
         with pytest.raises(SessionError) as exc_info:
             await manager.submit_vernacular("nonexistent_session", "Check nat.")
@@ -837,7 +837,7 @@ class TestBackendErrors:
     async def test_backend_crashed_session_returns_error(self):
         """Coq backend crash during session execution returns BACKEND_CRASHED."""
         coq_query = _import_coq_query()
-        from poule.session.errors import BACKEND_CRASHED, SessionError
+        from Poule.session.errors import BACKEND_CRASHED, SessionError
 
         manager = AsyncMock()
         manager.submit_vernacular.side_effect = SessionError(
@@ -874,8 +874,8 @@ class TestBackendErrors:
     @pytest.mark.asyncio
     async def test_contract_backend_crash_session(self):
         """Contract test: real session manager raises BACKEND_CRASHED on crash."""
-        from poule.session.errors import BACKEND_CRASHED, SessionError
-        from poule.session.manager import SessionManager
+        from Poule.session.errors import BACKEND_CRASHED, SessionError
+        from Poule.session.manager import SessionManager
         # Verify the error code constant exists and matches spec
         assert BACKEND_CRASHED == "BACKEND_CRASHED"
 
@@ -883,7 +883,7 @@ class TestBackendErrors:
     @pytest.mark.asyncio
     async def test_contract_backend_crash_standalone(self):
         """Contract test: real process pool signals crash appropriately."""
-        from poule.query.process_pool import ProcessPool
+        from Poule.query.process_pool import ProcessPool
         pool = ProcessPool()
         assert hasattr(pool, "send_command")
 
@@ -1072,7 +1072,7 @@ class TestSpecExamples:
     async def test_contract_check_nat_add_comm_real(self):
         """Contract test: real Coq process returns type of Nat.add_comm."""
         coq_query = _import_coq_query()
-        from poule.query.process_pool import ProcessPool
+        from Poule.query.process_pool import ProcessPool
         pool = ProcessPool()
         result = await coq_query(
             command="Check",
@@ -1086,7 +1086,7 @@ class TestSpecExamples:
     async def test_contract_eval_cbv_real(self):
         """Contract test: real Coq evaluates 'Eval cbv in 1 + 1.' to 2."""
         coq_query = _import_coq_query()
-        from poule.query.process_pool import ProcessPool
+        from Poule.query.process_pool import ProcessPool
         pool = ProcessPool()
         result = await coq_query(
             command="Eval",

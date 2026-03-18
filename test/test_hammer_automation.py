@@ -29,42 +29,42 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_execute_hammer():
-    from poule.hammer.engine import execute_hammer
+    from Poule.hammer.engine import execute_hammer
     return execute_hammer
 
 
 def _import_execute_auto_hammer():
-    from poule.hammer.engine import execute_auto_hammer
+    from Poule.hammer.engine import execute_auto_hammer
     return execute_auto_hammer
 
 
 def _import_build_tactic():
-    from poule.hammer.tactic import build_tactic
+    from Poule.hammer.tactic import build_tactic
     return build_tactic
 
 
 def _import_interpret_result():
-    from poule.hammer.interpret import interpret_result
+    from Poule.hammer.interpret import interpret_result
     return interpret_result
 
 
 def _import_hammer_types():
-    from poule.hammer.types import HammerResult, StrategyDiagnostic, ClassifiedOutput
+    from Poule.hammer.types import HammerResult, StrategyDiagnostic, ClassifiedOutput
     return HammerResult, StrategyDiagnostic, ClassifiedOutput
 
 
 def _import_parse_error():
-    from poule.hammer.errors import ParseError
+    from Poule.hammer.errors import ParseError
     return ParseError
 
 
 def _import_session_types():
-    from poule.session.types import Goal, Hypothesis, ProofState
+    from Poule.session.types import Goal, Hypothesis, ProofState
     return Goal, Hypothesis, ProofState
 
 
 def _import_session_errors():
-    from poule.session.errors import (
+    from Poule.session.errors import (
         BACKEND_CRASHED,
         SESSION_NOT_FOUND,
         SESSION_EXPIRED,
@@ -84,7 +84,7 @@ def _make_proof_state(
     goals=None,
     session_id="test",
 ):
-    """Build a ProofState using the real type from poule.session.types."""
+    """Build a ProofState using the real type from Poule.session.types."""
     Goal, Hypothesis, ProofState = _import_session_types()
     if goals is None:
         if is_complete:
@@ -410,7 +410,7 @@ class TestSingleStrategyExecution:
         """
         execute_hammer = _import_execute_hammer()
         HammerResult, _, *_ = _import_hammer_types()
-        from poule.session.manager import ProofSessionManager
+        from Poule.session.manager import ProofSessionManager
         manager = ProofSessionManager()
 
 
@@ -650,7 +650,7 @@ class TestMultiStrategyFallback:
         """Contract test: execute_auto_hammer against real Proof Session Manager."""
         execute_auto = _import_execute_auto_hammer()
         HammerResult, _, *_ = _import_hammer_types()
-        from poule.session.manager import ProofSessionManager
+        from Poule.session.manager import ProofSessionManager
         pytest.skip("Requires live Coq backend")
 
 

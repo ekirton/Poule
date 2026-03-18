@@ -14,14 +14,14 @@ from __future__ import annotations
 
 import pytest
 
-from poule.fusion.fusion import (
+from Poule.fusion.fusion import (
     clamp_score,
     node_category,
     collapse_match,
     structural_score,
     rrf_fuse,
 )
-from poule.models.labels import (
+from Poule.models.labels import (
     LAbs,
     LApp,
     LCase,
@@ -38,8 +38,8 @@ from poule.models.labels import (
     LRel,
     LSort,
 )
-from poule.models.enums import SortKind
-from poule.models.tree import TreeNode, ExprTree
+from Poule.models.enums import SortKind
+from Poule.models.tree import TreeNode, ExprTree
 
 
 # ---------------------------------------------------------------------------

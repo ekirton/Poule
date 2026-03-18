@@ -27,12 +27,12 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_manager():
-    from poule.session.manager import SessionManager
+    from Poule.session.manager import SessionManager
     return SessionManager
 
 
 def _import_types():
-    from poule.session.types import (
+    from Poule.session.types import (
         Goal,
         Hypothesis,
         Premise,
@@ -46,7 +46,7 @@ def _import_types():
 
 
 def _import_errors():
-    from poule.session.errors import (
+    from Poule.session.errors import (
         BACKEND_CRASHED,
         FILE_NOT_FOUND,
         NO_PREVIOUS_STATE,

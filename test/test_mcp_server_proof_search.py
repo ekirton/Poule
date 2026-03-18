@@ -25,12 +25,12 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_handlers():
-    from poule.server.handlers import handle_proof_search, handle_fill_admits
+    from Poule.server.handlers import handle_proof_search, handle_fill_admits
     return handle_proof_search, handle_fill_admits
 
 
 def _import_errors():
-    from poule.server.errors import (
+    from Poule.server.errors import (
         format_error,
         FILE_NOT_FOUND,
         SESSION_NOT_FOUND,
@@ -41,7 +41,7 @@ def _import_errors():
 
 
 def _import_session_errors():
-    from poule.session.errors import (
+    from Poule.session.errors import (
         SESSION_NOT_FOUND,
         SESSION_EXPIRED,
         BACKEND_CRASHED,
@@ -51,17 +51,17 @@ def _import_session_errors():
 
 
 def _import_search_types():
-    from poule.search.types import SearchResult, ProofStep
+    from Poule.search.types import SearchResult, ProofStep
     return SearchResult, ProofStep
 
 
 def _import_fill_admits_types():
-    from poule.search.types import FillAdmitsResult, AdmitResult
+    from Poule.search.types import FillAdmitsResult, AdmitResult
     return FillAdmitsResult, AdmitResult
 
 
 def _import_session_types():
-    from poule.session.types import Goal, ProofState
+    from Poule.session.types import Goal, ProofState
     return Goal, ProofState
 
 
@@ -332,7 +332,7 @@ class TestHandleFillAdmits:
     async def test_file_not_found_returns_error(self):
         """Given a non-existent file, returns FILE_NOT_FOUND error (§5.4)."""
         _, handle_fill_admits = _import_handlers()
-        from poule.session.errors import FILE_NOT_FOUND, SessionError
+        from Poule.session.errors import FILE_NOT_FOUND, SessionError
         orch = AsyncMock()
         orch.fill_admits.side_effect = SessionError(FILE_NOT_FOUND, "not found")
         response = await handle_fill_admits(

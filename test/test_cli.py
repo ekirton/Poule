@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from poule.models.responses import LemmaDetail, Module, SearchResult
+from Poule.models.responses import LemmaDetail, Module, SearchResult
 
 
 # ---------------------------------------------------------------------------
@@ -83,13 +83,13 @@ def _mod(name: str = "Coq.Arith.PeanoNat", decl_count: int = 42) -> Module:
 
 
 def _import_cli():
-    from poule.cli.commands import cli
+    from Poule.cli.commands import cli
 
     return cli
 
 
 def _import_formatting():
-    from poule.cli.formatting import (
+    from Poule.cli.formatting import (
         format_lemma_detail,
         format_modules,
         format_search_results,
@@ -354,7 +354,7 @@ class TestSearchByTypeCommand:
 
     def test_parse_error_exits_1(self, runner, tmp_db):
         cli = _import_cli()
-        from poule.pipeline.parser import ParseError
+        from Poule.pipeline.parser import ParseError
         with patch("poule.cli.commands.create_context"), \
              patch("poule.cli.commands.search_by_type", side_effect=ParseError("bad syntax")):
             result = runner.invoke(cli, ["search-by-type", "--db", tmp_db, "bad(((syntax"])
@@ -389,7 +389,7 @@ class TestSearchByStructureCommand:
 
     def test_parse_error_exits_1(self, runner, tmp_db):
         cli = _import_cli()
-        from poule.pipeline.parser import ParseError
+        from Poule.pipeline.parser import ParseError
         with patch("poule.cli.commands.create_context"), \
              patch("poule.cli.commands.search_by_structure", side_effect=ParseError("bad")):
             result = runner.invoke(cli, ["search-by-structure", "--db", tmp_db, "bad((("])
@@ -642,7 +642,7 @@ class TestIndexMissing:
 
     def test_search_by_name_missing_db(self, runner, tmp_db):
         cli = _import_cli()
-        from poule.storage.errors import IndexNotFoundError
+        from Poule.storage.errors import IndexNotFoundError
         with patch(
             "poule.cli.commands.create_context",
             side_effect=IndexNotFoundError("Database not found: /nonexistent/path.db"),
@@ -653,7 +653,7 @@ class TestIndexMissing:
 
     def test_get_lemma_missing_db(self, runner, tmp_db):
         cli = _import_cli()
-        from poule.storage.errors import IndexNotFoundError
+        from Poule.storage.errors import IndexNotFoundError
         with patch(
             "poule.cli.commands.create_context",
             side_effect=IndexNotFoundError("Database not found"),
@@ -663,7 +663,7 @@ class TestIndexMissing:
 
     def test_list_modules_missing_db(self, runner, tmp_db):
         cli = _import_cli()
-        from poule.storage.errors import IndexNotFoundError
+        from Poule.storage.errors import IndexNotFoundError
         with patch(
             "poule.cli.commands.create_context",
             side_effect=IndexNotFoundError("Database not found"),
@@ -682,7 +682,7 @@ class TestSchemaVersionMismatch:
 
     def test_version_mismatch_exits_1(self, runner, tmp_db):
         cli = _import_cli()
-        from poule.storage.errors import IndexVersionError
+        from Poule.storage.errors import IndexVersionError
         with patch(
             "poule.cli.commands.create_context",
             side_effect=IndexVersionError(found="0", expected="1"),
@@ -733,7 +733,7 @@ class TestExtractSubcommand:
         with patch(
             "poule.cli.commands.run_campaign",
         ) as mock_run:
-            from poule.extraction.types import ExtractionSummary
+            from Poule.extraction.types import ExtractionSummary
             mock_run.return_value = ExtractionSummary(
                 schema_version=1, record_type="extraction_summary",
                 total_theorems_found=10, total_extracted=10,
@@ -782,7 +782,7 @@ class TestExtractSubcommand:
         with patch(
             "poule.cli.commands.run_campaign",
         ) as mock_run:
-            from poule.extraction.types import ExtractionSummary
+            from Poule.extraction.types import ExtractionSummary
             mock_run.return_value = ExtractionSummary(
                 schema_version=1, record_type="extraction_summary",
                 total_theorems_found=10, total_extracted=0,
@@ -802,7 +802,7 @@ class TestExtractSubcommand:
         with patch(
             "poule.cli.commands.run_campaign",
         ) as mock_run:
-            from poule.extraction.types import ExtractionSummary
+            from Poule.extraction.types import ExtractionSummary
             mock_run.return_value = ExtractionSummary(
                 schema_version=1, record_type="extraction_summary",
                 total_theorems_found=10, total_extracted=8,
@@ -824,7 +824,7 @@ class TestExtractSubcommand:
         with patch(
             "poule.cli.commands.run_campaign",
         ) as mock_run:
-            from poule.extraction.types import ExtractionSummary
+            from Poule.extraction.types import ExtractionSummary
             mock_run.return_value = ExtractionSummary(
                 schema_version=1, record_type="extraction_summary",
                 total_theorems_found=0, total_extracted=0,
@@ -848,7 +848,7 @@ class TestExtractSubcommand:
         with patch(
             "poule.cli.commands.run_campaign",
         ) as mock_run:
-            from poule.extraction.types import ExtractionSummary
+            from Poule.extraction.types import ExtractionSummary
             mock_run.return_value = ExtractionSummary(
                 schema_version=1, record_type="extraction_summary",
                 total_theorems_found=0, total_extracted=0,
@@ -909,7 +909,7 @@ class TestQualityReportSubcommand:
         with patch(
             "poule.cli.commands.generate_quality_report",
         ) as mock_report:
-            from poule.extraction.types import (
+            from Poule.extraction.types import (
                 DistributionStats, QualityReport, TacticFrequency,
             )
             mock_report.return_value = QualityReport(
@@ -933,7 +933,7 @@ class TestQualityReportSubcommand:
         with patch(
             "poule.cli.commands.generate_quality_report",
         ) as mock_report:
-            from poule.extraction.types import (
+            from Poule.extraction.types import (
                 DistributionStats, QualityReport, TacticFrequency,
             )
             mock_report.return_value = QualityReport(
@@ -966,7 +966,7 @@ class TestQualityReportSubcommand:
         with patch(
             "poule.cli.commands.generate_quality_report",
         ) as mock_report:
-            from poule.extraction.types import (
+            from Poule.extraction.types import (
                 DistributionStats, QualityReport, TacticFrequency,
             )
             mock_report.return_value = QualityReport(

@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from poule.session.types import (
+from Poule.session.types import (
     Goal,
     Hypothesis,
     ProofState,
@@ -39,7 +39,7 @@ pytestmark = pytest.mark.requires_coq
 
 
 def _import_create_coq_backend():
-    from poule.session.backend import create_coq_backend
+    from Poule.session.backend import create_coq_backend
     return create_coq_backend
 
 

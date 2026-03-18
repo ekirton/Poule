@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from poule.cli.download import (
+from Poule.cli.download import (
     _find_asset,
     _find_latest_release,
     _verify_checksum,

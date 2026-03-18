@@ -24,13 +24,13 @@ import pytest
 # Imports from production code (TDD — will fail until implemented)
 # ---------------------------------------------------------------------------
 
-from poule.neural.training.data import TrainingDataLoader, TrainingDataset
-from poule.neural.training.negatives import sample_hard_negatives
-from poule.neural.training.trainer import BiEncoderTrainer
-from poule.neural.training.evaluator import RetrievalEvaluator, EvaluationReport, ComparisonReport
-from poule.neural.training.quantizer import ModelQuantizer
-from poule.neural.training.validator import TrainingDataValidator, ValidationReport
-from poule.neural.training.errors import (
+from Poule.neural.training.data import TrainingDataLoader, TrainingDataset
+from Poule.neural.training.negatives import sample_hard_negatives
+from Poule.neural.training.trainer import BiEncoderTrainer
+from Poule.neural.training.evaluator import RetrievalEvaluator, EvaluationReport, ComparisonReport
+from Poule.neural.training.quantizer import ModelQuantizer
+from Poule.neural.training.validator import TrainingDataValidator, ValidationReport
+from Poule.neural.training.errors import (
     NeuralTrainingError,
     DataFormatError,
     CheckpointNotFoundError,
@@ -380,7 +380,7 @@ class TestEarlyStopping:
         When epoch 10 completes
         Then training stops and the checkpoint from epoch 7 is retained.
         """
-        from poule.neural.training.trainer import EarlyStoppingTracker
+        from Poule.neural.training.trainer import EarlyStoppingTracker
 
         tracker = EarlyStoppingTracker(patience=3)
         # Epochs 1-7: improving
@@ -397,7 +397,7 @@ class TestEarlyStopping:
 
     def test_resets_on_improvement(self):
         """spec §4.3: Patience counter resets when R@32 improves."""
-        from poule.neural.training.trainer import EarlyStoppingTracker
+        from Poule.neural.training.trainer import EarlyStoppingTracker
 
         tracker = EarlyStoppingTracker(patience=3)
         tracker.should_stop(0.30)  # epoch 1
@@ -422,7 +422,7 @@ class TestCheckpointFormat:
     def test_checkpoint_contains_required_fields(self, tmp_path):
         """spec §4.3: Checkpoint shall include model state, optimizer state,
         epoch number, best validation R@32, and hyperparameters."""
-        from poule.neural.training.trainer import save_checkpoint, load_checkpoint
+        from Poule.neural.training.trainer import save_checkpoint, load_checkpoint
 
         checkpoint_data = {
             "model_state_dict": {"layer.weight": np.zeros(10)},
@@ -452,7 +452,7 @@ class TestFineTuning:
 
     def test_fine_tune_default_overrides(self):
         """spec §4.4: Fine-tuning defaults to lr=5e-6 and max_epochs=10."""
-        from poule.neural.training.trainer import get_fine_tune_hyperparams
+        from Poule.neural.training.trainer import get_fine_tune_hyperparams
 
         params = get_fine_tune_hyperparams()
         assert params["learning_rate"] == 5e-6
@@ -463,7 +463,7 @@ class TestFineTuning:
 
     def test_fine_tune_accepts_custom_overrides(self):
         """spec §4.4: Caller can still override fine-tuning defaults."""
-        from poule.neural.training.trainer import get_fine_tune_hyperparams
+        from Poule.neural.training.trainer import get_fine_tune_hyperparams
 
         params = get_fine_tune_hyperparams(overrides={"learning_rate": 1e-6})
         assert params["learning_rate"] == 1e-6

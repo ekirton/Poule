@@ -29,32 +29,32 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_lookup():
-    from poule.tactics.lookup import tactic_lookup
+    from Poule.tactics.lookup import tactic_lookup
     return tactic_lookup
 
 
 def _import_strategy_inspect():
-    from poule.tactics.lookup import strategy_inspect
+    from Poule.tactics.lookup import strategy_inspect
     return strategy_inspect
 
 
 def _import_compare():
-    from poule.tactics.compare import tactic_compare
+    from Poule.tactics.compare import tactic_compare
     return tactic_compare
 
 
 def _import_suggest():
-    from poule.tactics.suggest import tactic_suggest
+    from Poule.tactics.suggest import tactic_suggest
     return tactic_suggest
 
 
 def _import_hint_inspect():
-    from poule.tactics.hints import hint_inspect
+    from Poule.tactics.hints import hint_inspect
     return hint_inspect
 
 
 def _import_types():
-    from poule.tactics.types import (
+    from Poule.tactics.types import (
         TacticInfo,
         StrategyEntry,
         TacticComparison,
@@ -79,12 +79,12 @@ def _import_types():
 
 
 def _import_session_types():
-    from poule.session.types import Goal, Hypothesis, ProofState
+    from Poule.session.types import Goal, Hypothesis, ProofState
     return Goal, Hypothesis, ProofState
 
 
 def _import_session_errors():
-    from poule.session.errors import (
+    from Poule.session.errors import (
         BACKEND_CRASHED,
         SESSION_NOT_FOUND,
         SESSION_EXPIRED,
@@ -94,7 +94,7 @@ def _import_session_errors():
 
 
 def _import_server_errors():
-    from poule.server.errors import NOT_FOUND
+    from Poule.server.errors import NOT_FOUND
     return NOT_FOUND
 
 
@@ -340,7 +340,7 @@ class TestTacticLookup:
     async def test_contract_coq_query_print_ltac(self):
         """Contract test: real coq_query returns parseable output for Print Ltac."""
         # Requires a live Coq instance; skipped unless @requires_coq is enabled.
-        from poule.tactics.lookup import tactic_lookup
+        from Poule.tactics.lookup import tactic_lookup
         result = await tactic_lookup("auto")
         assert result.name == "auto"
         assert result.kind in ("ltac", "primitive", "ltac2")
@@ -429,7 +429,7 @@ class TestStrategyInspection:
     @pytest.mark.asyncio
     async def test_contract_coq_query_print_strategy(self):
         """Contract test: real coq_query for Print Strategy."""
-        from poule.tactics.lookup import strategy_inspect
+        from Poule.tactics.lookup import strategy_inspect
         result = await strategy_inspect("Nat.add")
         assert len(result) >= 1
         assert result[0].constant == "Nat.add"
@@ -592,7 +592,7 @@ class TestTacticComparison:
     @pytest.mark.asyncio
     async def test_contract_tactic_compare_real(self):
         """Contract test: real tactic_compare with live Coq."""
-        from poule.tactics.compare import tactic_compare
+        from Poule.tactics.compare import tactic_compare
         result = await tactic_compare(["auto", "eauto"])
         assert len(result.tactics) == 2
 
@@ -901,8 +901,8 @@ class TestContextualSuggestion:
     @pytest.mark.asyncio
     async def test_contract_observe_proof_state(self, coq_test_file):
         """Contract test: real observe_proof_state returns a ProofState."""
-        from poule.session.types import ProofState
-        from poule.session.manager import ProofSessionManager
+        from Poule.session.types import ProofState
+        from Poule.session.manager import ProofSessionManager
         manager = ProofSessionManager()
         session_id, _ = await manager.create_session(
             str(coq_test_file), "test_proof",
@@ -1098,7 +1098,7 @@ class TestHintDatabaseInspection:
     @pytest.mark.asyncio
     async def test_contract_coq_query_print_hintdb(self):
         """Contract test: real coq_query for Print HintDb."""
-        from poule.tactics.hints import hint_inspect
+        from Poule.tactics.hints import hint_inspect
         result = await hint_inspect("core")
         assert result.name == "core"
         assert result.total_entries >= 0

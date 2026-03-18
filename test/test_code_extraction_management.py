@@ -27,27 +27,27 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_handler():
-    from poule.extraction.handler import ExtractionHandler
+    from Poule.extraction.handler import ExtractionHandler
     return ExtractionHandler
 
 
 def _import_build_command():
-    from poule.extraction.handler import build_command
+    from Poule.extraction.handler import build_command
     return build_command
 
 
 def _import_extract_code():
-    from poule.extraction.handler import extract_code
+    from Poule.extraction.handler import extract_code
     return extract_code
 
 
 def _import_write_extraction():
-    from poule.extraction.handler import write_extraction
+    from Poule.extraction.handler import write_extraction
     return write_extraction
 
 
 def _import_code_types():
-    from poule.extraction.code_types import (
+    from Poule.extraction.code_types import (
         ExtractionRequest,
         ExtractionResult,
         CodeExtractionError,
@@ -57,7 +57,7 @@ def _import_code_types():
 
 
 def _import_session_errors():
-    from poule.session.errors import (
+    from Poule.session.errors import (
         BACKEND_CRASHED,
         SESSION_NOT_FOUND,
         SessionError,
@@ -66,7 +66,7 @@ def _import_session_errors():
 
 
 def _import_server_errors():
-    from poule.server.errors import format_error
+    from Poule.server.errors import format_error
     return format_error
 
 
@@ -975,7 +975,7 @@ class TestContractSessionManagerSubmitCommand:
     @pytest.mark.asyncio
     async def test_submit_command_returns_stdout_stderr(self):
         """Real session manager submit_command returns a string."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -990,8 +990,8 @@ class TestContractSessionManagerSubmitCommand:
     @pytest.mark.asyncio
     async def test_submit_command_session_not_found_raises(self):
         """Real session manager raises SessionError(SESSION_NOT_FOUND) for unknown session."""
-        from poule.session.manager import SessionManager
-        from poule.session.errors import SessionError, SESSION_NOT_FOUND
+        from Poule.session.manager import SessionManager
+        from Poule.session.errors import SessionError, SESSION_NOT_FOUND
         manager = SessionManager()
         with pytest.raises(SessionError) as exc_info:
             await manager.submit_command("nonexistent_session", "Check nat.")
@@ -1000,8 +1000,8 @@ class TestContractSessionManagerSubmitCommand:
     @pytest.mark.asyncio
     async def test_submit_command_backend_crash_raises(self):
         """Real session manager raises SessionError(BACKEND_CRASHED) when backend dies."""
-        from poule.session.manager import SessionManager
-        from poule.session.errors import SessionError, BACKEND_CRASHED
+        from Poule.session.manager import SessionManager
+        from Poule.session.errors import SessionError, BACKEND_CRASHED
         # This contract verifies the error type; triggering a real crash
         # is environment-dependent, so we document the expected interface
         manager = SessionManager()

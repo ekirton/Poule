@@ -22,29 +22,29 @@ Tests define the expected package structure:
 
 | Package | Location |
 |---------|----------|
-| `poule.models.enums` | Enumerations (`SortKind`, `DeclKind`) |
-| `poule.models.labels` | Node label hierarchy (15 concrete types) |
-| `poule.models.tree` | `TreeNode`, `ExprTree`, utility functions |
-| `poule.models.responses` | `SearchResult`, `LemmaDetail`, `Module` |
-| `poule.normalization.constr_node` | `ConstrNode` variant types |
-| `poule.normalization.normalize` | `constr_to_tree`, `coq_normalize` |
-| `poule.normalization.cse` | `cse_normalize` |
-| `poule.normalization.errors` | `NormalizationError` |
-| `poule.storage.writer` | `IndexWriter` |
-| `poule.storage.reader` | `IndexReader` |
-| `poule.storage.errors` | `StorageError`, `IndexNotFoundError`, `IndexVersionError` |
-| `poule.channels.wl_kernel` | WL histogram, cosine, size filter, screening |
-| `poule.channels.mepo` | Symbol weight, relevance, iterative selection |
-| `poule.channels.fts` | FTS5 query preprocessing and search |
-| `poule.channels.ted` | Zhang-Shasha TED, rename cost, similarity |
-| `poule.channels.const_jaccard` | Jaccard similarity, constant extraction |
-| `poule.fusion.fusion` | Score clamping, collapse match, structural score, RRF |
-| `poule.pipeline.context` | `PipelineContext`, `create_context` |
-| `poule.pipeline.search` | `search_by_structure`, `search_by_type`, `search_by_symbols`, `search_by_name`, `score_candidates` |
-| `poule.pipeline.parser` | `CoqParser`, `ParseError` |
-| `poule.extraction.pipeline` | `run_extraction`, `discover_libraries` |
-| `poule.extraction.kind_mapping` | `map_kind` |
-| `poule.extraction.errors` | `ExtractionError` |
-| `poule.server.handlers` | Tool handler functions |
-| `poule.server.validation` | Input validation functions |
-| `poule.server.errors` | Error formatting, error code constants |
+| `Poule.models.enums` | Enumerations (`SortKind`, `DeclKind`) |
+| `Poule.models.labels` | Node label hierarchy (15 concrete types) |
+| `Poule.models.tree` | `TreeNode`, `ExprTree`, utility functions |
+| `Poule.models.responses` | `SearchResult`, `LemmaDetail`, `Module` |
+| `Poule.normalization.constr_node` | `ConstrNode` variant types |
+| `Poule.normalization.normalize` | `constr_to_tree`, `coq_normalize` |
+| `Poule.normalization.cse` | `cse_normalize` |
+| `Poule.normalization.errors` | `NormalizationError` |
+| `Poule.storage.writer` | `IndexWriter` |
+| `Poule.storage.reader` | `IndexReader` |
+| `Poule.storage.errors` | `StorageError`, `IndexNotFoundError`, `IndexVersionError` |
+| `Poule.channels.wl_kernel` | WL histogram, cosine, size filter, screening |
+| `Poule.channels.mepo` | Symbol weight, relevance, iterative selection |
+| `Poule.channels.fts` | FTS5 query preprocessing and search |
+| `Poule.channels.ted` | Zhang-Shasha TED, rename cost, similarity |
+| `Poule.channels.const_jaccard` | Jaccard similarity, constant extraction |
+| `Poule.fusion.fusion` | Score clamping, collapse match, structural score, RRF |
+| `Poule.pipeline.context` | `PipelineContext`, `create_context` |
+| `Poule.pipeline.search` | `search_by_structure`, `search_by_type`, `search_by_symbols`, `search_by_name`, `score_candidates` |
+| `Poule.pipeline.parser` | `CoqParser`, `ParseError` |
+| `Poule.extraction.pipeline` | `run_extraction`, `discover_libraries` |
+| `Poule.extraction.kind_mapping` | `map_kind` |
+| `Poule.extraction.errors` | `ExtractionError` |
+| `Poule.server.handlers` | Tool handler functions |
+| `Poule.server.validation` | Input validation functions |
+| `Poule.server.errors` | Error formatting, error code constants |

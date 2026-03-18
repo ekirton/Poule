@@ -19,15 +19,15 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from poule.pipeline.context import PipelineContext, create_context
-from poule.pipeline.search import (
+from Poule.pipeline.context import PipelineContext, create_context
+from Poule.pipeline.search import (
     score_candidates,
     search_by_name,
     search_by_structure,
     search_by_symbols,
     search_by_type,
 )
-from poule.pipeline.parser import CoqParser, ParseError
+from Poule.pipeline.parser import CoqParser, ParseError
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +327,7 @@ class TestSearchByStructureNormalizationError:
         ctx = _mock_context(parser=parser)
 
         # Import the error that normalization would raise
-        from poule.pipeline.search import NormalizationError
+        from Poule.pipeline.search import NormalizationError
 
         mock_coq_norm.side_effect = NormalizationError("normalization failed")
 
@@ -344,7 +344,7 @@ class TestSearchByStructureNormalizationError:
         parser = _mock_parser()
         ctx = _mock_context(parser=parser)
 
-        from poule.pipeline.search import NormalizationError
+        from Poule.pipeline.search import NormalizationError
 
         mock_coq_norm.return_value = MagicMock()
         mock_cse_norm.side_effect = NormalizationError("CSE failed")
@@ -810,8 +810,8 @@ import io
 import json
 import subprocess
 
-from poule.parsing.type_expr_parser import TypeExprParser
-from poule.pipeline.search import _ensure_parser
+from Poule.parsing.type_expr_parser import TypeExprParser
+from Poule.pipeline.search import _ensure_parser
 
 
 def _make_lsp_message(msg_dict):
@@ -927,7 +927,7 @@ class TestEnsureParser:
 # 16. CoqLspParser unit tests (mocked subprocess)
 # ---------------------------------------------------------------------------
 
-from poule.pipeline.coqlsp_parser import CoqLspParser
+from Poule.pipeline.coqlsp_parser import CoqLspParser
 
 
 def _mock_popen(stdout_bytes):
@@ -1139,7 +1139,7 @@ class TestCoqLspParserContract:
         parser = CoqLspParser()
         try:
             result = parser.parse("nat")
-            import poule.normalization.constr_node as cn
+            import Poule.normalization.constr_node as cn
 
             valid_types = (
                 cn.Rel, cn.Var, cn.Sort, cn.Cast, cn.Prod, cn.Lambda,
@@ -1161,7 +1161,7 @@ class TestCoqLspParserContract:
         parser = CoqLspParser()
         try:
             result = parser.parse("forall n : nat, n = n")
-            import poule.normalization.constr_node as cn
+            import Poule.normalization.constr_node as cn
 
             valid_types = (
                 cn.Rel, cn.Var, cn.Sort, cn.Cast, cn.Prod, cn.Lambda,

@@ -31,7 +31,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_types():
-    from poule.universe.types import (
+    from Poule.universe.types import (
         UniverseExpression,
         UniverseConstraint,
         ConstraintGraph,
@@ -48,7 +48,7 @@ def _import_types():
 
 
 def _import_retrieval():
-    from poule.universe.retrieval import (
+    from Poule.universe.retrieval import (
         retrieve_full_graph,
         retrieve_definition_constraints,
     )
@@ -56,22 +56,22 @@ def _import_retrieval():
 
 
 def _import_parser():
-    from poule.universe.parser import parse_constraints
+    from Poule.universe.parser import parse_constraints
     return parse_constraints
 
 
 def _import_graph():
-    from poule.universe.graph import build_graph, filter_by_reachability
+    from Poule.universe.graph import build_graph, filter_by_reachability
     return build_graph, filter_by_reachability
 
 
 def _import_diagnosis():
-    from poule.universe.diagnosis import diagnose_universe_error
+    from Poule.universe.diagnosis import diagnose_universe_error
     return diagnose_universe_error
 
 
 def _import_polymorphic():
-    from poule.universe.polymorphic import (
+    from Poule.universe.polymorphic import (
         retrieve_instantiations,
         compare_definitions,
     )
@@ -79,7 +79,7 @@ def _import_polymorphic():
 
 
 def _import_session_errors():
-    from poule.session.errors import (
+    from Poule.session.errors import (
         BACKEND_CRASHED,
         SESSION_NOT_FOUND,
         SessionError,
@@ -88,7 +88,7 @@ def _import_session_errors():
 
 
 def _import_server_errors():
-    from poule.server.errors import (
+    from Poule.server.errors import (
         NOT_FOUND,
         PARSE_ERROR,
     )
@@ -518,7 +518,7 @@ class TestFullGraphRetrieval:
         retrieve_full_graph, _ = _import_retrieval()
         # This test exercises the real Coq backend.
         # Skipped when Coq is not available.
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.create_session(str(coq_test_file), "test_proof")
         try:
@@ -612,7 +612,7 @@ class TestDefinitionConstraintRetrieval:
     async def test_contract_retrieve_definition_constraints(self, coq_test_file):
         """Contract test: real per-definition retrieval returns a ConstraintGraph."""
         _, retrieve_definition_constraints = _import_retrieval()
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.create_session(str(coq_test_file), "test_proof")
         try:
@@ -745,7 +745,7 @@ class TestInconsistencyDiagnosis:
     async def test_contract_diagnose_universe_error(self, coq_test_file):
         """Contract test: real diagnosis against a Coq backend."""
         diagnose = _import_diagnosis()
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.create_session(str(coq_test_file), "test_proof")
         try:
@@ -876,7 +876,7 @@ class TestSourceAttribution:
     async def test_contract_attribution_uses_about_command(self, coq_test_file):
         """Contract test: real attribution queries About for definitions."""
         diagnose = _import_diagnosis()
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.create_session(str(coq_test_file), "test_proof")
         try:
@@ -995,7 +995,7 @@ class TestPolymorphicInstantiationRetrieval:
     async def test_contract_retrieve_instantiations(self, coq_test_file):
         """Contract test: real instantiation retrieval returns structured data."""
         retrieve_instantiations, _ = _import_polymorphic()
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.create_session(str(coq_test_file), "test_proof")
         try:
@@ -1071,7 +1071,7 @@ class TestPolymorphicCompatibilityComparison:
     async def test_contract_compare_definitions(self, coq_test_file):
         """Contract test: real comparison against a Coq backend."""
         _, compare_definitions = _import_polymorphic()
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.create_session(str(coq_test_file), "test_proof")
         try:
@@ -1242,7 +1242,7 @@ class TestInterfaceContracts:
     @pytest.mark.asyncio
     async def test_contract_coq_query_returns_text(self, coq_test_file):
         """Contract test: coq_query returns raw text for Print Universes."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.create_session(str(coq_test_file), "test_proof")
         try:

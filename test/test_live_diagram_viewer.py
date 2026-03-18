@@ -7,19 +7,19 @@ import pytest
 
 
 def _import_broadcaster():
-    from poule.server.viewer import DiagramBroadcaster
+    from Poule.server.viewer import DiagramBroadcaster
     return DiagramBroadcaster
 
 def _import_event():
-    from poule.server.viewer import DiagramEvent
+    from Poule.server.viewer import DiagramEvent
     return DiagramEvent
 
 def _import_viewer_html():
-    from poule.server.viewer import VIEWER_HTML
+    from Poule.server.viewer import VIEWER_HTML
     return VIEWER_HTML
 
 def _import_format_sse():
-    from poule.server.viewer import format_sse_event, format_sse_history
+    from Poule.server.viewer import format_sse_event, format_sse_history
     return format_sse_event, format_sse_history
 
 def _make_event(id_="1", tool="visualize_proof_tree", title="Proof Tree: app_nil_r",
@@ -142,7 +142,7 @@ class TestVisualizationHandlerIntegration:
     @pytest.mark.asyncio
     async def test_visualize_proof_tree_pushes_event(self):
         from unittest.mock import AsyncMock, Mock
-        from poule.session.types import ProofState, ProofTrace, TraceStep, Goal
+        from Poule.session.types import ProofState, ProofTrace, TraceStep, Goal
         broadcaster = _import_broadcaster()()
         sm = AsyncMock()
         sm.extract_trace.return_value = ProofTrace(
@@ -156,7 +156,7 @@ class TestVisualizationHandlerIntegration:
                     schema_version=1, session_id="s1", step_index=1,
                     is_complete=True, focused_goal_index=None, goals=[]))])
         r = Mock(); r.render_proof_tree.return_value = "flowchart TD"
-        from poule.server.handlers import handle_visualize_proof_tree
+        from Poule.server.handlers import handle_visualize_proof_tree
         await handle_visualize_proof_tree(session_id="s1", session_manager=sm, renderer=r, broadcaster=broadcaster)
         assert len(broadcaster.get_history()) == 1
         assert "app_nil_r" in broadcaster.get_history()[0].title
@@ -164,18 +164,18 @@ class TestVisualizationHandlerIntegration:
     @pytest.mark.asyncio
     async def test_error_does_not_push(self):
         from unittest.mock import AsyncMock, Mock
-        from poule.session.errors import SessionError
+        from Poule.session.errors import SessionError
         broadcaster = _import_broadcaster()()
         sm = AsyncMock()
         sm.extract_trace.side_effect = SessionError("SESSION_NOT_FOUND", "Not found.")
-        from poule.server.handlers import handle_visualize_proof_tree
+        from Poule.server.handlers import handle_visualize_proof_tree
         await handle_visualize_proof_tree(session_id="bad", session_manager=sm, renderer=Mock(), broadcaster=broadcaster)
         assert broadcaster.get_history() == []
 
     @pytest.mark.asyncio
     async def test_broadcaster_none_works(self):
         from unittest.mock import AsyncMock, Mock
-        from poule.session.types import ProofState, ProofTrace, TraceStep, Goal
+        from Poule.session.types import ProofState, ProofTrace, TraceStep, Goal
         sm = AsyncMock()
         sm.extract_trace.return_value = ProofTrace(
             schema_version=1, session_id="s1", proof_name="t", file_path="/t.v", total_steps=1,
@@ -186,7 +186,7 @@ class TestVisualizationHandlerIntegration:
                     schema_version=1, session_id="s1", step_index=1, is_complete=True,
                     focused_goal_index=None, goals=[]))])
         r = Mock(); r.render_proof_tree.return_value = "flowchart TD"
-        from poule.server.handlers import handle_visualize_proof_tree
+        from Poule.server.handlers import handle_visualize_proof_tree
         result = await handle_visualize_proof_tree(session_id="s1", session_manager=sm, renderer=r, broadcaster=None)
         assert "mermaid" in json.loads(result)
 
@@ -195,7 +195,7 @@ class TestTitleConstruction:
     @pytest.mark.asyncio
     async def test_proof_tree_title(self):
         from unittest.mock import AsyncMock, Mock
-        from poule.session.types import ProofState, ProofTrace, TraceStep, Goal
+        from Poule.session.types import ProofState, ProofTrace, TraceStep, Goal
         broadcaster = _import_broadcaster()()
         sm = AsyncMock()
         sm.extract_trace.return_value = ProofTrace(
@@ -208,31 +208,31 @@ class TestTitleConstruction:
                     schema_version=1, session_id="s1", step_index=1, is_complete=True,
                     focused_goal_index=None, goals=[]))])
         r = Mock(); r.render_proof_tree.return_value = "flowchart TD"
-        from poule.server.handlers import handle_visualize_proof_tree
+        from Poule.server.handlers import handle_visualize_proof_tree
         await handle_visualize_proof_tree(session_id="s1", session_manager=sm, renderer=r, broadcaster=broadcaster)
         assert broadcaster.get_history()[0].title == "Proof Tree: Nat.add_comm"
 
     @pytest.mark.asyncio
     async def test_proof_state_title(self):
         from unittest.mock import AsyncMock, Mock
-        from poule.session.types import ProofState, Goal
+        from Poule.session.types import ProofState, Goal
         broadcaster = _import_broadcaster()()
         sm = AsyncMock()
         sm.observe_state.return_value = ProofState(
             schema_version=1, session_id="sess-42", step_index=5, is_complete=False,
             focused_goal_index=0, goals=[Goal(index=0, type="P", hypotheses=[])])
         r = Mock(); r.render_proof_state.return_value = "flowchart TD"
-        from poule.server.handlers import handle_visualize_proof_state
+        from Poule.server.handlers import handle_visualize_proof_state
         await handle_visualize_proof_state(session_id="sess-42", session_manager=sm, renderer=r, broadcaster=broadcaster)
         assert broadcaster.get_history()[0].title == "Proof State: sess-42 step 5"
 
     @pytest.mark.asyncio
     async def test_dependencies_title(self):
         from unittest.mock import Mock
-        from poule.rendering.types import RenderedDiagram
+        from Poule.rendering.types import RenderedDiagram
         broadcaster = _import_broadcaster()()
         si = Mock(); si.index_ready = True; si.find_related.return_value = []
         r = Mock(); r.render_dependencies.return_value = RenderedDiagram(mermaid="flowchart TD", node_count=1, truncated=False)
-        from poule.server.handlers import handle_visualize_dependencies
+        from Poule.server.handlers import handle_visualize_dependencies
         await handle_visualize_dependencies(name="List.rev_append", search_index=si, renderer=r, broadcaster=broadcaster)
         assert broadcaster.get_history()[0].title == "Dependencies: List.rev_append"

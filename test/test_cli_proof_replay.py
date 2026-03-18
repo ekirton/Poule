@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from poule.session.types import (
+from Poule.session.types import (
     Goal,
     Hypothesis,
     Premise,
@@ -29,7 +29,7 @@ from poule.session.types import (
     ProofTrace,
     TraceStep,
 )
-from poule.session.errors import (
+from Poule.session.errors import (
     BACKEND_CRASHED,
     FILE_NOT_FOUND,
     PROOF_NOT_FOUND,
@@ -121,12 +121,12 @@ def _make_premises():
 
 
 def _import_cli():
-    from poule.cli.commands import cli
+    from Poule.cli.commands import cli
     return cli
 
 
 def _import_format_proof_trace():
-    from poule.cli.formatting import format_proof_trace
+    from Poule.cli.formatting import format_proof_trace
     return format_proof_trace
 
 

@@ -24,7 +24,7 @@ import pytest
 @pytest.fixture
 def make_leaf():
     """Return a factory that creates a leaf TreeNode with no children."""
-    from poule.models.tree import TreeNode
+    from Poule.models.tree import TreeNode
 
     def _make(label):
         return TreeNode(label=label, children=[])
@@ -35,7 +35,7 @@ def make_leaf():
 @pytest.fixture
 def make_node():
     """Return a factory that creates a TreeNode with children."""
-    from poule.models.tree import TreeNode
+    from Poule.models.tree import TreeNode
 
     def _make(label, children):
         return TreeNode(label=label, children=children)
@@ -46,7 +46,7 @@ def make_node():
 @pytest.fixture
 def make_tree():
     """Return a factory that creates an ExprTree from a root node."""
-    from poule.models.tree import ExprTree, node_count as _nc
+    from Poule.models.tree import ExprTree, node_count as _nc
 
     def _make(root):
         return ExprTree(root=root, node_count=_nc(root))
@@ -57,9 +57,9 @@ def make_tree():
 @pytest.fixture
 def sample_prod_tree():
     """LProd(LSort(PROP), LRel(0)) — a simple 3-node tree."""
-    from poule.models.labels import LProd, LSort, LRel
-    from poule.models.enums import SortKind
-    from poule.models.tree import TreeNode, ExprTree
+    from Poule.models.labels import LProd, LSort, LRel
+    from Poule.models.enums import SortKind
+    from Poule.models.tree import TreeNode, ExprTree
 
     root = TreeNode(
         label=LProd(),
@@ -74,8 +74,8 @@ def sample_prod_tree():
 @pytest.fixture
 def sample_app_tree():
     """LApp(LApp(LConst(Nat.add), LRel(1)), LRel(2)) — currified application, 5 nodes."""
-    from poule.models.labels import LApp, LConst, LRel
-    from poule.models.tree import TreeNode, ExprTree
+    from Poule.models.labels import LApp, LConst, LRel
+    from Poule.models.tree import TreeNode, ExprTree
 
     inner = TreeNode(
         label=LApp(),

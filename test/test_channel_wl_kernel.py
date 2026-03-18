@@ -18,7 +18,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_wl():
-    from poule.channels.wl_kernel import (
+    from Poule.channels.wl_kernel import (
         wl_histogram,
         wl_cosine,
         size_filter,

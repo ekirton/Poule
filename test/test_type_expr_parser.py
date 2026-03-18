@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from poule.normalization.constr_node import (
+from Poule.normalization.constr_node import (
     App,
     Const,
     Lambda,
@@ -21,13 +21,13 @@ from poule.normalization.constr_node import (
     Rel,
     Sort,
 )
-from poule.parsing.type_expr_parser import (
+from Poule.parsing.type_expr_parser import (
     Token,
     TokenKind,
     TypeExprParser,
     tokenize,
 )
-from poule.pipeline.parser import CoqParser, ParseError
+from Poule.pipeline.parser import CoqParser, ParseError
 
 
 # ---------------------------------------------------------------------------
@@ -587,7 +587,7 @@ class TestNormalizationIntegration:
     """parse → coq_normalize → verify ExprTree structure."""
 
     def test_simple_type_normalizes(self):
-        from poule.normalization.normalize import coq_normalize
+        from Poule.normalization.normalize import coq_normalize
 
         parser = TypeExprParser()
         constr_node = parser.parse("nat -> nat")
@@ -598,7 +598,7 @@ class TestNormalizationIntegration:
         assert tree.node_count > 0
 
     def test_forall_type_normalizes(self):
-        from poule.normalization.normalize import coq_normalize
+        from Poule.normalization.normalize import coq_normalize
 
         parser = TypeExprParser()
         constr_node = parser.parse("forall n : nat, n + 0 = n")
@@ -608,8 +608,8 @@ class TestNormalizationIntegration:
         assert tree.node_count > 0
 
     def test_cse_normalize_after_parse(self):
-        from poule.normalization.cse import cse_normalize
-        from poule.normalization.normalize import coq_normalize
+        from Poule.normalization.cse import cse_normalize
+        from Poule.normalization.normalize import coq_normalize
 
         parser = TypeExprParser()
         constr_node = parser.parse("forall n m : nat, n + m = m + n")
@@ -621,9 +621,9 @@ class TestNormalizationIntegration:
         assert tree.node_count > 0
 
     def test_wl_histogram_after_parse(self):
-        from poule.channels.wl_kernel import wl_histogram
-        from poule.normalization.cse import cse_normalize
-        from poule.normalization.normalize import coq_normalize
+        from Poule.channels.wl_kernel import wl_histogram
+        from Poule.normalization.cse import cse_normalize
+        from Poule.normalization.normalize import coq_normalize
 
         parser = TypeExprParser()
         constr_node = parser.parse("nat -> nat -> nat")
@@ -636,8 +636,8 @@ class TestNormalizationIntegration:
         assert len(hist) > 0
 
     def test_extract_consts_after_parse(self):
-        from poule.channels.const_jaccard import extract_consts
-        from poule.normalization.normalize import coq_normalize
+        from Poule.channels.const_jaccard import extract_consts
+        from Poule.normalization.normalize import coq_normalize
 
         parser = TypeExprParser()
         constr_node = parser.parse("nat -> nat")

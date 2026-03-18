@@ -30,22 +30,22 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_handlers_wrappers():
-    from poule.server import handlers_wrappers
+    from Poule.server import handlers_wrappers
     return handlers_wrappers
 
 
 def _import_dispatch_tool():
-    from poule.server.__main__ import _dispatch_tool
+    from Poule.server.__main__ import _dispatch_tool
     return _dispatch_tool
 
 
 def _import_tool_definitions():
-    from poule.server.__main__ import TOOL_DEFINITIONS
+    from Poule.server.__main__ import TOOL_DEFINITIONS
     return TOOL_DEFINITIONS
 
 
 def _import_server_ctx():
-    from poule.server.__main__ import _ServerContext
+    from Poule.server.__main__ import _ServerContext
     return _ServerContext
 
 
@@ -500,7 +500,7 @@ class TestInspectUniverses:
         assert result.get("isError") is True
 
     def test_session_error_translates(self, ctx):
-        from poule.session.errors import SessionError
+        from Poule.session.errors import SessionError
         with patch(
             "poule.universe.retrieval.retrieve_full_graph",
             new_callable=AsyncMock,
@@ -690,7 +690,7 @@ class TestListTypeclasses:
         assert result.get("isError") is True
 
     def test_session_error_translates(self, ctx):
-        from poule.session.errors import SessionError
+        from Poule.session.errors import SessionError
         with patch(
             "poule.typeclass.debugging.list_typeclasses",
             new_callable=AsyncMock,
@@ -726,7 +726,7 @@ class TestTraceResolution:
         assert result.get("isError") is True
 
     def test_session_error_translates(self, ctx):
-        from poule.session.errors import SessionError
+        from Poule.session.errors import SessionError
         with patch(
             "poule.typeclass.debugging.trace_resolution",
             new_callable=AsyncMock,
@@ -997,7 +997,7 @@ class TestExtractCode:
         assert result.get("isError") is True
 
     def test_session_error_translates(self, ctx):
-        from poule.session.errors import SessionError
+        from Poule.session.errors import SessionError
         with patch(
             "poule.extraction.handler.extract_code",
             new_callable=AsyncMock,
@@ -1260,7 +1260,7 @@ class TestSuggestTactics:
         assert result.get("isError") is True
 
     def test_session_error_translates(self, ctx):
-        from poule.session.errors import SessionError
+        from Poule.session.errors import SessionError
         with patch(
             "poule.tactics.suggest.tactic_suggest",
             new_callable=AsyncMock,

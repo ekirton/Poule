@@ -27,7 +27,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_types():
-    from poule.documentation.types import (
+    from Poule.documentation.types import (
         DocumentationRequest,
         DocumentationResult,
         BatchDocumentationRequest,
@@ -44,7 +44,7 @@ def _import_types():
 
 
 def _import_adapter():
-    from poule.documentation.adapter import (
+    from Poule.documentation.adapter import (
         check_availability,
         generate_documentation,
         generate_proof_documentation,

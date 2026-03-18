@@ -28,7 +28,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_debugging():
-    from poule.typeclass.debugging import (
+    from Poule.typeclass.debugging import (
         list_instances,
         list_typeclasses,
         trace_resolution,
@@ -47,7 +47,7 @@ def _import_debugging():
 
 
 def _import_types():
-    from poule.typeclass.types import (
+    from Poule.typeclass.types import (
         TypeclassInfo,
         TypeclassSummary,
         ResolutionTrace,
@@ -68,12 +68,12 @@ def _import_types():
 
 
 def _import_parser():
-    from poule.typeclass.parser import TraceParser
+    from Poule.typeclass.parser import TraceParser
     return TraceParser
 
 
 def _import_session_errors():
-    from poule.session.errors import (
+    from Poule.session.errors import (
         BACKEND_CRASHED,
         SESSION_NOT_FOUND,
         SessionError,
@@ -82,7 +82,7 @@ def _import_session_errors():
 
 
 def _import_constants():
-    from poule.typeclass.debugging import (
+    from Poule.typeclass.debugging import (
         MAX_TYPECLASSES_FOR_INSTANCE_COUNT,
         TYPECLASS_COMMAND_TIMEOUT_SECONDS,
     )
@@ -309,7 +309,7 @@ class TestListInstances:
         list_instances, *_ = _import_debugging()
         TypeclassInfo, *_ = _import_types()
 
-        from poule.session.manager import ProofSessionManager
+        from Poule.session.manager import ProofSessionManager
         manager = ProofSessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -413,7 +413,7 @@ class TestListTypeclasses:
         _, list_typeclasses, *_ = _import_debugging()
         _, TypeclassSummary, *_ = _import_types()
 
-        from poule.session.manager import ProofSessionManager
+        from Poule.session.manager import ProofSessionManager
         manager = ProofSessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -608,7 +608,7 @@ class TestTraceResolution:
         """Contract test: trace_resolution returns NO_TYPECLASS_GOAL with no proof goal."""
         _, _, trace_resolution, *_ = _import_debugging()
 
-        from poule.session.manager import ProofSessionManager
+        from Poule.session.manager import ProofSessionManager
         manager = ProofSessionManager()
         session_id = await manager.open_session("test_contract")
         try:

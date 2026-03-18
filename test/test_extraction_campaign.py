@@ -31,7 +31,7 @@ def _make_extraction_record(
     total_steps=3,
 ):
     """Build a minimal ExtractionRecord for testing."""
-    from poule.extraction.types import ExtractionRecord, ExtractionStep
+    from Poule.extraction.types import ExtractionRecord, ExtractionStep
 
     steps = []
     for i in range(total_steps + 1):
@@ -62,7 +62,7 @@ def _make_extraction_error(
     error_message="Tactic apply failed",
 ):
     """Build a minimal ExtractionError record for testing."""
-    from poule.extraction.types import ExtractionError
+    from Poule.extraction.types import ExtractionError
 
     return ExtractionError(
         schema_version=1,
@@ -82,7 +82,7 @@ def _make_project_metadata(
     commit_hash="abc123",
 ):
     """Build a minimal ProjectMetadata for testing."""
-    from poule.extraction.types import ProjectMetadata
+    from Poule.extraction.types import ProjectMetadata
 
     return ProjectMetadata(
         project_id=project_id,
@@ -129,7 +129,7 @@ class TestBuildCampaignPlanDeterministicOrdering:
 
     def test_projects_ordered_by_input_dir_order(self, tmp_path):
         """Projects appear in campaign plan in the same order as project_dirs."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         dir_a = tmp_path / "stdlib"
         dir_b = tmp_path / "mathcomp"
@@ -144,7 +144,7 @@ class TestBuildCampaignPlanDeterministicOrdering:
 
     def test_files_sorted_lexicographically_within_project(self, tmp_path):
         """Within a project, .v files are sorted by path in lexicographic order."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -161,7 +161,7 @@ class TestBuildCampaignPlanDeterministicOrdering:
 
     def test_theorems_in_declaration_order_within_file(self, tmp_path):
         """Theorems within a file appear in declaration order."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -182,7 +182,7 @@ class TestProjectMetadataDetection:
 
     def test_project_id_from_dirname(self, tmp_path):
         """project_id is derived from directory basename."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         proj = tmp_path / "my_project"
         proj.mkdir()
@@ -193,7 +193,7 @@ class TestProjectMetadataDetection:
 
     def test_project_id_disambiguation_with_suffix(self, tmp_path):
         """When two dirs share a basename, the second gets a numeric suffix."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         dir1 = tmp_path / "a" / "theories"
         dir2 = tmp_path / "b" / "theories"
@@ -208,7 +208,7 @@ class TestProjectMetadataDetection:
 
     def test_project_path_is_absolute(self, tmp_path):
         """project_path in metadata is an absolute path."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -223,7 +223,7 @@ class TestTheoremEnumeration:
 
     def test_enumerates_theorems_from_v_files(self, tmp_path):
         """Theorems are enumerated from .v files in the project."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -239,7 +239,7 @@ class TestTheoremEnumeration:
     def test_file_load_failure_records_error(self, tmp_path):
         """When a .v file fails to load, a load_failure error is recorded
         and enumeration continues with the next file."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -260,7 +260,7 @@ class TestScopeFiltering:
 
     def test_name_pattern_filters_theorems(self, tmp_path):
         """Name pattern filter includes only matching theorems."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -283,7 +283,7 @@ class TestScopeFiltering:
 
     def test_filtered_theorems_counted_as_skipped(self, tmp_path):
         """Theorems excluded by scope filter are counted as skipped."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -307,14 +307,14 @@ class TestDirectoryNotFoundError:
 
     def test_nonexistent_directory_raises_error(self):
         """A nonexistent project dir raises DIRECTORY_NOT_FOUND."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         with pytest.raises(Exception, match="DIRECTORY_NOT_FOUND"):
             build_campaign_plan(["/nonexistent/path"], scope_filter=None)
 
     def test_error_raised_before_any_extraction(self, tmp_path):
         """Error is raised before extraction begins, even if some dirs exist."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         good_dir = tmp_path / "good"
         good_dir.mkdir()
@@ -335,8 +335,8 @@ class TestExtractSingleProofSuccess:
 
     def test_returns_extraction_record_on_success(self):
         """Successful extraction returns an ExtractionRecord with correct fields."""
-        from poule.extraction.campaign import extract_single_proof
-        from poule.extraction.types import ExtractionRecord
+        from Poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.types import ExtractionRecord
 
         # Mock SessionManager — contract test: test_proof_session.py
         sm = _make_mock_session_manager()
@@ -353,7 +353,7 @@ class TestExtractSingleProofSuccess:
     def test_session_operations_called_in_order(self):
         """Session manager operations are called in the correct sequence:
         create_session -> extract_trace -> get_premises -> close_session."""
-        from poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.campaign import extract_single_proof
 
         sm = _make_mock_session_manager()
 
@@ -373,8 +373,8 @@ class TestExtractSingleProofFailureModes:
 
     def test_timeout_returns_timeout_error(self):
         """When extraction times out, returns ExtractionError with error_kind='timeout'."""
-        from poule.extraction.campaign import extract_single_proof
-        from poule.extraction.types import ExtractionError
+        from Poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.types import ExtractionError
 
         # Mock SessionManager — contract test: test_proof_session.py
         sm = _make_mock_session_manager(
@@ -391,13 +391,13 @@ class TestExtractSingleProofFailureModes:
     def test_backend_crash_returns_backend_crash_error(self):
         """When the Coq backend crashes, returns ExtractionError
         with error_kind='backend_crash'."""
-        from poule.extraction.campaign import extract_single_proof
-        from poule.extraction.types import ExtractionError
+        from Poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.types import ExtractionError
 
         # Mock SessionManager — contract test: test_proof_session.py
         sm = _make_mock_session_manager()
         # Simulate backend crash via session error
-        from poule.session.errors import SessionError, BACKEND_CRASHED
+        from Poule.session.errors import SessionError, BACKEND_CRASHED
         sm.extract_trace = AsyncMock(
             side_effect=SessionError(BACKEND_CRASHED, "Backend process died"),
         )
@@ -412,12 +412,12 @@ class TestExtractSingleProofFailureModes:
     def test_tactic_failure_returns_tactic_failure_error(self):
         """When a tactic fails during replay, returns ExtractionError
         with error_kind='tactic_failure'."""
-        from poule.extraction.campaign import extract_single_proof
-        from poule.extraction.types import ExtractionError
+        from Poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.types import ExtractionError
 
         # Mock SessionManager — contract test: test_proof_session.py
         sm = _make_mock_session_manager()
-        from poule.session.errors import SessionError, TACTIC_ERROR
+        from Poule.session.errors import SessionError, TACTIC_ERROR
         sm.extract_trace = AsyncMock(
             side_effect=SessionError(TACTIC_ERROR, "Tactic apply failed"),
         )
@@ -432,12 +432,12 @@ class TestExtractSingleProofFailureModes:
     def test_load_failure_returns_load_failure_error(self):
         """When file loading fails, returns ExtractionError
         with error_kind='load_failure'."""
-        from poule.extraction.campaign import extract_single_proof
-        from poule.extraction.types import ExtractionError
+        from Poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.types import ExtractionError
 
         # Mock SessionManager — contract test: test_proof_session.py
         sm = _make_mock_session_manager()
-        from poule.session.errors import SessionError, FILE_NOT_FOUND
+        from Poule.session.errors import SessionError, FILE_NOT_FOUND
         sm.create_session = AsyncMock(
             side_effect=SessionError(FILE_NOT_FOUND, "File not found"),
         )
@@ -452,8 +452,8 @@ class TestExtractSingleProofFailureModes:
     def test_unknown_error_returns_unknown_error_kind(self):
         """Any unexpected error returns ExtractionError
         with error_kind='unknown'."""
-        from poule.extraction.campaign import extract_single_proof
-        from poule.extraction.types import ExtractionError
+        from Poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.types import ExtractionError
 
         # Mock SessionManager — contract test: test_proof_session.py
         sm = _make_mock_session_manager()
@@ -474,7 +474,7 @@ class TestExtractSingleProofSessionCleanup:
 
     def test_session_closed_on_success(self):
         """Session is closed after successful extraction."""
-        from poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.campaign import extract_single_proof
 
         # Mock SessionManager — contract test: test_proof_session.py
         sm = _make_mock_session_manager()
@@ -485,7 +485,7 @@ class TestExtractSingleProofSessionCleanup:
 
     def test_session_closed_on_failure(self):
         """Session is closed even when extraction fails."""
-        from poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.campaign import extract_single_proof
 
         # Mock SessionManager — contract test: test_proof_session.py
         sm = _make_mock_session_manager()
@@ -499,7 +499,7 @@ class TestExtractSingleProofSessionCleanup:
 
     def test_session_closed_on_timeout(self):
         """Session is closed when extraction times out."""
-        from poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.campaign import extract_single_proof
 
         # Mock SessionManager — contract test: test_proof_session.py
         sm = _make_mock_session_manager(
@@ -518,8 +518,8 @@ class TestExtractSingleProofTimeout:
 
     def test_timeout_enforced_with_wait_for(self):
         """Extraction uses asyncio.wait_for with the configured timeout."""
-        from poule.extraction.campaign import extract_single_proof
-        from poule.extraction.types import ExtractionError
+        from Poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.types import ExtractionError
 
         # Mock SessionManager — contract test: test_proof_session.py
         async def slow_trace(*args, **kwargs):
@@ -546,8 +546,8 @@ class TestRunCampaignOutputStructure:
 
     def test_first_output_is_campaign_metadata(self, tmp_path):
         """First record emitted is CampaignMetadata."""
-        from poule.extraction.campaign import run_campaign
-        from poule.extraction.types import CampaignMetadata
+        from Poule.extraction.campaign import run_campaign
+        from Poule.extraction.types import CampaignMetadata
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -564,7 +564,7 @@ class TestRunCampaignOutputStructure:
 
     def test_last_output_is_extraction_summary(self, tmp_path):
         """Last record emitted is ExtractionSummary."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -579,7 +579,7 @@ class TestRunCampaignOutputStructure:
 
     def test_all_failures_still_produces_metadata_and_summary(self, tmp_path):
         """Even when all proofs fail, output contains metadata and summary."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -601,7 +601,7 @@ class TestRunCampaignDeterministicOrdering:
 
     def test_records_follow_plan_order(self, tmp_path):
         """Extraction records/errors appear in the same order as the campaign plan."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -634,7 +634,7 @@ class TestRunCampaignSummaryStatistics:
 
     def test_campaign_level_invariant(self, tmp_path):
         """extracted + failed + skipped == theorems_found at campaign level."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -654,7 +654,7 @@ class TestRunCampaignSummaryStatistics:
 
     def test_project_level_invariant(self, tmp_path):
         """extracted + failed + skipped == theorems_found at project level."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -672,7 +672,7 @@ class TestRunCampaignSummaryStatistics:
 
     def test_file_level_invariant(self, tmp_path):
         """extracted + failed + skipped == theorems_found at file level."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -691,7 +691,7 @@ class TestRunCampaignSummaryStatistics:
 
     def test_per_project_breakdown_present(self, tmp_path):
         """Summary includes per-project breakdown."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         dir_a = tmp_path / "stdlib"
         dir_b = tmp_path / "mathcomp"
@@ -710,7 +710,7 @@ class TestRunCampaignSummaryStatistics:
 
     def test_per_file_breakdown_present(self, tmp_path):
         """Summary includes per-file breakdown within each project."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -736,7 +736,7 @@ class TestRunCampaignSummaryStatistics:
         5 extracted), C.v (2 proofs, 0 extracted, 2 failed) =>
         found=17, extracted=14, failed=3, skipped=0.
         """
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         # This test verifies the summary aggregation logic.
         # We mock extract_single_proof to control outcomes.
@@ -771,7 +771,7 @@ class TestCampaignStateMachine:
 
     def test_normal_completion_reaches_complete_state(self, tmp_path):
         """A campaign that finishes all targets reaches 'complete' state."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -788,7 +788,7 @@ class TestCampaignStateMachine:
     def test_missing_directory_never_enters_extracting(self):
         """When a directory is missing, campaign never enters extracting state
         — raises DIRECTORY_NOT_FOUND immediately."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         with pytest.raises(Exception, match="DIRECTORY_NOT_FOUND"):
             asyncio.run(run_campaign(
@@ -807,7 +807,7 @@ class TestEmptyProjectDirectory:
 
     def test_empty_project_has_zero_counters(self, tmp_path):
         """An empty project dir yields a project summary with all zeros."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "empty_proj"
         proj.mkdir()
@@ -828,7 +828,7 @@ class TestVFileWithNoTheorems:
 
     def test_no_theorems_file_has_zero_counters(self, tmp_path):
         """A .v file with no theorems yields file summary with all zeros."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -852,14 +852,14 @@ class TestEmptyProjectDirsList:
     def test_empty_list_raises_validation_error(self):
         """An empty project_dirs list raises an input validation error,
         not DIRECTORY_NOT_FOUND."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         with pytest.raises((ValueError, Exception)):
             build_campaign_plan([], scope_filter=None)
 
     def test_run_campaign_empty_list_raises_validation_error(self):
         """run_campaign with empty project_dirs raises input validation error."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         with pytest.raises((ValueError, Exception)):
             asyncio.run(run_campaign([], "/dev/null", {}))
@@ -872,7 +872,7 @@ class TestSameDirectoryListedTwice:
     def test_duplicate_dir_gets_disambiguated_ids(self, tmp_path):
         """When the same directory is listed twice, both entries are processed
         with disambiguated project_ids."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -890,7 +890,7 @@ class TestSameDirectoryListedTwice:
     def test_duplicate_dir_extracted_twice(self, tmp_path):
         """When the same directory is listed twice, its theorems appear
         twice in the campaign plan (once per project_id)."""
-        from poule.extraction.campaign import build_campaign_plan
+        from Poule.extraction.campaign import build_campaign_plan
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -913,7 +913,7 @@ class TestSigintHandling:
     def test_sigint_emits_partial_summary(self, tmp_path):
         """When SIGINT is received during extraction, a partial summary
         is emitted with counts through the last completed proof."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "proj"
         proj.mkdir()
@@ -950,7 +950,7 @@ class TestSigintHandling:
 
     def test_interrupted_summary_counts_completed_proofs_only(self, tmp_path):
         """Partial summary after SIGINT counts only completed proofs."""
-        from poule.extraction.campaign import run_campaign
+        from Poule.extraction.campaign import run_campaign
 
         proj = tmp_path / "proj"
         proj.mkdir()

@@ -26,72 +26,72 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_detect():
-    from poule.build import detect_build_system
+    from Poule.build import detect_build_system
     return detect_build_system
 
 
 def _import_execute():
-    from poule.build import execute_build
+    from Poule.build import execute_build
     return execute_build
 
 
 def _import_generate_coq_project():
-    from poule.build import generate_coq_project
+    from Poule.build import generate_coq_project
     return generate_coq_project
 
 
 def _import_update_coq_project():
-    from poule.build import update_coq_project
+    from Poule.build import update_coq_project
     return update_coq_project
 
 
 def _import_generate_dune_project():
-    from poule.build import generate_dune_project
+    from Poule.build import generate_dune_project
     return generate_dune_project
 
 
 def _import_generate_opam_file():
-    from poule.build import generate_opam_file
+    from Poule.build import generate_opam_file
     return generate_opam_file
 
 
 def _import_migrate_to_dune():
-    from poule.build import migrate_to_dune
+    from Poule.build import migrate_to_dune
     return migrate_to_dune
 
 
 def _import_parse_build_errors():
-    from poule.build import parse_build_errors
+    from Poule.build import parse_build_errors
     return parse_build_errors
 
 
 def _import_query_installed_packages():
-    from poule.build import query_installed_packages
+    from Poule.build import query_installed_packages
     return query_installed_packages
 
 
 def _import_query_package_info():
-    from poule.build import query_package_info
+    from Poule.build import query_package_info
     return query_package_info
 
 
 def _import_install_package():
-    from poule.build import install_package
+    from Poule.build import install_package
     return install_package
 
 
 def _import_add_dependency():
-    from poule.build import add_dependency
+    from Poule.build import add_dependency
     return add_dependency
 
 
 def _import_check_dependency_conflicts():
-    from poule.build import check_dependency_conflicts
+    from Poule.build import check_dependency_conflicts
     return check_dependency_conflicts
 
 
 def _import_types():
-    from poule.build.types import (
+    from Poule.build.types import (
         BuildError,
         BuildRequest,
         BuildResult,
@@ -120,7 +120,7 @@ def _import_types():
 
 
 def _import_errors():
-    from poule.build.errors import (
+    from Poule.build.errors import (
         BUILD_SYSTEM_NOT_DETECTED,
         BUILD_TIMEOUT,
         DEPENDENCY_EXISTS,

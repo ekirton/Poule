@@ -9,7 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/.."
-DEV_IMAGE="poule:dev"
+DEV_IMAGE="Poule:dev"
 
 # Parse arguments
 REBUILD=false
@@ -52,9 +52,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Must be run from the poule project root
-if [ ! -d "$PROJECT_DIR/src/poule" ]; then
-    echo "Error: must be run from the poule project root."
-    echo "Expected to find src/poule/ relative to bin/poule-dev"
+if [ ! -d "$PROJECT_DIR/src/Poule" ]; then
+    echo "Error: must be run from the Poule project root."
+    echo "Expected to find src/Poule/ relative to bin/poule-dev"
     exit 1
 fi
 
@@ -71,7 +71,7 @@ if [ "$NO_AUTO_UPDATE" != true ]; then
 fi
 
 # ── Build dev image if missing or --rebuild requested ─────────────────────────
-DEV_IMAGE_EXISTS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -c "^poule:dev$" || echo "0")
+DEV_IMAGE_EXISTS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -c "^Poule:dev$" || echo "0")
 NEED_BUILD=false
 BUILD_REASON=""
 DEFERRED_UPDATE=false
@@ -147,7 +147,7 @@ if [ ! -f "$CLAUDE_DIR/settings.json" ]; then
     "command": "~/.claude/statusline.sh"
   },
   "mcpServers": {
-    "poule": {
+    "poule-mcp": {
       "type": "http",
       "url": "http://127.0.0.1:3000/mcp"
     },
@@ -167,7 +167,7 @@ path = sys.argv[1]
 with open(path) as f:
     s = json.load(f)
 s["mcpServers"] = {
-    "poule": {"type": "http", "url": "http://127.0.0.1:3000/mcp"},
+    "poule-mcp": {"type": "http", "url": "http://127.0.0.1:3000/mcp"},
     "mcp-mermaid": {"command": "npx", "args": ["-y", "mcp-mermaid"]}
 }
 with open(path, "w") as f:
@@ -229,11 +229,11 @@ if [ ! -f "$DATA_DIR/index.db" ]; then
             -v "$DATA_DIR:/data" \
             --entrypoint sh \
             "$DEV_IMAGE" \
-            -c 'uv run --project /poule python -m poule.cli download-index --output /data/index.db'; then
+            -c 'uv run --project /poule python -m Poule.cli download-index --output /data/index.db'; then
             echo "Index downloaded successfully."
         else
             echo "Warning: Index download failed. You can retry later from inside the container:"
-            echo "  uv run --project /poule python -m poule.cli download-index --output ~/data/index.db"
+            echo "  uv run --project /poule python -m Poule.cli download-index --output ~/data/index.db"
         fi
     fi
     echo ""
@@ -254,7 +254,7 @@ _git_branch_colored() {
   fi
 }
 setopt PROMPT_SUBST
-PROMPT='%F{cyan}[poule]%f $(_git_branch_colored)%F{blue}[%~]%f$ '
+PROMPT='%F{cyan}[Poule]%f $(_git_branch_colored)%F{blue}[%~]%f$ '
 HISTFILE=~/.zsh_history
 HISTSIZE=10000
 SAVEHIST=10000

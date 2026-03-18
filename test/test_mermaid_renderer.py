@@ -23,7 +23,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_renderer():
-    from poule.rendering.mermaid_renderer import (
+    from Poule.rendering.mermaid_renderer import (
         sanitize,
         render_proof_state,
         render_proof_tree,
@@ -34,7 +34,7 @@ def _import_renderer():
 
 
 def _import_types():
-    from poule.session.types import (
+    from Poule.session.types import (
         Goal,
         Hypothesis,
         ProofState,
@@ -45,7 +45,7 @@ def _import_types():
 
 
 def _import_detail_level():
-    from poule.rendering.types import DetailLevel
+    from Poule.rendering.types import DetailLevel
     return DetailLevel
 
 
