@@ -355,6 +355,7 @@ async def handle_visualize_proof_state(
     session_id: str,
     session_manager: Any,
     renderer: Any,
+    broadcaster: Any = None,
     step: int | None = None,
     detail_level: str | None = None,
 ) -> str:
@@ -380,6 +381,15 @@ async def handle_visualize_proof_state(
         return _format_json_error(exc.code, exc.message)
 
     mermaid = renderer.render_proof_state(state, dl)
+    if broadcaster is not None:
+        try:
+            broadcaster.push_diagram(
+                tool="visualize_proof_state",
+                title=f"Proof State: {session_id} step {state.step_index}",
+                mermaid=mermaid,
+            )
+        except Exception:
+            pass
     return _format_json({"mermaid": mermaid, "step_index": state.step_index})
 
 
@@ -388,6 +398,7 @@ async def handle_visualize_proof_tree(
     session_id: str,
     session_manager: Any,
     renderer: Any,
+    broadcaster: Any = None,
 ) -> str:
     """Handle visualize_proof_tree tool call.
 
@@ -411,6 +422,15 @@ async def handle_visualize_proof_tree(
         )
 
     mermaid = renderer.render_proof_tree(trace)
+    if broadcaster is not None:
+        try:
+            broadcaster.push_diagram(
+                tool="visualize_proof_tree",
+                title=f"Proof Tree: {trace.proof_name}",
+                mermaid=mermaid,
+            )
+        except Exception:
+            pass
     return _format_json({"mermaid": mermaid, "total_steps": trace.total_steps})
 
 
@@ -419,6 +439,7 @@ async def handle_visualize_dependencies(
     name: str,
     search_index: Any,
     renderer: Any,
+    broadcaster: Any = None,
     max_depth: int = 2,
     max_nodes: int = 50,
 ) -> str:
@@ -442,6 +463,15 @@ async def handle_visualize_dependencies(
         return _format_json_error(NOT_FOUND, f"Declaration {name} not found in the index.")
 
     result = renderer.render_dependencies(name, adjacency_list, max_depth=max_depth, max_nodes=max_nodes)
+    if broadcaster is not None:
+        try:
+            broadcaster.push_diagram(
+                tool="visualize_dependencies",
+                title=f"Dependencies: {name}",
+                mermaid=result.mermaid,
+            )
+        except Exception:
+            pass
     return _format_json({
         "mermaid": result.mermaid,
         "node_count": result.node_count,
@@ -487,6 +517,7 @@ async def handle_visualize_proof_sequence(
     session_id: str,
     session_manager: Any,
     renderer: Any,
+    broadcaster: Any = None,
     detail_level: str | None = None,
 ) -> str:
     """Handle visualize_proof_sequence tool call.
@@ -514,6 +545,16 @@ async def handle_visualize_proof_sequence(
 
     entries = renderer.render_proof_sequence(trace, dl)
     diagrams = [_serialize(entry) for entry in entries]
+    if broadcaster is not None and entries:
+        try:
+            first = entries[0]
+            broadcaster.push_diagram(
+                tool="visualize_proof_sequence",
+                title=f"Proof Sequence: {session_id}",
+                mermaid=first.mermaid if hasattr(first, "mermaid") else "",
+            )
+        except Exception:
+            pass
     return _format_json({"diagrams": diagrams})
 
 

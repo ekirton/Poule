@@ -20,7 +20,7 @@ class ModuleMetrics(NamedTuple):
 class ModuleSummary:
     """Module-level dependency summary."""
     modules: dict[str, ModuleMetrics]
-    module_edges: dict[str, set[str]]
+    module_edges: dict[str, list[str]]
     module_cycles: list[list[str]]
     total_modules: int
 
@@ -81,7 +81,7 @@ def module_summary(graph: DependencyGraph) -> ModuleSummary:
 
     return ModuleSummary(
         modules=modules,
-        module_edges=module_forward,
+        module_edges={mod: sorted(deps) for mod, deps in module_forward.items()},
         module_cycles=cycle_report.cycles,
         total_modules=len(module_nodes),
     )

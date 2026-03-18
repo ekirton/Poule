@@ -274,8 +274,13 @@ INIT_CMD='mkdir -p ~/.local/bin ~/.local/share ~/.claude/commands && ln -sf "$(l
 # Run container with project root mounted
 if [ ${#ARGS[@]} -eq 0 ]; then
     echo "Starting Poule dev environment (project root mount)"
+    echo ""
+    echo "  Diagram viewer: http://localhost:3000/viewer"
+    echo "  Open this URL in your browser to see visualizations live."
+    echo ""
     docker run -it --rm \
         --user "$HOST_UID:$HOST_GID" \
+        -p 3000:3000 \
         -v "$PROJECT_DIR:/poule" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \
@@ -288,6 +293,7 @@ if [ ${#ARGS[@]} -eq 0 ]; then
 else
     docker run --rm \
         --user "$HOST_UID:$HOST_GID" \
+        -p 3000:3000 \
         -v "$PROJECT_DIR:/poule" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \

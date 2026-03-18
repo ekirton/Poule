@@ -266,11 +266,16 @@ fi
 HOST_USER=$(id -un)
 
 echo "Starting Poule in: $PROJECT_DIR"
+echo ""
+echo "  Diagram viewer: http://localhost:3000/viewer"
+echo "  Open this URL in your browser to see visualizations live."
+echo ""
 
 if [ ${#ARGS[@]} -eq 0 ]; then
     # No command: entrypoint starts MCP server, syncs commands, launches Claude.
     docker run -it --rm \
         --platform linux/amd64 \
+        -p 3000:3000 \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \
@@ -283,6 +288,7 @@ else
     # the provided command.  MCP server stops on exit via entrypoint trap.
     docker run --rm \
         --platform linux/amd64 \
+        -p 3000:3000 \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \
