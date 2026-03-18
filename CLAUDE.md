@@ -28,7 +28,11 @@ Each layer answers "what" for the layer below and "how" for the layer above. A s
 
 # Pull Request Process
 
-Do not push to a remote branch after every commit. Push only when the branch is ready to merge — the user makes many commits before a branch is ready. When ready:
+Do not push to a remote branch after every commit. Push only when the branch is ready to merge — the user makes many commits before a branch is ready.
+
+**Never create a PR or enable auto-merge without explicit user approval.** CI runs automatically on push and auto-merge is configured on PRs, so an unauthorized PR can merge to main before the user reviews it. Always ask the user before creating a PR.
+
+When the user says the branch is ready:
 
 1. Review the commit log and set a descriptive PR title: `git log --oneline origin/main..HEAD`, then `gh pr edit <number> --title "..."` — the PR title becomes the squash commit message on `main`.
 2. Push the branch and open a PR: `git push origin <branch> && gh pr create`
