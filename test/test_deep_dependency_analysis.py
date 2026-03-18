@@ -902,7 +902,7 @@ class TestModuleSummary:
         result = module_summary(graph)
 
         # Foo -> Foo should not appear
-        assert "Foo" not in result.module_edges.get("Foo", set())
+        assert "Foo" not in result.module_edges.get("Foo", [])
 
     def test_module_level_cycles(self):
         """Detect cycles in the module-level graph."""
@@ -937,6 +937,30 @@ class TestModuleSummary:
         result = module_summary(graph)
 
         assert result.module_cycles == []
+
+    def test_module_edges_are_json_serializable(self):
+        """module_edges values are lists (not sets), so the result is JSON-serializable."""
+        module_summary, _, _ = _import_module_summary()
+
+        metadata = {
+            "A.x": ("A", "lemma"),
+            "B.y": ("B", "lemma"),
+        }
+        graph = _make_graph([("A.x", "B.y")], metadata=metadata)
+        result = module_summary(graph)
+
+        import json
+        # Should not raise TypeError: Object of type set is not JSON serializable
+        serialized = json.dumps({
+            "modules": {k: list(v) for k, v in result.modules.items()},
+            "module_edges": result.module_edges,
+            "module_cycles": result.module_cycles,
+            "total_modules": result.total_modules,
+        })
+        assert isinstance(serialized, str)
+        # Verify module_edges values are lists
+        for edges in result.module_edges.values():
+            assert isinstance(edges, list), f"Expected list, got {type(edges)}"
 
 
 # ===========================================================================
