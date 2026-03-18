@@ -58,17 +58,17 @@ def _make_release(tag: str = "index-v1-coq8.19-mc2.2.0") -> dict:
             {
                 "name": "manifest.json",
                 "browser_download_url": "https://example.com/manifest.json",
-                "url": "https://api.github.com/repos/ekirton/poule/releases/assets/1",
+                "url": "https://api.github.com/repos/ekirton/Poule/releases/assets/1",
             },
             {
                 "name": "index.db",
                 "browser_download_url": "https://example.com/index.db",
-                "url": "https://api.github.com/repos/ekirton/poule/releases/assets/2",
+                "url": "https://api.github.com/repos/ekirton/Poule/releases/assets/2",
             },
             {
                 "name": "neural-premise-selector.onnx",
                 "browser_download_url": "https://example.com/model.onnx",
-                "url": "https://api.github.com/repos/ekirton/poule/releases/assets/3",
+                "url": "https://api.github.com/repos/ekirton/Poule/releases/assets/3",
             },
         ],
     }

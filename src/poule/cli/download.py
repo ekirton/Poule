@@ -14,7 +14,7 @@ import click
 
 from poule.paths import get_model_dir
 
-GITHUB_API_URL = "https://api.github.com/repos/ekirton/poule/releases"
+GITHUB_API_URL = "https://api.github.com/repos/ekirton/Poule/releases"
 TAG_PREFIX = "index-v"
 CHUNK_SIZE = 65536  # 64 KB
 
