@@ -260,6 +260,12 @@ if [ ! -f "$DATA_DIR/index.db" ]; then
     echo ""
 fi
 
+# ── Dynamic port scanning ────────────────────────────────────────────────────
+HOST_PORT=3000
+while lsof -iTCP:$HOST_PORT -sTCP:LISTEN -t >/dev/null 2>&1; do
+    HOST_PORT=$((HOST_PORT + 1))
+done
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 # The entrypoint handles Claude symlinks, slash command provisioning, and
 # MCP server lifecycle (start on entry, stop on exit via trap).
@@ -267,7 +273,7 @@ HOST_USER=$(id -un)
 
 echo "Starting Poule in: $PROJECT_DIR"
 echo ""
-echo "  Diagram viewer: http://localhost:3000/viewer"
+echo "  Diagram viewer: http://localhost:$HOST_PORT/viewer"
 echo "  Open this URL in your browser to see visualizations live."
 echo ""
 
@@ -275,12 +281,13 @@ if [ ${#ARGS[@]} -eq 0 ]; then
     # No command: entrypoint starts MCP server, syncs commands, launches Claude.
     docker run -it --rm \
         --platform linux/amd64 \
-        -p 3000:3000 \
+        -p $HOST_PORT:3000 \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \
         -w "$PROJECT_DIR" \
         -e ANTHROPIC_API_KEY \
+        -e HOME="/home/$HOST_USER" \
         -e TZ="${TZ:-UTC}" \
         "$IMAGE"
 else
@@ -288,12 +295,13 @@ else
     # the provided command.  MCP server stops on exit via entrypoint trap.
     docker run --rm \
         --platform linux/amd64 \
-        -p 3000:3000 \
+        -p $HOST_PORT:3000 \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \
         -w "$PROJECT_DIR" \
         -e ANTHROPIC_API_KEY \
+        -e HOME="/home/$HOST_USER" \
         -e TZ="${TZ:-UTC}" \
         "$IMAGE" \
         "${ARGS[@]}"
