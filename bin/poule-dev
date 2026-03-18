@@ -284,7 +284,7 @@ if [ ${#ARGS[@]} -eq 0 ]; then
         -e ANTHROPIC_API_KEY \
         -e TZ="${TZ:-UTC}" \
         "$DEV_IMAGE" \
-        zsh -c "$INIT_CMD; exec zsh"
+        zsh -c "$INIT_CMD; zsh; poule-mcp stop 2>/dev/null"
 else
     docker run --rm \
         --user "$HOST_UID:$HOST_GID" \

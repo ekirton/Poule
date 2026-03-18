@@ -33,8 +33,8 @@ trap cleanup EXIT INT TERM
 poule-mcp start
 
 if [ $# -gt 0 ]; then
-    exec "$@"
+    "$@"
+else
+    # Default: launch Claude Code (Opus).
+    claude --dangerously-skip-permissions --model opus
 fi
-
-# Default: launch Claude Code (Opus).
-exec claude --dangerously-skip-permissions --model opus
