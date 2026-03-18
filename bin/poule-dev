@@ -2,7 +2,7 @@
 
 # Poule Developer Launcher
 # Usage: poule-dev [--rebuild] [command]
-# Builds and runs a dev container with src/ live-mounted from the host.
+# Builds and runs a dev container with the project root mounted from the host.
 # Must be run from the poule project root.
 
 set -euo pipefail
@@ -24,7 +24,7 @@ while [[ $# -gt 0 ]]; do
         --help|-h)
             echo "Usage: poule-dev [OPTIONS] [COMMAND]"
             echo ""
-            echo "Run a dev container with live-mounted source from the poule project root."
+            echo "Run a dev container with the project root bind-mounted for full dev access."
             echo "Builds the dev image automatically on first run (uses Dockerfile app-deps stage)."
             echo ""
             echo "OPTIONS:"
@@ -169,9 +169,8 @@ if [ ! -f "$DATA_DIR/index.db" ]; then
         echo "Index copied successfully."
     else
         echo "No local index.db found — downloading from latest GitHub release..."
-        # Mount src/ so the CLI module is available for the download command
         if docker run --rm \
-            -v "$PROJECT_DIR/src:/app/src" \
+            -v "$PROJECT_DIR:/app" \
             -v "$DATA_DIR:/data" \
             --entrypoint sh \
             "$DEV_IMAGE" \
@@ -214,16 +213,12 @@ fi
 # Export PATH first so the installer sees ~/.local/bin (zsh -c doesn't source .zshrc).
 INIT_CMD='export PATH="$HOME/.local/bin:$PATH"; ensure-claude'
 
-# Run container with live-mounted source
+# Run container with project root mounted
 if [ ${#ARGS[@]} -eq 0 ]; then
-    echo "Starting Poule dev environment (live source mount)"
+    echo "Starting Poule dev environment (project root mount)"
     docker run -it --rm \
         --user "$HOST_UID:$HOST_GID" \
-        -v "$PROJECT_DIR/src:/app/src" \
-        -v "$PROJECT_DIR/test:/app/test" \
-        -v "$PROJECT_DIR/examples:/app/examples" \
-        -v "$PROJECT_DIR/CLAUDE.md:/app/CLAUDE.md" \
-        -v "$PROJECT_DIR/README.md:/app/README.md" \
+        -v "$PROJECT_DIR:/app" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \
         -w /app \
@@ -235,11 +230,7 @@ if [ ${#ARGS[@]} -eq 0 ]; then
 else
     docker run --rm \
         --user "$HOST_UID:$HOST_GID" \
-        -v "$PROJECT_DIR/src:/app/src" \
-        -v "$PROJECT_DIR/test:/app/test" \
-        -v "$PROJECT_DIR/examples:/app/examples" \
-        -v "$PROJECT_DIR/CLAUDE.md:/app/CLAUDE.md" \
-        -v "$PROJECT_DIR/README.md:/app/README.md" \
+        -v "$PROJECT_DIR:/app" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \
         -w /app \

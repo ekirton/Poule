@@ -63,8 +63,13 @@ ARG HOST_GID=1000
 ARG HOST_USER=poule
 ARG HOST_GROUP=poule
 
-# Install Node.js and interactive tools
+# Install Node.js, Charm repo (for glow), and interactive tools
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://repo.charm.sh/apt/gpg.key | gpg --dearmor -o /etc/apt/keyrings/charm.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
+        > /etc/apt/sources.list.d/charm.list && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
         nodejs \
         zsh \
@@ -81,6 +86,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
         ripgrep \
         fd-find \
         bat \
+        glow \
         locales \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -109,11 +115,17 @@ RUN chmod +x /usr/local/bin/poule-mcp
 COPY docker/ensure-claude /usr/local/bin/ensure-claude
 RUN chmod +x /usr/local/bin/ensure-claude
 
+# Place the virtualenv outside /app so it survives a bind-mount of the
+# project root in dev containers.
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+RUN mkdir -p /opt/venv && chown -R ${HOST_UID}:${HOST_GID} /opt/venv /app
+
 # Create venv as the app user so it's writable when source is installed later
-RUN chown -R ${HOST_UID}:${HOST_GID} /app
 USER ${HOST_USER}
 RUN uv sync --frozen --group dev
 USER root
+
+ENV PATH="/opt/venv/bin:${PATH}"
 
 # ============================================================================
 # Stage 3: runtime — Application code
