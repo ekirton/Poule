@@ -1332,7 +1332,6 @@ async def run_server_http(
     import uvicorn
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     from starlette.applications import Starlette
-    from starlette.routing import Route
 
     ctx = await _init_context(db_path, log_level)
     server = _build_server(ctx)
@@ -1344,19 +1343,19 @@ async def run_server_http(
         async with session_manager.run():
             yield
 
-    async def handle_mcp(request):
-        await session_manager.handle_request(
-            request.scope, request.receive, request._send,
-        )
+    # Starlette handles lifespan only; /mcp is routed at the ASGI level
+    # because session_manager.handle_request sends responses directly via
+    # the ASGI send callable, which is incompatible with Starlette's Route
+    # endpoint pattern (expects a Response return value).
+    starlette_app = Starlette(lifespan=lifespan)
 
-    starlette_app = Starlette(
-        lifespan=lifespan,
-        routes=[
-            Route("/mcp", endpoint=handle_mcp, methods=["GET", "POST", "DELETE"]),
-        ],
-    )
+    async def app(scope, receive, send):
+        if scope["type"] == "http" and scope.get("path") == "/mcp":
+            await session_manager.handle_request(scope, receive, send)
+        else:
+            await starlette_app(scope, receive, send)
 
-    config = uvicorn.Config(starlette_app, host=host, port=port, log_level=log_level.lower())
+    config = uvicorn.Config(app, host=host, port=port, log_level=log_level.lower())
     uv_server = uvicorn.Server(config)
     logger.info("Poule MCP server (streamable-http) listening on %s:%d", host, port)
     await uv_server.serve()
