@@ -457,7 +457,7 @@ class SessionManager:
 
         # Read any initial output from coqtop (it may print a welcome line
         # even with -quiet in some versions). Use sentinel to drain.
-        sentinel_cmd = f'Print "{self._SENTINEL}".\n'
+        sentinel_cmd = f'Fail Check {self._SENTINEL}.\n'
         proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]
         await proc.stdin.drain()  # type: ignore[union-attr]
         await self._read_until_sentinel(proc)
@@ -527,7 +527,7 @@ class SessionManager:
             cmd_text = command.rstrip()
             if not cmd_text.endswith("."):
                 cmd_text += "."
-            sentinel_cmd = f'Print "{self._SENTINEL}".\n'
+            sentinel_cmd = f'Fail Check {self._SENTINEL}.\n'
 
             proc.stdin.write((cmd_text + "\n").encode("utf-8"))  # type: ignore[union-attr]
             proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]
