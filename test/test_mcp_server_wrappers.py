@@ -85,7 +85,7 @@ def ctx():
 
 def _run(coro):
     """Run a coroutine synchronously for testing."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 def _dispatch_and_await(ctx, name, arguments):
@@ -94,7 +94,7 @@ def _dispatch_and_await(ctx, name, arguments):
     _dispatch_tool = _import_dispatch_tool()
     result = _dispatch_tool(ctx, name, arguments)
     if inspect.isawaitable(result):
-        return asyncio.get_event_loop().run_until_complete(result)
+        return asyncio.run(result)
     return result
 
 
