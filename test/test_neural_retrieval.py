@@ -23,11 +23,11 @@ import pytest
 # Imports from production code (TDD — will fail until implemented)
 # ---------------------------------------------------------------------------
 
-from poule.neural.encoder import NeuralEncoder
-from poule.neural.index import EmbeddingIndex
-from poule.neural.channel import neural_retrieve, check_availability
-from poule.neural.embeddings import compute_embeddings, load_embeddings
-from poule.neural.errors import ModelNotFoundError, ModelLoadError
+from Poule.neural.encoder import NeuralEncoder
+from Poule.neural.index import EmbeddingIndex
+from Poule.neural.channel import neural_retrieve, check_availability
+from Poule.neural.embeddings import compute_embeddings, load_embeddings
+from Poule.neural.errors import ModelNotFoundError, ModelLoadError
 
 
 # ---------------------------------------------------------------------------
@@ -440,12 +440,12 @@ class TestNeuralQueryText:
         # The pipeline should pass the raw type_expr to the neural channel.
         # This is a behavioral spec — tested at the pipeline integration level.
         # Here we verify the query text mapping table.
-        from poule.neural.channel import neural_query_text_for_type
+        from Poule.neural.channel import neural_query_text_for_type
         assert neural_query_text_for_type("nat -> nat -> nat") == "nat -> nat -> nat"
 
     def test_search_by_symbols_joins_with_spaces(self):
         """spec §4.7: search_by_symbols passes space-joined symbol names."""
-        from poule.neural.channel import neural_query_text_for_symbols
+        from Poule.neural.channel import neural_query_text_for_symbols
         result = neural_query_text_for_symbols(["Coq.Init.Nat.add", "Coq.Init.Nat.mul"])
         assert result == "Coq.Init.Nat.add Coq.Init.Nat.mul"
 

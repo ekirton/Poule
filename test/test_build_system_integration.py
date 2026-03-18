@@ -26,72 +26,72 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_detect():
-    from poule.build import detect_build_system
+    from Poule.build import detect_build_system
     return detect_build_system
 
 
 def _import_execute():
-    from poule.build import execute_build
+    from Poule.build import execute_build
     return execute_build
 
 
 def _import_generate_coq_project():
-    from poule.build import generate_coq_project
+    from Poule.build import generate_coq_project
     return generate_coq_project
 
 
 def _import_update_coq_project():
-    from poule.build import update_coq_project
+    from Poule.build import update_coq_project
     return update_coq_project
 
 
 def _import_generate_dune_project():
-    from poule.build import generate_dune_project
+    from Poule.build import generate_dune_project
     return generate_dune_project
 
 
 def _import_generate_opam_file():
-    from poule.build import generate_opam_file
+    from Poule.build import generate_opam_file
     return generate_opam_file
 
 
 def _import_migrate_to_dune():
-    from poule.build import migrate_to_dune
+    from Poule.build import migrate_to_dune
     return migrate_to_dune
 
 
 def _import_parse_build_errors():
-    from poule.build import parse_build_errors
+    from Poule.build import parse_build_errors
     return parse_build_errors
 
 
 def _import_query_installed_packages():
-    from poule.build import query_installed_packages
+    from Poule.build import query_installed_packages
     return query_installed_packages
 
 
 def _import_query_package_info():
-    from poule.build import query_package_info
+    from Poule.build import query_package_info
     return query_package_info
 
 
 def _import_install_package():
-    from poule.build import install_package
+    from Poule.build import install_package
     return install_package
 
 
 def _import_add_dependency():
-    from poule.build import add_dependency
+    from Poule.build import add_dependency
     return add_dependency
 
 
 def _import_check_dependency_conflicts():
-    from poule.build import check_dependency_conflicts
+    from Poule.build import check_dependency_conflicts
     return check_dependency_conflicts
 
 
 def _import_types():
-    from poule.build.types import (
+    from Poule.build.types import (
         BuildError,
         BuildRequest,
         BuildResult,
@@ -120,7 +120,7 @@ def _import_types():
 
 
 def _import_errors():
-    from poule.build.errors import (
+    from Poule.build.errors import (
         BUILD_SYSTEM_NOT_DETECTED,
         BUILD_TIMEOUT,
         DEPENDENCY_EXISTS,
@@ -723,7 +723,7 @@ class TestBuildExecution:
         execute = _import_execute()
         (tmp_path / "dune-project").touch()
         request = _make_build_request(project_dir=str(tmp_path), timeout=60)
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+        with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
             proc = AsyncMock()
             proc.communicate.return_value = (b"", b"")
             proc.returncode = 0
@@ -750,7 +750,7 @@ class TestBuildExecution:
             build_system=BuildSystem.COQ_MAKEFILE,
         )
         commands_called = []
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+        with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
             proc = AsyncMock()
             proc.communicate.return_value = (b"", b"")
             proc.returncode = 0
@@ -774,7 +774,7 @@ class TestBuildExecution:
         execute = _import_execute()
         (tmp_path / "dune-project").touch()
         request = _make_build_request(project_dir=str(tmp_path), timeout=10)
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+        with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
             proc = AsyncMock()
             proc.communicate.side_effect = asyncio.TimeoutError()
             proc.returncode = None
@@ -793,7 +793,7 @@ class TestBuildExecution:
         (tmp_path / "dune-project").touch()
         request = _make_build_request(project_dir=str(tmp_path))
         stderr_output = b'File "src/A.v", line 10, characters 0-15:\nError: Syntax error.'
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+        with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
             proc = AsyncMock()
             proc.communicate.return_value = (b"", stderr_output)
             proc.returncode = 2
@@ -809,7 +809,7 @@ class TestBuildExecution:
         execute = _import_execute()
         (tmp_path / "dune-project").touch()
         request = _make_build_request(project_dir=str(tmp_path))
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+        with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
             proc = AsyncMock()
             proc.communicate.return_value = (b"", b"")
             proc.returncode = 0
@@ -824,7 +824,7 @@ class TestBuildExecution:
         execute = _import_execute()
         (tmp_path / "dune-project").touch()
         request = _make_build_request(project_dir=str(tmp_path), build_system=None)
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+        with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
             proc = AsyncMock()
             proc.communicate.return_value = (b"", b"")
             proc.returncode = 0
@@ -1057,7 +1057,7 @@ class TestPackageQueries:
         query = _import_query_installed_packages()
         opam_output = "coq 8.18.0\ncoq-mathcomp-ssreflect 2.1.0\ncoq-equations 1.3\n"
         with patch("shutil.which", return_value="/usr/bin/opam"):
-            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
                 proc = AsyncMock()
                 proc.communicate.return_value = (opam_output.encode(), b"")
                 proc.returncode = 0
@@ -1085,7 +1085,7 @@ class TestPackageQueries:
             all-versions: 2.1.0 2.0.0 1.19.0
         """)
         with patch("shutil.which", return_value="/usr/bin/opam"):
-            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
                 proc = AsyncMock()
                 proc.communicate.return_value = (opam_show_output.encode(), b"")
                 proc.returncode = 0
@@ -1107,7 +1107,7 @@ class TestPackageQueries:
             PROJECT_NOT_FOUND, TOOL_NOT_FOUND, BuildSystemError,
         ) = _import_errors()
         with patch("shutil.which", return_value="/usr/bin/opam"):
-            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
                 proc = AsyncMock()
                 proc.communicate.return_value = (b"", b"No package named nonexistent")
                 proc.returncode = 1
@@ -1128,7 +1128,7 @@ class TestPackageQueries:
             all-versions: 1.19.0 2.0.0 2.1.0
         """)
         with patch("shutil.which", return_value="/usr/bin/opam"):
-            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
                 proc = AsyncMock()
                 proc.communicate.return_value = (opam_show_output.encode(), b"")
                 proc.returncode = 0
@@ -1222,7 +1222,7 @@ class TestDependencyManagement:
             DetectionResult, MigrationResult, OpamMetadata, PackageInfo,
         ) = _import_types()
         with patch("shutil.which", return_value="/usr/bin/opam"):
-            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
                 proc = AsyncMock()
                 proc.communicate.return_value = (b"The following actions would be performed:\n", b"")
                 proc.returncode = 0
@@ -1246,7 +1246,7 @@ class TestDependencyManagement:
             "  - coq >= 8.18 (conflict with coq = 8.17.1 required by coq-stdpp)\n"
         )
         with patch("shutil.which", return_value="/usr/bin/opam"):
-            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
                 proc = AsyncMock()
                 proc.communicate.return_value = (b"", conflict_output.encode())
                 proc.returncode = 1
@@ -1268,7 +1268,7 @@ class TestDependencyManagement:
             *_rest
         ) = _import_types()
         with patch("shutil.which", return_value="/usr/bin/opam"):
-            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
                 proc = AsyncMock()
                 proc.communicate.return_value = (
                     b"coq-equations.1.3 installed\n", b""
@@ -1284,7 +1284,7 @@ class TestDependencyManagement:
         """Failed install returns parsed BuildError records (§4.9)."""
         install = _import_install_package()
         with patch("shutil.which", return_value="/usr/bin/opam"):
-            with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
                 proc = AsyncMock()
                 proc.communicate.return_value = (
                     b"", b"Error: Package build failed during installation"
@@ -1465,7 +1465,7 @@ class TestInputErrors:
         execute = _import_execute()
         (tmp_path / "dune-project").touch()
         request = _make_build_request(project_dir=str(tmp_path), timeout=5)
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+        with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
             proc = AsyncMock()
             proc.communicate.return_value = (b"", b"")
             proc.returncode = 0
@@ -1580,7 +1580,7 @@ class TestOperationalErrors:
         request = _make_build_request(project_dir=str(tmp_path))
         # Generate > 1 MB of output
         large_output = b"x" * (1024 * 1024 + 100)
-        with patch("poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+        with patch("Poule.build.asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
             proc = AsyncMock()
             proc.communicate.return_value = (large_output, b"")
             proc.returncode = 0

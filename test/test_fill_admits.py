@@ -25,32 +25,32 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_fill_admits():
-    from poule.search.fill_admits import fill_admits
+    from Poule.search.fill_admits import fill_admits
     return fill_admits
 
 
 def _import_locate_admits():
-    from poule.search.fill_admits import locate_admits
+    from Poule.search.fill_admits import locate_admits
     return locate_admits
 
 
 def _import_types():
-    from poule.search.types import AdmitLocation, FillAdmitsResult, AdmitResult
+    from Poule.search.types import AdmitLocation, FillAdmitsResult, AdmitResult
     return AdmitLocation, FillAdmitsResult, AdmitResult
 
 
 def _import_search_types():
-    from poule.search.types import SearchResult, ProofStep
+    from Poule.search.types import SearchResult, ProofStep
     return SearchResult, ProofStep
 
 
 def _import_session_types():
-    from poule.session.types import Goal, ProofState
+    from Poule.session.types import Goal, ProofState
     return Goal, ProofState
 
 
 def _import_session_errors():
-    from poule.session.errors import (
+    from Poule.session.errors import (
         FILE_NOT_FOUND,
         PROOF_NOT_FOUND,
         BACKEND_CRASHED,

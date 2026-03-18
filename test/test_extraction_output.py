@@ -23,7 +23,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_types():
-    from poule.extraction.types import (
+    from Poule.extraction.types import (
         CampaignMetadata,
         ExtractionDiff,
         ExtractionError,
@@ -46,7 +46,7 @@ def _import_types():
 
 
 def _import_output():
-    from poule.extraction.output import (
+    from Poule.extraction.output import (
         serialize_campaign_metadata,
         serialize_extraction_diff,
         serialize_extraction_error,

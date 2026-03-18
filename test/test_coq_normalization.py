@@ -20,7 +20,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_constr_nodes():
-    from poule.normalization.constr_node import (
+    from Poule.normalization.constr_node import (
         Rel, Var, Sort, Cast, Prod, Lambda, LetIn, App,
         Const, Ind, Construct, Case, Fix, CoFix, Proj, Int, Float,
     )
@@ -31,17 +31,17 @@ def _import_constr_nodes():
 
 
 def _import_normalize():
-    from poule.normalization.normalize import constr_to_tree, coq_normalize
+    from Poule.normalization.normalize import constr_to_tree, coq_normalize
     return constr_to_tree, coq_normalize
 
 
 def _import_errors():
-    from poule.normalization.errors import NormalizationError
+    from Poule.normalization.errors import NormalizationError
     return NormalizationError
 
 
 def _import_labels():
-    from poule.models.labels import (
+    from Poule.models.labels import (
         LRel, LConst, LInd, LConstruct, LSort, LPrimitive,
         LApp, LAbs, LLet, LProj, LCase, LProd, LFix, LCoFix,
     )
@@ -52,12 +52,12 @@ def _import_labels():
 
 
 def _import_enums():
-    from poule.models.enums import SortKind
+    from Poule.models.enums import SortKind
     return SortKind
 
 
 def _import_tree():
-    from poule.models.tree import TreeNode, ExprTree
+    from Poule.models.tree import TreeNode, ExprTree
     return TreeNode, ExprTree
 
 

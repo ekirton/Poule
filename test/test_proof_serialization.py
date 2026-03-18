@@ -25,7 +25,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_types():
-    from poule.session.types import (
+    from Poule.session.types import (
         Goal,
         GoalChange,
         Hypothesis,
@@ -46,7 +46,7 @@ def _import_types():
 
 
 def _import_serialize():
-    from poule.serialization.serialize import (
+    from Poule.serialization.serialize import (
         serialize_goal,
         serialize_hypothesis,
         serialize_premise,
@@ -69,7 +69,7 @@ def _import_serialize():
 
 
 def _import_diff():
-    from poule.serialization.diff import compute_diff
+    from Poule.serialization.diff import compute_diff
     return compute_diff
 
 

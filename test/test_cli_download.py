@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from poule.cli.download import (
+from Poule.cli.download import (
     _find_asset,
     _find_latest_release,
     _verify_checksum,
@@ -58,17 +58,17 @@ def _make_release(tag: str = "index-v1-coq8.19-mc2.2.0") -> dict:
             {
                 "name": "manifest.json",
                 "browser_download_url": "https://example.com/manifest.json",
-                "url": "https://api.github.com/repos/ekirton/poule/releases/assets/1",
+                "url": "https://api.github.com/repos/ekirton/Poule/releases/assets/1",
             },
             {
                 "name": "index.db",
                 "browser_download_url": "https://example.com/index.db",
-                "url": "https://api.github.com/repos/ekirton/poule/releases/assets/2",
+                "url": "https://api.github.com/repos/ekirton/Poule/releases/assets/2",
             },
             {
                 "name": "neural-premise-selector.onnx",
                 "browser_download_url": "https://example.com/model.onnx",
-                "url": "https://api.github.com/repos/ekirton/poule/releases/assets/3",
+                "url": "https://api.github.com/repos/ekirton/Poule/releases/assets/3",
             },
         ],
     }
@@ -110,7 +110,7 @@ class TestFindLatestRelease:
             _make_release("index-v1-coq8.19-mc2.2.0"),
             _make_release("index-v1-coq8.18-mc2.1.0"),
         ]
-        with patch("poule.cli.download.urllib.request.urlopen") as mock_open:
+        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
             resp = MagicMock()
             resp.read.return_value = json.dumps(releases).encode()
             resp.__enter__ = lambda s: s
@@ -125,7 +125,7 @@ class TestFindLatestRelease:
             _make_release("index-v1-coq8.20-mc2.3.0"),
             _make_release("index-v1-coq8.19-mc2.2.0"),
         ]
-        with patch("poule.cli.download.urllib.request.urlopen") as mock_open:
+        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
             resp = MagicMock()
             resp.read.return_value = json.dumps(releases).encode()
             resp.__enter__ = lambda s: s
@@ -137,7 +137,7 @@ class TestFindLatestRelease:
 
     def test_no_matching_release_raises_click_exception(self):
         releases = [{"tag_name": "v0.1.0", "assets": []}]
-        with patch("poule.cli.download.urllib.request.urlopen") as mock_open:
+        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
             resp = MagicMock()
             resp.read.return_value = json.dumps(releases).encode()
             resp.__enter__ = lambda s: s
@@ -150,7 +150,7 @@ class TestFindLatestRelease:
     def test_network_error_raises_click_exception(self):
         import urllib.error
         with patch(
-            "poule.cli.download.urllib.request.urlopen",
+            "Poule.cli.download.urllib.request.urlopen",
             side_effect=urllib.error.URLError("Connection refused"),
         ):
             import click
@@ -231,7 +231,7 @@ class TestDownloadIndexCommand:
             "https://example.com/model.onnx": SAMPLE_ONNX_CONTENT,
         }
 
-        with patch("poule.cli.download.urllib.request.urlopen") as mock_open:
+        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
             # First call: list releases; subsequent calls: download assets
             api_resp = MagicMock()
             api_resp.read.return_value = json.dumps(releases).encode()
@@ -304,7 +304,7 @@ class TestDownloadIndexCommand:
             "https://example.com/index.db": SAMPLE_DB_CONTENT,
         }
 
-        with patch("poule.cli.download.urllib.request.urlopen") as mock_open:
+        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
             def _routing(req):
                 url = req.full_url if hasattr(req, "full_url") else str(req)
                 if "api.github.com" in url:
@@ -359,7 +359,7 @@ class TestDownloadIndexErrors:
             "https://example.com/index.db": SAMPLE_DB_CONTENT,
         }
 
-        with patch("poule.cli.download.urllib.request.urlopen") as mock_open:
+        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
             def _routing(req):
                 url = req.full_url if hasattr(req, "full_url") else str(req)
                 if "api.github.com" in url:
@@ -399,7 +399,7 @@ class TestDownloadIndexErrors:
     def test_no_release_found_exits_1(self, runner, tmp_path):
         """§6: No matching release → exit 1, 'No index release found on GitHub.'"""
         releases = [{"tag_name": "v0.1.0", "assets": []}]
-        with patch("poule.cli.download.urllib.request.urlopen") as mock_open:
+        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
             resp = MagicMock()
             resp.read.return_value = json.dumps(releases).encode()
             resp.__enter__ = lambda s: s
@@ -415,7 +415,7 @@ class TestDownloadIndexErrors:
         """§6: Network failure → exit 1, 'Failed to reach GitHub API: {details}'."""
         import urllib.error
         with patch(
-            "poule.cli.download.urllib.request.urlopen",
+            "Poule.cli.download.urllib.request.urlopen",
             side_effect=urllib.error.URLError("Connection refused"),
         ):
             result = runner.invoke(

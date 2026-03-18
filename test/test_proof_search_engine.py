@@ -30,52 +30,52 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_engine():
-    from poule.search.engine import proof_search
+    from Poule.search.engine import proof_search
     return proof_search
 
 
 def _import_types():
-    from poule.search.types import SearchNode, SearchResult, ProofStep
+    from Poule.search.types import SearchNode, SearchResult, ProofStep
     return SearchNode, SearchResult, ProofStep
 
 
 def _import_state_cache():
-    from poule.search.state_cache import hash_proof_state
+    from Poule.search.state_cache import hash_proof_state
     return hash_proof_state
 
 
 def _import_diversity():
-    from poule.search.diversity import filter_candidates
+    from Poule.search.diversity import filter_candidates
     return filter_candidates
 
 
 def _import_scoring():
-    from poule.search.scoring import score_node
+    from Poule.search.scoring import score_node
     return score_node
 
 
 def _import_candidates():
-    from poule.search.engine import generate_candidates
+    from Poule.search.engine import generate_candidates
     return generate_candidates
 
 
 def _import_premise_retrieval():
-    from poule.search.engine import retrieve_premises
+    from Poule.search.engine import retrieve_premises
     return retrieve_premises
 
 
 def _import_few_shot():
-    from poule.search.few_shot import retrieve_few_shot
+    from Poule.search.few_shot import retrieve_few_shot
     return retrieve_few_shot
 
 
 def _import_session_types():
-    from poule.session.types import Goal, Hypothesis, ProofState
+    from Poule.session.types import Goal, Hypothesis, ProofState
     return Goal, Hypothesis, ProofState
 
 
 def _import_session_errors():
-    from poule.session.errors import (
+    from Poule.session.errors import (
         BACKEND_CRASHED,
         SESSION_NOT_FOUND,
         SESSION_EXPIRED,

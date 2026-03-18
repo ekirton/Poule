@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="poule:dev"
+IMAGE="Poule:dev"
 
 echo "═══════════════════════════════════════════════════════"
 echo "  Stage 1: Unit tests (no Docker, no Coq)"
 echo "═══════════════════════════════════════════════════════"
 uv run pytest -m "not requires_coq" \
-    --cov=poule --cov-report=term -v
+    --cov=Poule --cov-report=term -v
 
 echo ""
 echo "═══════════════════════════════════════════════════════"
@@ -44,7 +44,7 @@ echo "  bin/poule-dev --dev uv run pytest     Run tests with live source"
 echo ""
 echo "  Container image:  $IMAGE  (used by: bin/poule-dev --dev)"
 echo "  Required volume:  -v <host-data-dir>:/data  (for index.db persistence)"
-echo "  Default command:  uv run python -m poule.server --db /data/index.db"
+echo "  Default command:  uv run python -m Poule.server --db /data/index.db"
 echo ""
 echo "  Override entrypoint for a shell:"
 echo "    docker run --rm -it --entrypoint bash $IMAGE"

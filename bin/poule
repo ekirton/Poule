@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-IMAGE="ghcr.io/ekirton/poule"
+IMAGE="ghcr.io/ekirton/Poule"
 
 # ── Project directory ─────────────────────────────────────────────────────────
 # Use POULE_PROJECT_DIR if set; otherwise fall back to the current directory.
@@ -185,7 +185,7 @@ if [ ! -f "$CLAUDE_DIR/settings.json" ]; then
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "skipDangerousModePermissionPrompt": true,
   "mcpServers": {
-    "poule": {
+    "poule-mcp": {
       "type": "http",
       "url": "http://127.0.0.1:3000/mcp"
     },
@@ -205,7 +205,7 @@ path = sys.argv[1]
 with open(path) as f:
     s = json.load(f)
 s["mcpServers"] = {
-    "poule": {"type": "http", "url": "http://127.0.0.1:3000/mcp"},
+    "poule-mcp": {"type": "http", "url": "http://127.0.0.1:3000/mcp"},
     "mcp-mermaid": {"command": "npx", "args": ["-y", "mcp-mermaid"]}
 }
 with open(path, "w") as f:
@@ -229,7 +229,7 @@ _git_branch_colored() {
   fi
 }
 setopt PROMPT_SUBST
-PROMPT='%F{cyan}[poule]%f $(_git_branch_colored)%F{blue}[%~]%f$ '
+PROMPT='%F{cyan}[Poule]%f $(_git_branch_colored)%F{blue}[%~]%f$ '
 HISTFILE=~/.zsh_history
 HISTSIZE=10000
 SAVEHIST=10000
@@ -251,11 +251,11 @@ if [ ! -f "$DATA_DIR/index.db" ]; then
         -v "$DATA_DIR:/data" \
         --entrypoint sh \
         "$IMAGE" \
-        -c 'uv run --project /app python -m poule.cli download-index --output /data/index.db'; then
+        -c 'uv run --project /app python -m Poule.cli download-index --output /data/index.db'; then
         echo "Index downloaded successfully."
     else
         echo "Warning: Index download failed. Retry from inside the container:"
-        echo "  uv run --project /app python -m poule.cli download-index --output ~/data/index.db"
+        echo "  uv run --project /app python -m Poule.cli download-index --output ~/data/index.db"
     fi
     echo ""
 fi

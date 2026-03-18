@@ -30,7 +30,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_engine():
-    from poule.auditing.engine import (
+    from Poule.auditing.engine import (
         audit_assumptions,
         audit_module,
         compare_assumptions,
@@ -39,22 +39,22 @@ def _import_engine():
 
 
 def _import_parser():
-    from poule.auditing.parser import parse_print_assumptions
+    from Poule.auditing.parser import parse_print_assumptions
     return parse_print_assumptions
 
 
 def _import_classifier():
-    from poule.auditing.classifier import classify_axiom
+    from Poule.auditing.classifier import classify_axiom
     return classify_axiom
 
 
 def _import_registry():
-    from poule.auditing.registry import KNOWN_AXIOMS, MODULE_PREFIXES
+    from Poule.auditing.registry import KNOWN_AXIOMS, MODULE_PREFIXES
     return KNOWN_AXIOMS, MODULE_PREFIXES
 
 
 def _import_types():
-    from poule.auditing.types import (
+    from Poule.auditing.types import (
         AssumptionResult,
         ClassifiedAxiom,
         OpaqueDependency,
@@ -73,12 +73,12 @@ def _import_types():
 
 
 def _import_errors():
-    from poule.auditing.errors import AuditError
+    from Poule.auditing.errors import AuditError
     return AuditError
 
 
 def _import_session_errors():
-    from poule.session.errors import (
+    from Poule.session.errors import (
         SESSION_NOT_FOUND,
         BACKEND_CRASHED,
         SessionError,
@@ -1178,7 +1178,7 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_print_assumptions_closed_theorem(self):
         """Verify 'Closed under the global context' output for a closed theorem."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -1196,7 +1196,7 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_print_assumptions_classical_theorem(self):
         """Verify that classic appears in output for a classical theorem."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -1216,7 +1216,7 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_query_declaration_kind_axiom(self):
         """Verify that querying kind of an axiom returns 'Axiom' or 'Parameter'."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -1232,7 +1232,7 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_query_declaration_kind_opaque(self):
         """Verify that querying kind of a Qed lemma returns opaque indicator."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -1249,7 +1249,7 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_print_module_lists_declarations(self):
         """Verify Print Module output contains theorem names."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:

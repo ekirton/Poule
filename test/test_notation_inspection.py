@@ -27,12 +27,12 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_normalize():
-    from poule.notation.normalize import normalize_notation
+    from Poule.notation.normalize import normalize_notation
     return normalize_notation
 
 
 def _import_types():
-    from poule.notation.types import (
+    from Poule.notation.types import (
         NotationInfo,
         ScopeInfo,
         NotationAmbiguity,
@@ -42,7 +42,7 @@ def _import_types():
 
 
 def _import_parsers():
-    from poule.notation.parsers import (
+    from Poule.notation.parsers import (
         parse_print_notation,
         parse_locate_notation,
         parse_print_scope,
@@ -57,7 +57,7 @@ def _import_parsers():
 
 
 def _import_dispatcher():
-    from poule.notation.dispatcher import (
+    from Poule.notation.dispatcher import (
         dispatch_notation_query,
         resolve_ambiguity,
         two_step_resolve,
@@ -66,7 +66,7 @@ def _import_dispatcher():
 
 
 def _import_session_errors():
-    from poule.session.errors import (
+    from Poule.session.errors import (
         BACKEND_CRASHED,
         SESSION_NOT_FOUND,
         SessionError,
@@ -75,7 +75,7 @@ def _import_session_errors():
 
 
 def _import_server_errors():
-    from poule.server.errors import PARSE_ERROR
+    from Poule.server.errors import PARSE_ERROR
     return PARSE_ERROR
 
 
@@ -1249,7 +1249,7 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_submit_command_returns_string(self):
         """The real session manager's submit_command returns a string."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -1262,7 +1262,7 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_submit_command_print_notation(self):
         """The real session manager accepts Print Notation commands."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -1279,7 +1279,7 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_submit_command_locate(self):
         """The real session manager accepts Locate commands for notations."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -1292,7 +1292,7 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_submit_command_print_scope(self):
         """The real session manager accepts Print Scope commands."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -1305,7 +1305,7 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_submit_command_print_visibility(self):
         """The real session manager accepts Print Visibility commands."""
-        from poule.session.manager import SessionManager
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:
@@ -1318,8 +1318,8 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_session_not_found_raises_session_error(self):
         """The real session manager raises SessionError for invalid session IDs."""
-        from poule.session.errors import SESSION_NOT_FOUND, SessionError
-        from poule.session.manager import SessionManager
+        from Poule.session.errors import SESSION_NOT_FOUND, SessionError
+        from Poule.session.manager import SessionManager
         manager = SessionManager()
         with pytest.raises(SessionError) as exc_info:
             await manager.submit_command("nonexistent", "Print Visibility.")

@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from poule.channels.fts import fts_query, fts_search
+from Poule.channels.fts import fts_query, fts_search
 
 
 # ---------------------------------------------------------------------------

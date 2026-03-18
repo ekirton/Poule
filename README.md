@@ -47,13 +47,13 @@ Requires [Docker](https://docs.docker.com/get-docker/) and an [Anthropic API key
 **1. Get the launcher script**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ekirton/poule/main/bin/poule -o ~/bin/poule && chmod +x ~/bin/poule
+curl -fsSL https://raw.githubusercontent.com/ekirton/Poule/main/bin/poule -o ~/bin/poule && chmod +x ~/bin/poule
 ```
 
 Or, if you prefer to clone the repo:
 
 ```bash
-git clone https://github.com/ekirton/poule.git
+git clone https://github.com/ekirton/Poule.git
 cp poule/bin/poule ~/bin/poule
 chmod +x ~/bin/poule
 ```

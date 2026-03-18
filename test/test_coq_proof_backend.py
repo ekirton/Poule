@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from poule.session.types import (
+from Poule.session.types import (
     Goal,
     Hypothesis,
     ProofState,
@@ -27,7 +27,7 @@ from poule.session.types import (
 
 # All tests in this file require both the backend module (not yet implemented)
 # and a real Coq installation. Skip the entire module if the backend is absent.
-pytest.importorskip("poule.session.backend", reason="backend module not yet implemented")
+pytest.importorskip("Poule.session.backend", reason="backend module not yet implemented")
 
 # Mark all tests in this module as requires_coq
 pytestmark = pytest.mark.requires_coq
@@ -39,7 +39,7 @@ pytestmark = pytest.mark.requires_coq
 
 
 def _import_create_coq_backend():
-    from poule.session.backend import create_coq_backend
+    from Poule.session.backend import create_coq_backend
     return create_coq_backend
 
 

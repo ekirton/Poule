@@ -2,7 +2,6 @@ name: CI – Unit Tests
 
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -20,4 +19,4 @@ jobs:
       - name: Run unit tests
         run: >-
           uv run pytest -m "not requires_coq"
-          --cov=poule --cov-report=xml -v
+          --cov=Poule --cov-report=xml -v

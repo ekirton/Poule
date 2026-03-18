@@ -33,52 +33,52 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_build_graph():
-    from poule.analysis.graph import build_graph
+    from Poule.analysis.graph import build_graph
     return build_graph
 
 
 def _import_graph_types():
-    from poule.analysis.graph import DependencyGraph, NodeMetadata
+    from Poule.analysis.graph import DependencyGraph, NodeMetadata
     return DependencyGraph, NodeMetadata
 
 
 def _import_transitive_closure():
-    from poule.analysis.closure import transitive_closure, TransitiveClosure
+    from Poule.analysis.closure import transitive_closure, TransitiveClosure
     return transitive_closure, TransitiveClosure
 
 
 def _import_impact_analysis():
-    from poule.analysis.impact import impact_analysis, ImpactSet
+    from Poule.analysis.impact import impact_analysis, ImpactSet
     return impact_analysis, ImpactSet
 
 
 def _import_detect_cycles():
-    from poule.analysis.cycles import detect_cycles, CycleReport
+    from Poule.analysis.cycles import detect_cycles, CycleReport
     return detect_cycles, CycleReport
 
 
 def _import_module_summary():
-    from poule.analysis.modules import module_summary, ModuleSummary, ModuleMetrics
+    from Poule.analysis.modules import module_summary, ModuleSummary, ModuleMetrics
     return module_summary, ModuleSummary, ModuleMetrics
 
 
 def _import_filters():
-    from poule.analysis.filters import module_prefix, exclude_prefix, same_project
+    from Poule.analysis.filters import module_prefix, exclude_prefix, same_project
     return module_prefix, exclude_prefix, same_project
 
 
 def _import_cache():
-    from poule.analysis.cache import GraphCache
+    from Poule.analysis.cache import GraphCache
     return GraphCache
 
 
 def _import_errors():
-    from poule.analysis.errors import AnalysisError
+    from Poule.analysis.errors import AnalysisError
     return AnalysisError
 
 
 def _import_index_reader():
-    from poule.storage.reader import IndexReader
+    from Poule.storage.reader import IndexReader
     return IndexReader
 
 

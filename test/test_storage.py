@@ -21,8 +21,8 @@ import pytest
 # Imports from production code (TDD — will fail until implemented)
 # ---------------------------------------------------------------------------
 
-from poule.storage import IndexWriter, IndexReader
-from poule.storage.errors import (
+from Poule.storage import IndexWriter, IndexReader
+from Poule.storage.errors import (
     StorageError,
     IndexNotFoundError,
     IndexVersionError,

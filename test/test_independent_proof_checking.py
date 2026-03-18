@@ -30,52 +30,52 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_types():
-    from poule.checker.types import CheckRequest, CheckResult, CheckFailure
+    from Poule.checker.types import CheckRequest, CheckResult, CheckFailure
     return CheckRequest, CheckResult, CheckFailure
 
 
 def _import_adapter():
-    from poule.checker.adapter import check_proof
+    from Poule.checker.adapter import check_proof
     return check_proof
 
 
 def _import_validate():
-    from poule.checker.adapter import validate_request
+    from Poule.checker.adapter import validate_request
     return validate_request
 
 
 def _import_locate():
-    from poule.checker.adapter import locate_coqchk
+    from Poule.checker.adapter import locate_coqchk
     return locate_coqchk
 
 
 def _import_resolve():
-    from poule.checker.paths import resolve_library_name
+    from Poule.checker.paths import resolve_library_name
     return resolve_library_name
 
 
 def _import_build_command():
-    from poule.checker.paths import build_command
+    from Poule.checker.paths import build_command
     return build_command
 
 
 def _import_parser():
-    from poule.checker.parser import parse_output
+    from Poule.checker.parser import parse_output
     return parse_output
 
 
 def _import_check_single():
-    from poule.checker.adapter import check_single
+    from Poule.checker.adapter import check_single
     return check_single
 
 
 def _import_check_project():
-    from poule.checker.adapter import check_project
+    from Poule.checker.adapter import check_project
     return check_project
 
 
 def _import_discovery():
-    from poule.checker.discovery import parse_coqproject, discover_vo_files
+    from Poule.checker.discovery import parse_coqproject, discover_vo_files
     return parse_coqproject, discover_vo_files
 
 

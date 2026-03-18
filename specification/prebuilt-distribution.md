@@ -49,7 +49,7 @@ Define the download client for prebuilt index databases and model checkpoints: r
 
 The discovery endpoint is:
 ```
-GET https://api.github.com/repos/ekirton/poule/releases
+GET https://api.github.com/repos/ekirton/Poule/releases
 Accept: application/vnd.github+json
 ```
 
@@ -262,7 +262,7 @@ Generated manifest.json:
 
 Release tag: index-v1-coq8.19-mc2.2.0
 Release created: index-v1-coq8.19-mc2.2.0
-URL: https://github.com/ekirton/poule/releases/tag/index-v1-coq8.19-mc2.2.0
+URL: https://github.com/ekirton/Poule/releases/tag/index-v1-coq8.19-mc2.2.0
 ```
 
 ## 9. Language-Specific Notes (Python)
