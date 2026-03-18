@@ -246,9 +246,10 @@ git push origin my-feature
 gh pr create --title "Clear description of the change"
 ```
 
-If you omit `--title`, `gh` will prompt you interactively. You can also update the title later:
+If you omit `--title`, `gh` will prompt you interactively. Before merging, review the commit log and make sure the title accurately reflects the work — it becomes the squash commit message on `main`:
 
 ```bash
+git log --oneline origin/main..HEAD
 gh pr edit <number> --title "Better description"
 ```
 
