@@ -38,9 +38,10 @@ Six Coq libraries are available as prebuilt indexes: **stdlib**, **MathComp**, *
 
 ### Visualization
 
-- Proof state, proof tree, dependency subgraph, and step-by-step sequence diagrams
+- Proof state, proof tree, dependency subgraph, and step-by-step sequence diagrams ([example](examples/proof-diagram.html))
 - Generated as Mermaid syntax; each visualization tool call writes a self-contained `proof-diagram.html` to your project directory
 - Open `proof-diagram.html` in your browser and bookmark it — refresh after each visualization to see the latest diagram
+- Poule always overwrites the same `proof-diagram.html` path — rename or copy the file if you want to keep a diagram
 
 ## Quick Start
 

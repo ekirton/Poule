@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proof Tree: app_nil_r</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 900px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      color: #333;
+    }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.1rem; color: #555; margin-top: 2rem; }
+    .mermaid { margin: 2rem 0; }
+    ol { line-height: 1.8; }
+    code { background: #f0f0f0; padding: 0.15em 0.4em; border-radius: 3px; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>Proof Tree: <code>app_nil_r</code></h1>
+  <p><code>forall (A : Type) (l : list A), l ++ [] = l</code></p>
+
+  <div class="mermaid">
+flowchart TD
+    s0g0["forall (A : Type) (l : list A), l ++ [] = l"]
+    s0g0 -->|"intros A l."| s1g0["l ++ [] = l"]
+    s1g0 -->|"induction l as [| h t IH]."| s2g0["[] ++ [] = []"]
+    s1g0 -->|"induction l as [| h t IH]."| s2g1["(h :: t) ++ [] = h :: t"]
+    s2g0 -->|"- simpl."| s3g0["[] = []"]
+    s3g0 -->|"reflexivity."| s4g0["(h :: t) ++ [] = h :: t"]
+    s4g0 -->|"- simpl."| s5g0["h :: t ++ [] = h :: t"]
+    s5g0 -->|"rewrite IH."| s6g0["h :: t = h :: t"]
+    s6g0 -->|"reflexivity."| s7g0["✓"]:::discharged
+    classDef discharged fill:#d4edda,stroke:#28a745,stroke-dasharray:5 5
+  </div>
+
+  <h2>Proof walkthrough</h2>
+  <ol>
+    <li><code>intros A l</code> &mdash; introduces the type <code>A</code> and list <code>l</code>.</li>
+    <li><code>induction l</code> &mdash; splits into two subgoals: base case <code>[]</code> and inductive case <code>h :: t</code>.</li>
+    <li><strong>Base case:</strong> <code>simpl</code> reduces <code>[] ++ [] = []</code> to <code>[] = []</code>, then <code>reflexivity</code> discharges it.</li>
+    <li><strong>Inductive case:</strong> <code>simpl</code> unfolds the append, <code>rewrite IH</code> applies the induction hypothesis <code>t ++ [] = t</code>, and <code>reflexivity</code> closes the final goal <code>h :: t = h :: t</code>.</li>
+  </ol>
+</body>
+</html>
