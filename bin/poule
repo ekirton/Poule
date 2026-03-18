@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-IMAGE="ghcr.io/ekirton/Poule"
+IMAGE="ghcr.io/ekirton/poule"
 
 # ── Project directory ─────────────────────────────────────────────────────────
 # Use POULE_PROJECT_DIR if set; otherwise fall back to the current directory.
