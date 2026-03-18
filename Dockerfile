@@ -184,6 +184,7 @@ alias claude='claude --dangerously-skip-permissions'
 ZSHEOF
 
 VOLUME ["/data"]
+EXPOSE 3000
 ENV SHELL=/bin/zsh
 
 USER root

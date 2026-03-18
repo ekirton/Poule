@@ -1054,6 +1054,7 @@ def _dispatch_tool(ctx: _ServerContext, name: str, arguments: dict):
             session_id=arguments.get("session_id", ""),
             session_manager=ctx.session_manager,
             renderer=ctx.renderer,
+            broadcaster=ctx.broadcaster,
             step=arguments.get("step"),
             detail_level=arguments.get("detail_level"),
         )
@@ -1062,12 +1063,14 @@ def _dispatch_tool(ctx: _ServerContext, name: str, arguments: dict):
             session_id=arguments.get("session_id", ""),
             session_manager=ctx.session_manager,
             renderer=ctx.renderer,
+            broadcaster=ctx.broadcaster,
         )
     elif name == "visualize_dependencies":
         return handle_visualize_dependencies(
             name=arguments.get("name", ""),
             search_index=ctx.pipeline,
             renderer=ctx.renderer,
+            broadcaster=ctx.broadcaster,
             max_depth=arguments.get("max_depth", 2),
             max_nodes=arguments.get("max_nodes", 50),
         )
@@ -1076,6 +1079,7 @@ def _dispatch_tool(ctx: _ServerContext, name: str, arguments: dict):
             session_id=arguments.get("session_id", ""),
             session_manager=ctx.session_manager,
             renderer=ctx.renderer,
+            broadcaster=ctx.broadcaster,
             detail_level=arguments.get("detail_level"),
         )
     # Wrapper tools (async — return coroutine, awaited by call_tool)
@@ -1244,11 +1248,7 @@ async def _init_context(db_path: Path, log_level: str) -> _ServerContext:
 
     from poule.session.manager import SessionManager
 
-    async def _default_backend_factory(file_path: str):
-        """Placeholder backend factory — will be replaced with real CoqBackend."""
-        raise NotImplementedError("Coq backend not yet configured")
-
-    ctx.session_manager = SessionManager(_default_backend_factory)
+    ctx.session_manager = SessionManager()  # Uses real create_coq_backend by default
 
     if not db_path.exists():
         logger.error("Database file not found: %s", db_path)
