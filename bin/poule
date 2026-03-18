@@ -93,7 +93,7 @@ fi
 
 # ── Pull latest image ─────────────────────────────────────────────────────────
 if [ "$NO_PULL" = false ] && [ "$REBUILD" = false ]; then
-    docker pull "$IMAGE"
+    docker pull --platform linux/amd64 "$IMAGE"
 fi
 
 # ── Version check and deferred update detection ──────────────────────────────
@@ -112,7 +112,7 @@ if [ "$REBUILD" = true ]; then
         HOST_GID_VAL=$(id -g)
         TMPDIR_BUILD=$(mktemp -d)
         cat > "$TMPDIR_BUILD/Dockerfile" << DOCKERFILE
-FROM ${IMAGE}
+FROM --platform=linux/amd64 ${IMAGE}
 USER root
 RUN rm -rf /opt/claude /usr/local/bin/claude
 ARG HOST_USER
@@ -127,7 +127,7 @@ RUN mv /home/\${HOST_USER}/.local/share/claude /opt/claude \
 LABEL claude.code.version=${CLAUDE_LATEST}
 USER \${HOST_USER}
 DOCKERFILE
-        if docker build -t "$IMAGE" \
+        if docker build --platform linux/amd64 -t "$IMAGE" \
             --build-arg HOST_USER="$HOST_USER" \
             --build-arg HOST_UID="$HOST_UID_VAL" \
             --build-arg HOST_GID="$HOST_GID_VAL" \
@@ -235,6 +235,7 @@ if [ ! -f "$DATA_DIR/index.db" ]; then
     echo ""
     echo "Downloading Coq search index (first run only)..."
     if docker run --rm \
+        --platform linux/amd64 \
         -v "$DATA_DIR:/data" \
         --entrypoint sh \
         "$IMAGE" \
@@ -257,6 +258,7 @@ echo "Starting Poule in: $PROJECT_DIR"
 if [ ${#ARGS[@]} -eq 0 ]; then
     # No command: entrypoint starts MCP server, syncs commands, launches Claude.
     docker run -it --rm \
+        --platform linux/amd64 \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \
@@ -268,6 +270,7 @@ else
     # With command: entrypoint starts MCP server, syncs commands, then execs
     # the provided command.  MCP server stops on exit via entrypoint trap.
     docker run --rm \
+        --platform linux/amd64 \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \
@@ -314,7 +317,7 @@ if [ "$DEFERRED_UPDATE" = true ]; then
             HOST_GID_VAL=$(id -g)
             TMPDIR_BUILD=$(mktemp -d)
             cat > "$TMPDIR_BUILD/Dockerfile" << DOCKERFILE
-FROM ${IMAGE}
+FROM --platform=linux/amd64 ${IMAGE}
 USER root
 RUN rm -rf /opt/claude /usr/local/bin/claude
 ARG HOST_USER
@@ -329,7 +332,7 @@ RUN mv /home/\${HOST_USER}/.local/share/claude /opt/claude \
 LABEL claude.code.version=${CLAUDE_LATEST}
 USER \${HOST_USER}
 DOCKERFILE
-            if docker build -t "$IMAGE" \
+            if docker build --platform linux/amd64 -t "$IMAGE" \
                 --build-arg HOST_USER="$HOST_USER" \
                 --build-arg HOST_UID="$HOST_UID_VAL" \
                 --build-arg HOST_GID="$HOST_GID_VAL" \
