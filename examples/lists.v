@@ -1,4 +1,4 @@
-From Stdlib Require Import List.
+From Coq Require Import List.
 Import ListNotations.
 
 Lemma app_nil_r : forall (A : Type) (l : list A), l ++ [] = l.

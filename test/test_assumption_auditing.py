@@ -1182,8 +1182,11 @@ class TestContractSessionManager:
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
         try:
+            await manager.send_command(
+                session_id, "From Coq Require Import PeanoNat."
+            )
             output = await manager.send_command(
-                session_id, "Print Assumptions Coq.Arith.PeanoNat.Nat.add_0_r."
+                session_id, "Print Assumptions Nat.add_0_r."
             )
             assert "Closed under the global context" in output
         finally:

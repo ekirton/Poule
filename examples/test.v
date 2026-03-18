@@ -7,8 +7,8 @@
  * (Print Universes, Check, About, Print Assumptions, etc.).
  *)
 
-From Stdlib Require Import PeanoNat.
-From Stdlib Require Import List.
+From Coq Require Import PeanoNat.
+From Coq Require Import List.
 Import ListNotations.
 
 Lemma test_proof : forall n m : nat, n + m = m + n.

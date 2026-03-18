@@ -11,7 +11,7 @@ _BANNER_RE = re.compile(r"^Welcome to Coq [\d.]+\s*\n?")
 # Default prelude to load the standard library into session-free processes.
 # Spec 4.3.2: "execute against the default global environment (standard library
 # and project-level imports configured for the MCP server)."
-_DEFAULT_PRELUDE = "From Stdlib Require Import Arith.\n"
+_DEFAULT_PRELUDE = "From Coq Require Import Arith.\n"
 
 
 class ProcessPool:

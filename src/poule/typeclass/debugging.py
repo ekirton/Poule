@@ -258,9 +258,12 @@ async def trace_resolution(
         )
 
     if not root_nodes:
-        raise TypeclassError(
-            "NO_TYPECLASS_GOAL",
-            "The current goal does not involve typeclass resolution.",
+        return ResolutionTrace(
+            goal="",
+            root_nodes=[],
+            succeeded=False,
+            failure_mode=None,
+            raw_output=debug_output,
         )
 
     # Determine success and failure mode

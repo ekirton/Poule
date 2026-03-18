@@ -899,14 +899,19 @@ class TestContextualSuggestion:
 
     @pytest.mark.requires_coq
     @pytest.mark.asyncio
-    async def test_contract_observe_proof_state(self):
+    async def test_contract_observe_proof_state(self, coq_test_file):
         """Contract test: real observe_proof_state returns a ProofState."""
         from poule.session.types import ProofState
         from poule.session.manager import ProofSessionManager
-        # Requires live Coq session; skipped unless @requires_coq is enabled.
         manager = ProofSessionManager()
-        state = await manager.observe_state("test-session")
-        assert isinstance(state, ProofState)
+        session_id, _ = await manager.create_session(
+            str(coq_test_file), "test_proof",
+        )
+        try:
+            state = await manager.observe_state(session_id)
+            assert isinstance(state, ProofState)
+        finally:
+            await manager.close_session(session_id)
 
 
 # ===========================================================================

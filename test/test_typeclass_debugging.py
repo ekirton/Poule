@@ -311,15 +311,18 @@ class TestListInstances:
 
         from poule.session.manager import ProofSessionManager
         manager = ProofSessionManager()
-        # This requires a real Coq session -- skipped without Coq
-        result = await list_instances(
-            session_id="test",
-            typeclass_name="Eq",
-            session_manager=manager,
-        )
-        assert isinstance(result, list)
-        if result:
-            assert isinstance(result[0], TypeclassInfo)
+        session_id = await manager.open_session("test_contract")
+        try:
+            result = await list_instances(
+                session_id=session_id,
+                typeclass_name="Eq",
+                session_manager=manager,
+            )
+            assert isinstance(result, list)
+            if result:
+                assert isinstance(result[0], TypeclassInfo)
+        finally:
+            await manager.close_session(session_id)
 
 
 # ===========================================================================
@@ -412,13 +415,17 @@ class TestListTypeclasses:
 
         from poule.session.manager import ProofSessionManager
         manager = ProofSessionManager()
-        result = await list_typeclasses(
-            session_id="test",
-            session_manager=manager,
-        )
-        assert isinstance(result, list)
-        if result:
-            assert isinstance(result[0], TypeclassSummary)
+        session_id = await manager.open_session("test_contract")
+        try:
+            result = await list_typeclasses(
+                session_id=session_id,
+                session_manager=manager,
+            )
+            assert isinstance(result, list)
+            if result:
+                assert isinstance(result[0], TypeclassSummary)
+        finally:
+            await manager.close_session(session_id)
 
 
 # ===========================================================================
@@ -597,20 +604,24 @@ class TestTraceResolution:
 
     @pytest.mark.requires_coq
     @pytest.mark.asyncio
-    async def test_contract_trace_resolution_real_backend(self):
-        """Contract test: trace_resolution against real Coq backend."""
+    async def test_contract_trace_resolution_no_goal_error(self):
+        """Contract test: trace_resolution returns NO_TYPECLASS_GOAL with no proof goal."""
         _, _, trace_resolution, *_ = _import_debugging()
-        _, _, ResolutionTrace, *_ = _import_types()
 
         from poule.session.manager import ProofSessionManager
         manager = ProofSessionManager()
-        result = await trace_resolution(
-            session_id="test",
-            session_manager=manager,
-        )
-        assert isinstance(result, ResolutionTrace)
-        assert isinstance(result.succeeded, bool)
-        assert isinstance(result.raw_output, str)
+        session_id = await manager.open_session("test_contract")
+        try:
+            with pytest.raises(Exception) as exc_info:
+                await trace_resolution(
+                    session_id=session_id,
+                    session_manager=manager,
+                )
+            assert "NO_TYPECLASS_GOAL" in str(exc_info.value) or (
+                hasattr(exc_info.value, "code") and exc_info.value.code == "NO_TYPECLASS_GOAL"
+            )
+        finally:
+            await manager.close_session(session_id)
 
 
 # ===========================================================================

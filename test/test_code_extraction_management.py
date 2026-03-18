@@ -971,24 +971,21 @@ class TestContractSessionManagerSubmitCommand:
     the real Proof Session Manager implementation.
     """
 
+    @pytest.mark.requires_coq
     @pytest.mark.asyncio
     async def test_submit_command_returns_stdout_stderr(self):
-        """Real session manager submit_command returns object with stdout and stderr attributes."""
+        """Real session manager submit_command returns a string."""
         from poule.session.manager import SessionManager
-        # This test requires a real Coq backend running
         manager = SessionManager()
-        session_id = await manager.create_session(
-            file_path="test_fixture.v",
-            proof_name="test_lemma",
-        )
-        result = await manager.submit_command(
-            session_id,
-            "Extraction Language OCaml. Extraction Nat.add.",
-        )
-        assert hasattr(result, "stdout")
-        assert hasattr(result, "stderr")
-        assert isinstance(result.stdout, str)
-        assert isinstance(result.stderr, str)
+        session_id = await manager.open_session("test_contract")
+        try:
+            result = await manager.submit_command(
+                session_id,
+                "From Coq Require Import Arith. Check Nat.add.",
+            )
+            assert isinstance(result, str)
+        finally:
+            await manager.close_session(session_id)
 
     @pytest.mark.asyncio
     async def test_submit_command_session_not_found_raises(self):

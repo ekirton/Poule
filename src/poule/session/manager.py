@@ -39,6 +39,13 @@ from poule.session.types import (
 TIMEOUT_MINUTES = 30
 
 
+def _normalize_session_id(session_id):
+    """Extract the string session ID if a tuple (id, state) was passed."""
+    if isinstance(session_id, tuple):
+        return session_id[0]
+    return session_id
+
+
 @dataclass
 class _SessionState:
     """Internal per-session state (not exposed directly to callers)."""
@@ -125,6 +132,7 @@ class SessionManager:
         return session_id, initial_state
 
     async def close_session(self, session_id: str) -> None:
+        session_id = _normalize_session_id(session_id)
         async with self._registry_lock:
             ss = self._registry.pop(session_id, None)
         if ss is None:
@@ -156,6 +164,7 @@ class SessionManager:
         return result
 
     async def lookup_session(self, session_id: str) -> _SessionState:
+        session_id = _normalize_session_id(session_id)
         if session_id in self._expired_ids:
             raise SessionError(SESSION_EXPIRED, session_id)
         ss = self._registry.get(session_id)
@@ -579,10 +588,17 @@ class SessionManager:
         if "opaque" in lower:
             return "Opaque"
 
+        # Coq 8.19+: "Expands to: <Kind> <path>" line
+        if "expands to: constant" in lower:
+            # Reached here means no opacity/transparency markers → axiom
+            return "Axiom"
+        if "expands to: inductive" in lower:
+            return "Inductive"
+
         # Coq 8.18+ / Rocq: "About" output may say things like:
         # "trivial_lemma is a lemma." or use different wording.
-        # Try to match "is a <kind>"
-        kind_match = re.search(r"\bis (?:a |an )?(\w+)", lower)
+        # Try to match "is a <kind>" (require article to avoid "is not ...")
+        kind_match = re.search(r"\bis (?:a |an )(\w+)", lower)
         if kind_match:
             kind_word = kind_match.group(1)
             kind_map = {

@@ -1247,58 +1247,72 @@ class TestContractSessionManager:
 
     @pytest.mark.requires_coq
     @pytest.mark.asyncio
-    async def test_submit_command_returns_string(self, coq_test_file):
+    async def test_submit_command_returns_string(self):
         """The real session manager's submit_command returns a string."""
         from poule.session.manager import SessionManager
         manager = SessionManager()
-        # Would need a real Coq backend; marked requires_coq
-        session_id = await manager.create_session(str(coq_test_file))
-        result = await manager.submit_command(session_id, "Print Visibility.")
-        assert isinstance(result, str)
+        session_id = await manager.open_session("test_contract")
+        try:
+            result = await manager.submit_command(session_id, "Print Visibility.")
+            assert isinstance(result, str)
+        finally:
+            await manager.close_session(session_id)
 
     @pytest.mark.requires_coq
     @pytest.mark.asyncio
-    async def test_submit_command_print_notation(self, coq_test_file):
+    async def test_submit_command_print_notation(self):
         """The real session manager accepts Print Notation commands."""
         from poule.session.manager import SessionManager
         manager = SessionManager()
-        session_id = await manager.create_session(str(coq_test_file))
-        await manager.submit_command(session_id, 'Require Import Coq.Lists.List.')
-        result = await manager.submit_command(
-            session_id, 'Print Notation "_ ++ _".'
-        )
-        assert isinstance(result, str)
-        assert "++ " in result or "app" in result
+        session_id = await manager.open_session("test_contract")
+        try:
+            await manager.submit_command(session_id, 'Require Import Coq.Lists.List.')
+            result = await manager.submit_command(
+                session_id, 'Print Notation "_ ++ _".'
+            )
+            assert isinstance(result, str)
+            assert "++ " in result or "app" in result
+        finally:
+            await manager.close_session(session_id)
 
     @pytest.mark.requires_coq
     @pytest.mark.asyncio
-    async def test_submit_command_locate(self, coq_test_file):
+    async def test_submit_command_locate(self):
         """The real session manager accepts Locate commands for notations."""
         from poule.session.manager import SessionManager
         manager = SessionManager()
-        session_id = await manager.create_session(str(coq_test_file))
-        result = await manager.submit_command(session_id, 'Locate "_ + _".')
-        assert isinstance(result, str)
+        session_id = await manager.open_session("test_contract")
+        try:
+            result = await manager.submit_command(session_id, 'Locate "_ + _".')
+            assert isinstance(result, str)
+        finally:
+            await manager.close_session(session_id)
 
     @pytest.mark.requires_coq
     @pytest.mark.asyncio
-    async def test_submit_command_print_scope(self, coq_test_file):
+    async def test_submit_command_print_scope(self):
         """The real session manager accepts Print Scope commands."""
         from poule.session.manager import SessionManager
         manager = SessionManager()
-        session_id = await manager.create_session(str(coq_test_file))
-        result = await manager.submit_command(session_id, "Print Scope nat_scope.")
-        assert isinstance(result, str)
+        session_id = await manager.open_session("test_contract")
+        try:
+            result = await manager.submit_command(session_id, "Print Scope nat_scope.")
+            assert isinstance(result, str)
+        finally:
+            await manager.close_session(session_id)
 
     @pytest.mark.requires_coq
     @pytest.mark.asyncio
-    async def test_submit_command_print_visibility(self, coq_test_file):
+    async def test_submit_command_print_visibility(self):
         """The real session manager accepts Print Visibility commands."""
         from poule.session.manager import SessionManager
         manager = SessionManager()
-        session_id = await manager.create_session(str(coq_test_file))
-        result = await manager.submit_command(session_id, "Print Visibility.")
-        assert isinstance(result, str)
+        session_id = await manager.open_session("test_contract")
+        try:
+            result = await manager.submit_command(session_id, "Print Visibility.")
+            assert isinstance(result, str)
+        finally:
+            await manager.close_session(session_id)
 
     @pytest.mark.requires_coq
     @pytest.mark.asyncio

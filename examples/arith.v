@@ -1,4 +1,4 @@
-From Stdlib Require Import PeanoNat.
+From Coq Require Import PeanoNat.
 
 Lemma add_comm : forall n m : nat, n + m = m + n.
 Proof.
