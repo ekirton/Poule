@@ -19,6 +19,8 @@ PROJECT_DIR="${POULE_PROJECT_DIR:-$PWD}"
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 NO_PULL=false
+NO_AUTO_UPDATE=false
+REBUILD=false
 ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -27,14 +29,24 @@ while [[ $# -gt 0 ]]; do
             NO_PULL=true
             shift
             ;;
+        --no-auto-update)
+            NO_AUTO_UPDATE=true
+            shift
+            ;;
+        --rebuild)
+            REBUILD=true
+            shift
+            ;;
         --help|-h)
-            echo "Usage: poule [--no-pull] [COMMAND]"
+            echo "Usage: poule [OPTIONS] [COMMAND]"
             echo ""
             echo "Run Claude Code in the Poule container with your Coq project mounted."
             echo ""
             echo "OPTIONS:"
-            echo "  --no-pull    Skip pulling the latest image from the registry"
-            echo "  --help, -h   Show this help message"
+            echo "  --no-pull          Skip pulling the latest image from the registry"
+            echo "  --no-auto-update   Skip automatic Claude Code update check"
+            echo "  --rebuild          Force update Claude Code in the image"
+            echo "  --help, -h         Show this help message"
             echo ""
             echo "ENVIRONMENT:"
             echo "  POULE_PROJECT_DIR   Directory to mount (default: current directory)"
@@ -44,6 +56,7 @@ while [[ $# -gt 0 ]]; do
             echo "  poule                  Start interactive shell in POULE_PROJECT_DIR"
             echo "  poule claude           Launch Claude Code directly"
             echo "  poule --no-pull        Skip image update check"
+            echo "  poule --rebuild        Force update Claude Code version"
             echo "  poule coqc --version   Run a one-off command in the container"
             exit 0
             ;;
@@ -79,9 +92,75 @@ if [ "$PROJECT_DIR" = "$HOME" ]; then
     exit 1
 fi
 
+# ── Resolve latest Claude Code version ────────────────────────────────────────
+CLAUDE_LATEST=""
+if [ "$NO_AUTO_UPDATE" != true ]; then
+    CLAUDE_LATEST=$(npm view @anthropic-ai/claude-code version 2>/dev/null || true)
+fi
+
 # ── Pull latest image ─────────────────────────────────────────────────────────
-if [ "$NO_PULL" = false ]; then
+if [ "$NO_PULL" = false ] && [ "$REBUILD" = false ]; then
     docker pull "$IMAGE"
+fi
+
+# ── Version check and deferred update detection ──────────────────────────────
+INSTALLED=$(docker inspect --format '{{index .Config.Labels "claude.code.version"}}' "$IMAGE" 2>/dev/null || true)
+DEFERRED_UPDATE=false
+
+if [ "$REBUILD" = true ]; then
+    # Force rebuild now
+    if [ -z "$CLAUDE_LATEST" ]; then
+        CLAUDE_LATEST=$(npm view @anthropic-ai/claude-code version 2>/dev/null || true)
+    fi
+    if [ -n "$CLAUDE_LATEST" ]; then
+        echo "Updating Claude Code to v${CLAUDE_LATEST}..."
+        HOST_USER=$(id -un)
+        HOST_UID_VAL=$(id -u)
+        HOST_GID_VAL=$(id -g)
+        TMPDIR_BUILD=$(mktemp -d)
+        cat > "$TMPDIR_BUILD/Dockerfile" << DOCKERFILE
+FROM ${IMAGE}
+USER root
+RUN rm -rf /opt/claude /usr/local/bin/claude
+ARG HOST_USER
+ARG HOST_UID
+ARG HOST_GID
+USER \${HOST_USER}
+RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_LATEST}
+USER root
+RUN mv /home/\${HOST_USER}/.local/share/claude /opt/claude \
+    && ln -sf "\$(ls -d /opt/claude/versions/* | head -1)" /usr/local/bin/claude \
+    && chown -R \${HOST_UID}:\${HOST_GID} /opt/claude
+LABEL claude.code.version=${CLAUDE_LATEST}
+USER \${HOST_USER}
+DOCKERFILE
+        if docker build -t "$IMAGE" \
+            --build-arg HOST_USER="$HOST_USER" \
+            --build-arg HOST_UID="$HOST_UID_VAL" \
+            --build-arg HOST_GID="$HOST_GID_VAL" \
+            "$TMPDIR_BUILD"; then
+            echo "Claude Code v${CLAUDE_LATEST} ready."
+            INSTALLED="$CLAUDE_LATEST"
+        else
+            echo "Warning: Update failed."
+        fi
+        rm -rf "$TMPDIR_BUILD"
+    else
+        echo "Warning: Could not resolve latest Claude Code version (npm not available?)."
+    fi
+elif [ -n "$CLAUDE_LATEST" ] && [ -n "$INSTALLED" ] && [ "$INSTALLED" != "latest" ] && [ "$INSTALLED" != "$CLAUDE_LATEST" ]; then
+    DEFERRED_UPDATE=true
+fi
+
+# ── Display Claude Code version ──────────────────────────────────────────────
+if [ -n "$CLAUDE_LATEST" ] && [ -n "$INSTALLED" ] && [ "$INSTALLED" != "latest" ]; then
+    if [ "$INSTALLED" = "$CLAUDE_LATEST" ]; then
+        echo "Claude Code v${INSTALLED} (latest)"
+    elif [ "$DEFERRED_UPDATE" = true ]; then
+        printf "Claude Code v%s (\033[1;33mv%s available — will rebuild on exit\033[0m)\n" "$INSTALLED" "$CLAUDE_LATEST"
+    fi
+elif [ -n "$INSTALLED" ] && [ "$INSTALLED" != "latest" ]; then
+    echo "Claude Code v${INSTALLED}"
 fi
 
 # ── Persistent home directory ─────────────────────────────────────────────────
@@ -176,15 +255,14 @@ if [ ! -f "$DATA_DIR/index.db" ]; then
 fi
 
 # ── Run ───────────────────────────────────────────────────────────────────────
+# The entrypoint handles Claude symlinks, slash command provisioning, and
+# MCP server lifecycle (start on entry, stop on exit via trap).
 HOST_USER=$(id -un)
-
-# Ensure Claude Code is installed for pass-through commands (fast no-op if present).
-INIT_CMD='ensure-claude'
 
 echo "Starting Poule in: $PROJECT_DIR"
 
 if [ ${#ARGS[@]} -eq 0 ]; then
-    # No command: let the container entrypoint start Claude Code (Opus) directly.
+    # No command: entrypoint starts MCP server, syncs commands, launches Claude.
     docker run -it --rm \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
@@ -194,6 +272,8 @@ if [ ${#ARGS[@]} -eq 0 ]; then
         -e TZ="${TZ:-UTC}" \
         "$IMAGE"
 else
+    # With command: entrypoint starts MCP server, syncs commands, then execs
+    # the provided command.  MCP server stops on exit via entrypoint trap.
     docker run --rm \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
@@ -202,5 +282,74 @@ else
         -e ANTHROPIC_API_KEY \
         -e TZ="${TZ:-UTC}" \
         "$IMAGE" \
-        zsh -c "$INIT_CMD; ${ARGS[*]}"
+        "${ARGS[@]}"
+fi
+
+# ── Deferred rebuild: update Claude Code for next launch ──────────────────────
+if [ "$DEFERRED_UPDATE" = true ]; then
+    # Re-check: another session may have already rebuilt while we were running
+    CURRENT_VERSION=$(docker inspect --format '{{index .Config.Labels "claude.code.version"}}' "$IMAGE" 2>/dev/null || true)
+    if [ "$CURRENT_VERSION" = "$CLAUDE_LATEST" ]; then
+        echo "Claude Code v${CLAUDE_LATEST} already updated."
+    else
+        LOCK_DIR="$CONTAINER_HOME/.poule-rebuild.lock"
+
+        acquire_rebuild_lock() {
+            if mkdir "$LOCK_DIR" 2>/dev/null; then
+                echo $$ > "$LOCK_DIR/pid"
+                return 0
+            fi
+            # Lock exists — check if it's stale (owner process died)
+            if [ -f "$LOCK_DIR/pid" ]; then
+                LOCK_PID=$(cat "$LOCK_DIR/pid" 2>/dev/null)
+                if [ -n "$LOCK_PID" ] && ! kill -0 "$LOCK_PID" 2>/dev/null; then
+                    rm -rf "$LOCK_DIR"
+                    if mkdir "$LOCK_DIR" 2>/dev/null; then
+                        echo $$ > "$LOCK_DIR/pid"
+                        return 0
+                    fi
+                fi
+            fi
+            return 1
+        }
+
+        if acquire_rebuild_lock; then
+            trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM
+            echo ""
+            echo "Updating Claude Code: v${INSTALLED} → v${CLAUDE_LATEST}..."
+            HOST_UID_VAL=$(id -u)
+            HOST_GID_VAL=$(id -g)
+            TMPDIR_BUILD=$(mktemp -d)
+            cat > "$TMPDIR_BUILD/Dockerfile" << DOCKERFILE
+FROM ${IMAGE}
+USER root
+RUN rm -rf /opt/claude /usr/local/bin/claude
+ARG HOST_USER
+ARG HOST_UID
+ARG HOST_GID
+USER \${HOST_USER}
+RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_LATEST}
+USER root
+RUN mv /home/\${HOST_USER}/.local/share/claude /opt/claude \
+    && ln -sf "\$(ls -d /opt/claude/versions/* | head -1)" /usr/local/bin/claude \
+    && chown -R \${HOST_UID}:\${HOST_GID} /opt/claude
+LABEL claude.code.version=${CLAUDE_LATEST}
+USER \${HOST_USER}
+DOCKERFILE
+            if docker build -t "$IMAGE" \
+                --build-arg HOST_USER="$HOST_USER" \
+                --build-arg HOST_UID="$HOST_UID_VAL" \
+                --build-arg HOST_GID="$HOST_GID_VAL" \
+                "$TMPDIR_BUILD"; then
+                echo "Claude Code v${CLAUDE_LATEST} ready for next launch."
+            else
+                echo "Warning: Update failed. Will retry on next launch."
+            fi
+            rm -rf "$TMPDIR_BUILD"
+            rm -rf "$LOCK_DIR"
+            trap - EXIT INT TERM
+        else
+            echo "Another session is already rebuilding Claude Code. Skipping."
+        fi
+    fi
 fi

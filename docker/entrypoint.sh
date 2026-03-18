@@ -1,16 +1,40 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install or update Claude Code in the persistent home directory.
-ensure-claude --update
+# ── Claude Code symlinks ─────────────────────────────────────────────────────
+# Symlink baked-in Claude Code from /opt into the persistent home so it
+# appears on PATH even when ~/poule-home is bind-mounted over $HOME.
+mkdir -p "$HOME/.local/bin" "$HOME/.local/share"
+ln -sf "$(ls -d /opt/claude/versions/* | head -1)" "$HOME/.local/bin/claude"
+ln -sf /opt/claude "$HOME/.local/share/claude"
+
+# ── Slash commands ────────────────────────────────────────────────────────────
+# Symlink each baked-in slash command individually so user-added commands
+# in the persistent home are preserved.
+COMMANDS_SRC="/poule/commands"
+COMMANDS_DST="$HOME/.claude/commands"
+if [ -d "$COMMANDS_SRC" ]; then
+    mkdir -p "$COMMANDS_DST"
+    for f in "$COMMANDS_SRC"/*.md; do
+        [ -f "$f" ] || continue
+        base=$(basename "$f")
+        [ "$base" = "CLAUDE.md" ] && continue
+        ln -sf "$f" "$COMMANDS_DST/$base"
+    done
+fi
+
+# ── MCP server lifecycle ─────────────────────────────────────────────────────
+# Start the MCP server and ensure it stops when the container exits.
+cleanup() {
+    poule-mcp stop 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+poule-mcp start
 
 if [ $# -gt 0 ]; then
     exec "$@"
 fi
 
-# Default: start the MCP server as a background daemon, then launch Claude.
-# The server runs in SSE mode so Claude Code (and the developer) can stop and
-# restart it independently without exiting Claude.
-poule-mcp start
-
+# Default: launch Claude Code (Opus).
 exec claude --dangerously-skip-permissions --model opus

@@ -52,8 +52,10 @@ ENV COQLIB=/opt/opam/coq/lib/coq
 ENV PATH="/opt/opam/coq/bin:${PATH}"
 
 # ============================================================================
-# Stage 2: app-deps — System packages + Python dependencies
-# Rebuilds only when lockfiles change.
+# Stage 2: app-deps — System packages + Python dependencies + Claude Code
+# Rebuilds only when lockfiles change (or Claude Code version bumps).
+# Claude Code is installed last so daily version bumps only invalidate this
+# one layer — the Coq toolchain and Python deps stay cached.
 # ============================================================================
 FROM coq-base AS app-deps
 
@@ -111,10 +113,6 @@ COPY pyproject.toml uv.lock ./
 COPY docker/poule-mcp /usr/local/bin/poule-mcp
 RUN chmod +x /usr/local/bin/poule-mcp
 
-# Install Claude Code bootstrap script (installs into persistent home at runtime)
-COPY docker/ensure-claude /usr/local/bin/ensure-claude
-RUN chmod +x /usr/local/bin/ensure-claude
-
 # Place the virtualenv outside /app so it survives a bind-mount of the
 # project root in dev containers.
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
@@ -127,16 +125,36 @@ USER root
 
 ENV PATH="/opt/venv/bin:${PATH}"
 
+# ── Claude Code: baked into image for instant startup ──────────────────────
+# CLAUDE_CODE_VERSION and CACHEBUST_CLAUDE are declared here (not at the top)
+# so changing the version only invalidates this final layer, keeping all the
+# toolchain and dependency layers above fully cached.  Claude updates daily;
+# this placement keeps rebuilds under 60 seconds.
+ARG CLAUDE_CODE_VERSION=latest
+ARG CACHEBUST_CLAUDE=0
+USER ${HOST_USER}
+RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION}
+USER root
+RUN mv /home/${HOST_USER}/.local/share/claude /opt/claude \
+    && ln -sf "$(ls -d /opt/claude/versions/* | head -1)" /usr/local/bin/claude \
+    && chown -R ${HOST_USER}:${HOST_GROUP} /opt/claude
+LABEL claude.code.version=${CLAUDE_CODE_VERSION}
+
 # ============================================================================
-# Stage 3: runtime — Application code
+# Stage 3: runtime — Application code + entrypoint
 # Rebuilds on every source change (fast — just file copies).
-# Claude Code is installed at runtime via ensure-claude into the persistent home.
+# Claude Code is inherited from app-deps (already in /opt/claude).
 # ============================================================================
 FROM app-deps AS runtime
+
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+ARG HOST_USER=poule
 
 COPY --chown=${HOST_UID}:${HOST_GID} src/ src/
 COPY --chown=${HOST_UID}:${HOST_GID} test/ test/
 COPY --chown=${HOST_UID}:${HOST_GID} examples/ examples/
+COPY --chown=${HOST_UID}:${HOST_GID} commands/ commands/
 COPY --chown=${HOST_UID}:${HOST_GID} CLAUDE.md README.md ./
 
 USER ${HOST_USER}

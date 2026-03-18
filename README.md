@@ -73,7 +73,7 @@ poule          # drops you into a shell inside the container
 claude         # then start Claude Code
 ```
 
-Everything runs inside the container — no local Coq, Python, or opam installation required. On first run, the launcher pulls the image, initializes a persistent home directory at `~/poule-home`, and downloads the Coq search index automatically.
+Everything runs inside the container — no local Coq, Python, or opam installation required. Claude Code is baked into the image for instant startup. On first run, the launcher pulls the image, initializes a persistent home directory at `~/poule-home`, and downloads the Coq search index automatically.
 
 If you want to use a different project for a one-off session, just `cd` into it and run `poule` — the launcher falls back to `$PWD` when `POULE_PROJECT_DIR` is not set.
 
@@ -100,10 +100,12 @@ cp -r ~/.ssh ~/poule-home/.ssh
 
 ### Updating
 
-The launcher pulls the latest image each time it runs. To skip the pull:
+The launcher pulls the latest image each time it runs and checks for Claude Code updates. If a newer Claude Code version is available, it defers the update to exit time so your session isn't interrupted.
 
 ```bash
-poule --no-pull
+poule --no-pull          # Skip pulling the latest image
+poule --no-auto-update   # Skip Claude Code update check
+poule --rebuild          # Force update Claude Code immediately
 ```
 
 To download a newer search index:

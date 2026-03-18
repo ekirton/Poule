@@ -8,7 +8,7 @@
 - [Git](https://git-scm.com/)
 - An [Anthropic API key](https://console.anthropic.com/) or Claude Code login
 
-No local Coq, Python, or opam installation is needed. All development happens inside the container, which provides the full Coq/Rocq toolchain, coq-lsp, MathComp, and Python environment. Claude Code is installed automatically into the persistent home directory on first run and auto-updates on each launch.
+No local Coq, Python, or opam installation is needed. All development happens inside the container, which provides the full Coq/Rocq toolchain, coq-lsp, MathComp, and Python environment. Claude Code is baked into the Docker image at build time and symlinked into the persistent home directory on each launch.
 
 ### Clone and build
 
@@ -91,7 +91,7 @@ Environment variables to override defaults:
 poule --pull                 # Force pull latest base image from registry
 ```
 
-Claude Code auto-updates on every container launch (via `ensure-claude` in the entrypoint). The `--pull` flag updates the base image (Coq toolchain, Python deps, Poule application code).
+Claude Code is baked into the image at build time. On launch, the launcher checks npm for newer versions; if found, it defers the rebuild to exit time so your session isn't interrupted. The `--pull` flag updates the base image (Coq toolchain, Python deps, Poule application code). Use `--no-auto-update` to skip the version check.
 
 To download a newer search index:
 
