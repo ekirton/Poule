@@ -112,9 +112,9 @@ The parser shall convert raw `Set Typeclasses Debug` output into a tree of Resol
 #### explain_failure(resolution_trace)
 
 - REQUIRES: `resolution_trace` is a ResolutionTrace with `succeeded = false`.
-- ENSURES: Classifies the failure into one of three modes and returns a FailureExplanation. The classification is exhaustive over the three modes defined below.
+- ENSURES: Independently classifies the failure from the trace's tree structure into one of three modes and returns a FailureExplanation. The classification is exhaustive over the three modes defined below. The `trace.failure_mode` field is informational (set during trace construction as a preliminary classification) and `explain_failure` may produce a different classification based on its own tree-structure analysis.
 
-**No Matching Instance**: When a root node or sub-goal node has zero children (no instance was attempted), the component shall report:
+**No Matching Instance**: When a root node has zero children (no instance was attempted), or when `root_nodes` is empty and `trace.failure_mode == "no_instance"`, the component shall report:
 
 | Field | Content |
 |-------|---------|
@@ -163,7 +163,7 @@ The parser shall convert raw `Set Typeclasses Debug` output into a tree of Resol
 > **When** `explain_failure(trace)` is called
 > **Then** a FailureExplanation with `failure_mode = "depth_exceeded"`, `cycle_detected = true`, and `cycle_typeclasses = ["Applicative", "Functor"]` is returned
 
-**Fallback**: When the trace does not match any of the three modes (empty or malformed), the component shall return a FailureExplanation with `failure_mode = "unclassified"` and include the raw trace output.
+**Fallback**: When the trace does not match any of the three modes above, the component shall return a FailureExplanation with `failure_mode = "unclassified"` and include the raw trace output. In particular, when `root_nodes` is empty and `trace.failure_mode` is not `"no_instance"`, the classification is `"unclassified"`.
 
 ### 4.5 Conflict Detection
 

@@ -12,7 +12,7 @@ Define the extraction handler that, given an active proof session with a definit
 
 ## 2. Scope
 
-**In scope**: Extraction command construction (language directive + extraction command), single and recursive extraction, preview mode (return code without writing), write mode (persist to disk), error classification into six categories with explanations and suggestions, ExtractionRequest/ExtractionResult/ExtractionError data model.
+**In scope**: Extraction command construction (language directive + extraction command), single and recursive extraction, preview mode (return code without writing), write mode (persist to disk), error classification into six categories with explanations and suggestions, ExtractionRequest/ExtractionResult/CodeExtractionError data model.
 
 **Out of scope**: Session lifecycle management (owned by proof-session), MCP protocol handling and input validation (owned by mcp-server), Coq expression parsing and name resolution (owned by Coq backend), type-checking or compilation of extracted output in the target language, modification of Coq source files to make definitions extractable.
 
@@ -37,7 +37,7 @@ Define the extraction handler that, given an active proof session with a definit
 #### extract_code(session_id, definition_name, language, recursive, output_path?)
 
 - REQUIRES: `session_id` references an active proof session in the Proof Session Manager. `definition_name` is a non-empty string (short or fully qualified Coq name). `language` is one of `"OCaml"`, `"Haskell"`, or `"Scheme"`. `recursive` is a boolean (default: `false`). `output_path`, when provided, is an absolute path whose parent directory exists.
-- ENSURES: Constructs the extraction command sequence, submits it to the Coq backend via the Proof Session Manager, parses the result, and returns an ExtractionResult on success or an ExtractionError on failure. When `output_path` is omitted, operates in preview mode (no file written). When `output_path` is provided, writes the extracted code to disk and includes the path in the result.
+- ENSURES: Constructs the extraction command sequence, submits it to the Coq backend via the Proof Session Manager, parses the result, and returns an ExtractionResult on success or a CodeExtractionError on failure. When `output_path` is omitted, operates in preview mode (no file written). When `output_path` is provided, writes the extracted code to disk and includes the path in the result.
 - MAINTAINS: The extraction handler does not modify the Coq environment state beyond the side effects of the extraction command itself. The definition name is passed verbatim to Coq without transformation.
 
 > **Given** a session with `my_fn` defined and `language = "OCaml"`, `recursive = false`, no `output_path`
@@ -50,7 +50,7 @@ Define the extraction handler that, given an active proof session with a definit
 
 > **Given** a session where `opaque_fn` is closed with `Qed`
 > **When** `extract_code(session_id, "opaque_fn", "OCaml", false)` is called
-> **Then** an ExtractionError is returned with `category = "opaque_term"`, a plain-language explanation, and suggestions including changing `Qed` to `Defined`
+> **Then** a CodeExtractionError is returned with `category = "opaque_term"`, a plain-language explanation, and suggestions including changing `Qed` to `Defined`
 
 ### 4.2 Command Construction
 
@@ -83,7 +83,7 @@ The result parser shall inspect Coq's stdout and stderr after extraction command
 
 - When stdout contains extracted code and stderr contains no errors: the parser shall return an ExtractionResult with the `code` field set to the extracted source code.
 - When stdout contains extracted code and stderr contains non-fatal warnings (e.g., axiom realizer warnings): the parser shall return an ExtractionResult with the `code` field populated and warnings captured in the `warnings` list.
-- When stderr contains an error: the parser shall classify the error (see section 4.5) and return an ExtractionError.
+- When stderr contains an error: the parser shall classify the error (see section 4.5) and return a CodeExtractionError.
 
 > **Given** Coq stdout contains `let my_fn x = x + 1` and stderr is empty
 > **When** the result is parsed
@@ -153,7 +153,7 @@ When extraction fails, the result parser shall classify the Coq error by matchin
 | `warnings` | list of string | Non-fatal warnings from Coq; empty list when no warnings |
 | `output_path` | string or null | Absolute file path if code was written to disk; null for preview mode |
 
-### ExtractionError
+### CodeExtractionError
 
 | Field | Type | Constraints |
 |-------|------|-------------|
@@ -172,7 +172,7 @@ When extraction fails, the result parser shall classify the Coq error by matchin
 |----------|-------|
 | Operations used | Command submission (language directive + extraction command as a sequence) |
 | Concurrency | Serialized — one command sequence at a time per session |
-| Error strategy | `SESSION_NOT_FOUND` → return error immediately, no extraction attempted. `BACKEND_CRASHED` → return error advising session restart. Extraction-level Coq errors → parse into ExtractionError. |
+| Error strategy | `SESSION_NOT_FOUND` → return error immediately, no extraction attempted. `BACKEND_CRASHED` → return error advising session restart. Extraction-level Coq errors → parse into CodeExtractionError. |
 | Idempotency | Extraction commands are idempotent — re-executing the same extraction produces the same output. |
 
 ### Extraction Handler → Filesystem (write mode only)
@@ -188,7 +188,7 @@ When extraction fails, the result parser shall classify the Coq error by matchin
 | Property | Value |
 |----------|-------|
 | Input validation | MCP Server validates: `definition_name` is non-empty, `language` is a supported enum value, `output_path` (when present) is an absolute path. |
-| Output format | ExtractionResult or ExtractionError, formatted per MCP standard error format defined in [mcp-server.md](mcp-server.md). |
+| Output format | ExtractionResult or CodeExtractionError, formatted per MCP standard error format defined in [mcp-server.md](mcp-server.md). |
 
 ## 7. Error Specification
 
@@ -204,7 +204,7 @@ When extraction fails, the result parser shall classify the Coq error by matchin
 
 | Condition | Error Code | Behavior |
 |-----------|-----------|----------|
-| Extraction command fails in Coq | `EXTRACTION_FAILED` | Parse error into ExtractionError with category, explanation, and suggestions |
+| Extraction command fails in Coq | `EXTRACTION_FAILED` | Parse error into CodeExtractionError with category, explanation, and suggestions |
 | Backend process crashes during extraction | `BACKEND_CRASHED` | Return error advising the user to close and reopen the session |
 
 ### 7.3 Write Errors
@@ -220,7 +220,7 @@ When extraction fails, the result parser shall classify the Coq error by matchin
 | Condition | Behavior |
 |-----------|----------|
 | Extraction produces empty stdout and no stderr error | Return ExtractionResult with empty `code` string and a warning indicating empty extraction output |
-| Extraction produces both code on stdout and an error on stderr | Treat as error — return ExtractionError. Partial extraction output is not returned. |
+| Extraction produces both code on stdout and an error on stderr | Treat as error — return CodeExtractionError. Partial extraction output is not returned. |
 | Definition name contains spaces or special characters | Pass verbatim to Coq; Coq's parser determines validity |
 | Same definition extracted twice in one session | Second extraction succeeds identically (idempotent) |
 | Write to a path that already exists | Overwrite the existing file |
@@ -335,10 +335,10 @@ Result:
 ## 10. Language-Specific Notes (Python)
 
 - Package location: `src/poule/extraction/`.
-- The `ExtractionHandler` class encapsulates command construction, result parsing, error classification, and file writing.
+- All public functions are module-level functions, not methods on a class.
 - Command construction is a pure function: `build_command(definition_name: str, language: str, recursive: bool) -> str`.
 - Error classification uses compiled regular expressions matched in priority order against stderr.
 - File writing uses `pathlib.Path` for path validation (`is_absolute()`, `parent.exists()`) and atomic write semantics where the platform supports it.
-- Entry point: `async def extract_code(session_manager, session_id: str, definition_name: str, language: str, recursive: bool = False, output_path: str | None = None) -> ExtractionResult | ExtractionError`.
+- Entry point: `async def extract_code(session_manager, session_id: str, definition_name: str, language: str, recursive: bool = False, output_path: str | None = None) -> ExtractionResult | CodeExtractionError`.
 - Write entry point: `def write_extraction(code: str, output_path: str) -> WriteConfirmation`.
-- Use `dataclasses` or `pydantic` for ExtractionRequest, ExtractionResult, ExtractionError, and WriteConfirmation.
+- Use `dataclasses` or `pydantic` for ExtractionRequest, ExtractionResult, CodeExtractionError, and WriteConfirmation.

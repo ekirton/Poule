@@ -39,7 +39,7 @@ When `submit_tactic` receives a tactic string matching a recognized hammer keywo
 #### execute_single(session_id, strategy, timeout, hints, options)
 
 - REQUIRES: `session_id` references an active proof session with at least one open goal. `strategy` is one of `hammer`, `sauto`, `qauto`. `timeout` is a positive number (seconds). `hints` is a list of syntactically valid Coq identifiers (may be empty). `options` is a map of strategy-specific parameters (may be empty).
-- ENSURES: Builds a tactic string via the Tactic Builder. Wraps it with the appropriate timeout directive. Submits it to the Proof Session Manager. Returns a HammerResult reflecting the outcome.
+- ENSURES: Builds a tactic string via the Tactic Builder. Wraps it with the appropriate timeout directive. Submits it to the Proof Session Manager. Passes the Coq output and post-submission proof state to the Result Interpreter, which returns a `ClassifiedOutput`. Assembles a `HammerResult` by combining the `ClassifiedOutput` with the strategy identity, wall-clock timing, proof script (on success), and diagnostics.
 - MAINTAINS: On success, exactly one tactic step is added to the session. On failure, the session state is unchanged.
 
 > **Given** a proof session at goal `n + 0 = n` with `Nat.add_0_r` available
@@ -132,11 +132,11 @@ Where `{t}` is the per-strategy timeout in seconds.
 #### interpret_result(coq_output, proof_state_after)
 
 - REQUIRES: `coq_output` is the raw text output from the Proof Session Manager after tactic submission. `proof_state_after` is the ProofState observed after submission.
-- ENSURES: Returns a classified result per the mapping table below.
+- ENSURES: Returns a `ClassifiedOutput` per the mapping table below. The caller (`execute_single` or `execute_auto`) assembles the full `HammerResult` by combining the `ClassifiedOutput` with strategy identity, wall-clock timing, and diagnostics.
 
-| Coq output pattern | Classification | `partial_progress` |
+| Coq output pattern | `classification` | `partial_progress` |
 |--------------------|--------------|--------------------|
-| Tactic succeeded (goal closed in `proof_state_after`) | `success` | n/a |
+| Tactic succeeded (goal closed in `proof_state_after`) | `success` | null |
 | "Timeout" or wall-clock exceeded | `timeout` | null |
 | "No proof found" or "hammer failed" | `no_proof_found` | null |
 | "Reconstruction failed" with ATP proof present | `reconstruction_failed` | ATP proof text |
@@ -146,11 +146,11 @@ When the interpreter cannot classify an error message into a specific reason, th
 
 > **Given** Coq output containing "Reconstruction failed" followed by an ATP proof
 > **When** `interpret_result` is called
-> **Then** the result has `failure_reason = "reconstruction_failed"` and `partial_progress` contains the ATP proof text
+> **Then** the result is a `ClassifiedOutput` with `classification = "reconstruction_failed"` and `partial_progress` containing the ATP proof text
 
 > **Given** Coq output containing "Error: Unknown tactic hammer"
 > **When** `interpret_result` is called
-> **Then** the result has `failure_reason = "tactic_error"` and `detail` contains the raw error message
+> **Then** the result is a `ClassifiedOutput` with `classification = "tactic_error"` and `detail` containing the raw error message
 
 ## 5. Data Model
 
@@ -177,10 +177,21 @@ When the interpreter cannot classify an error message into a specific reason, th
 | `wall_time_ms` | non-negative integer | Required; time consumed by this strategy |
 | `timeout_used` | number | Required; the timeout value (seconds) applied to this strategy |
 
+### ClassifiedOutput
+
+| Field | Type | Constraints |
+|-------|------|-------------|
+| `classification` | `"success"` or `"timeout"` or `"no_proof_found"` or `"reconstruction_failed"` or `"tactic_error"` | Required |
+| `detail` | text or null | Human-readable detail from Coq error output; null on success |
+| `partial_progress` | text or null | ATP proof text when reconstruction failed; null otherwise |
+
+`interpret_result` returns a `ClassifiedOutput`. The caller (`execute_single` or `execute_auto`) uses the `ClassifiedOutput` to construct a `StrategyDiagnostic` (on failure) or populate the success fields of a `HammerResult` (on success).
+
 ### Relationships
 
 - HammerResult references one ProofState (from proof-types).
 - HammerResult contains zero or more StrategyDiagnostic entries (1:*; ordered by attempt sequence).
+- `interpret_result` produces a ClassifiedOutput; the caller assembles this into a HammerResult.
 
 ## 6. Interface Contracts
 
@@ -349,4 +360,4 @@ Result:
 - Entry point: `async def execute_hammer(session_manager, session_id, strategy, timeout, hints, options) -> HammerResult`.
 - Multi-strategy entry point: `async def execute_auto_hammer(session_manager, session_id, timeout, hints, options) -> HammerResult`.
 - Tactic Builder: pure function `def build_tactic(strategy, hints, options) -> str`, raising `ParseError` on invalid inputs.
-- Result Interpreter: pure function `def interpret_result(coq_output, proof_state) -> HammerResult`.
+- Result Interpreter: pure function `def interpret_result(coq_output, proof_state) -> ClassifiedOutput`.

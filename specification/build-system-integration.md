@@ -501,11 +501,13 @@ Result:
   - `def detect_build_system(project_dir: Path) -> DetectionResult`
   - `async def execute_build(request: BuildRequest) -> BuildResult`
   - `def generate_coq_project(project_dir: Path, logical_name: str | None = None, extra_flags: list[str] | None = None) -> Path`
+  - `def update_coq_project(project_dir: Path) -> Path`
   - `def generate_dune_project(project_dir: Path, logical_name: str | None = None) -> list[Path]`
   - `def generate_opam_file(project_dir: Path, metadata: OpamMetadata) -> Path`
   - `def migrate_to_dune(project_dir: Path) -> MigrationResult`
   - `async def query_installed_packages() -> list[tuple[str, str]]`
   - `async def query_package_info(package_name: str) -> PackageInfo`
+  - `def parse_build_errors(stdout: str, stderr: str, build_system: BuildSystem) -> list[BuildError]`
   - `async def install_package(package_name: str, version_constraint: str | None = None) -> BuildResult`
   - `def add_dependency(project_dir: Path, package_name: str, version_constraint: str | None = None) -> None`
   - `async def check_dependency_conflicts(dependencies: list[tuple[str, str | None]]) -> DependencyStatus`
