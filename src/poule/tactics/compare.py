@@ -236,6 +236,17 @@ async def tactic_compare(
             "Comparison requires at least two tactic names.",
         )
 
+    if coq_query is None:
+        from poule.query.handler import coq_query as _coq_query
+        from poule.query.process_pool import ProcessPool
+
+        _pool = ProcessPool()
+
+        async def coq_query(command, argument, session_id=None):
+            return await _coq_query(
+                command, argument, session_id=session_id, process_pool=_pool,
+            )
+
     resolved: list[TacticInfo] = []
     not_found: list[str] = []
 

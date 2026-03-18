@@ -257,8 +257,6 @@ class TestBuildGraphFromStorage:
     @pytest.mark.requires_coq
     def test_contract_real_index_reader(self):
         """Contract test: build_graph works with a real IndexReader."""
-        if not Path("test_fixture.db").exists():
-            pytest.skip("test_fixture.db not found")
         build_graph = _import_build_graph()
         DependencyGraph, _ = _import_graph_types()
         IndexReader = _import_index_reader()
@@ -1159,8 +1157,6 @@ class TestContractTests:
     @pytest.mark.requires_coq
     def test_contract_index_reader_declarations_table(self):
         """Contract: IndexReader can query declarations table for graph construction."""
-        if not Path("test_fixture.db").exists():
-            pytest.skip("test_fixture.db not found")
         IndexReader = _import_index_reader()
         reader = IndexReader.open("test_fixture.db")
         # The engine reads all declarations
@@ -1178,8 +1174,6 @@ class TestContractTests:
     @pytest.mark.requires_coq
     def test_contract_index_reader_dependencies_table(self):
         """Contract: IndexReader can query dependencies table for graph edges."""
-        if not Path("test_fixture.db").exists():
-            pytest.skip("test_fixture.db not found")
         IndexReader = _import_index_reader()
         reader = IndexReader.open("test_fixture.db")
         rows = reader._conn.execute(
@@ -1196,8 +1190,6 @@ class TestContractTests:
     @pytest.mark.requires_coq
     def test_contract_index_reader_meta_created_at(self):
         """Contract: IndexReader can read created_at from index_meta for cache validation."""
-        if not Path("test_fixture.db").exists():
-            pytest.skip("test_fixture.db not found")
         IndexReader = _import_index_reader()
         reader = IndexReader.open("test_fixture.db")
         row = reader._conn.execute(
@@ -1210,8 +1202,6 @@ class TestContractTests:
     @pytest.mark.requires_coq
     def test_contract_build_graph_from_real_dot_file(self):
         """Contract: build_graph parses a real coq-dpdgraph DOT file."""
-        if not Path("test_fixture.dot").exists():
-            pytest.skip("test_fixture.dot not found")
         build_graph = _import_build_graph()
         DependencyGraph, _ = _import_graph_types()
         # Requires a real DOT file from coq-dpdgraph

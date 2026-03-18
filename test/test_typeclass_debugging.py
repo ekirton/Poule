@@ -306,7 +306,6 @@ class TestListInstances:
     @pytest.mark.asyncio
     async def test_contract_list_instances_real_backend(self):
         """Contract test: list_instances against real Coq backend."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         list_instances, *_ = _import_debugging()
         TypeclassInfo, *_ = _import_types()
 
@@ -408,7 +407,6 @@ class TestListTypeclasses:
     @pytest.mark.asyncio
     async def test_contract_list_typeclasses_real_backend(self):
         """Contract test: list_typeclasses against real Coq backend."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         _, list_typeclasses, *_ = _import_debugging()
         _, TypeclassSummary, *_ = _import_types()
 
@@ -601,7 +599,6 @@ class TestTraceResolution:
     @pytest.mark.asyncio
     async def test_contract_trace_resolution_real_backend(self):
         """Contract test: trace_resolution against real Coq backend."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         _, _, trace_resolution, *_ = _import_debugging()
         _, _, ResolutionTrace, *_ = _import_types()
 

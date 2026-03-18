@@ -217,7 +217,6 @@ class TestCoqQueryEntryPoint:
     @pytest.mark.asyncio
     async def test_contract_session_manager_submit_vernacular(self):
         """Contract test: real session manager accepts vernacular command strings."""
-        pytest.skip("SessionManager.submit_vernacular not yet implemented")
         from poule.session.manager import SessionManager
         manager = SessionManager()
         # Real session manager must expose submit_vernacular(session_id, vernacular_str)
@@ -405,7 +404,6 @@ class TestExecutionRouting:
     @pytest.mark.asyncio
     async def test_contract_session_manager_read_only(self):
         """Contract test: real session manager's submit_vernacular does not mutate state."""
-        pytest.skip("SessionManager.submit_vernacular not yet implemented")
         from poule.session.manager import SessionManager
         # Verify the interface contract: submit_vernacular exists and is read-only
         assert callable(getattr(SessionManager, "submit_vernacular", None))
@@ -633,7 +631,6 @@ class TestInterfaceContracts:
     @pytest.mark.asyncio
     async def test_contract_session_submit_vernacular_interface(self):
         """Contract test: real session manager.submit_vernacular(session_id, str) -> str."""
-        pytest.skip("SessionManager.submit_vernacular not yet implemented")
         from poule.session.manager import SessionManager
         manager = SessionManager()
         assert callable(getattr(manager, "submit_vernacular", None))
@@ -746,7 +743,6 @@ class TestSessionErrors:
     @pytest.mark.asyncio
     async def test_contract_session_not_found_real(self):
         """Contract test: real session manager raises on invalid session_id."""
-        pytest.skip("SessionManager.submit_vernacular not yet implemented")
         from poule.session.manager import SessionManager
         from poule.session.errors import SessionError, SESSION_NOT_FOUND
         manager = SessionManager()
@@ -1075,7 +1071,6 @@ class TestSpecExamples:
     @pytest.mark.asyncio
     async def test_contract_check_nat_add_comm_real(self):
         """Contract test: real Coq process returns type of Nat.add_comm."""
-        pytest.skip("ProcessPool.send_command not yet implemented")
         coq_query = _import_coq_query()
         from poule.query.process_pool import ProcessPool
         pool = ProcessPool()
@@ -1090,7 +1085,6 @@ class TestSpecExamples:
     @pytest.mark.asyncio
     async def test_contract_eval_cbv_real(self):
         """Contract test: real Coq evaluates 'Eval cbv in 1 + 1.' to 2."""
-        pytest.skip("ProcessPool.send_command not yet implemented")
         coq_query = _import_coq_query()
         from poule.query.process_pool import ProcessPool
         pool = ProcessPool()

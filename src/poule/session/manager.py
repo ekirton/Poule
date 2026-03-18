@@ -7,6 +7,7 @@ specification/proof-session.md.
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -54,12 +55,16 @@ class _SessionState:
     created_at: datetime
     last_active_at: datetime
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    coqtop_proc: Optional[Any] = None  # asyncio.subprocess.Process for vernacular sessions
 
 
 class SessionManager:
     """Manages interactive proof sessions."""
 
-    def __init__(self, backend_factory: Callable) -> None:
+    def __init__(self, backend_factory: Callable | None = None) -> None:
+        if backend_factory is None:
+            from poule.session.backend import create_coq_backend
+            backend_factory = create_coq_backend
         self._backend_factory = backend_factory
         self._registry: dict[str, _SessionState] = {}
         self._registry_lock = asyncio.Lock()
@@ -126,6 +131,13 @@ class SessionManager:
             raise SessionError(SESSION_NOT_FOUND, session_id)
         if ss.state == "active" and ss.coq_backend is not None:
             await ss.coq_backend.shutdown()
+        if ss.coqtop_proc is not None:
+            try:
+                ss.coqtop_proc.stdin.close()  # type: ignore[union-attr]
+                ss.coqtop_proc.kill()
+                await ss.coqtop_proc.wait()
+            except Exception:
+                pass
 
     async def list_sessions(self) -> list[Session]:
         result = []
@@ -392,6 +404,12 @@ class SessionManager:
                     self._expired_ids.add(sid)
                     if ss.coq_backend is not None and ss.state == "active":
                         await ss.coq_backend.shutdown()
+                    if ss.coqtop_proc is not None:
+                        try:
+                            ss.coqtop_proc.kill()
+                            await ss.coqtop_proc.wait()
+                        except Exception:
+                            pass
 
     # -------------------------------------------------------------------
     # §4.6 Crash Detection (test helpers)
@@ -407,6 +425,187 @@ class SessionManager:
         ss = self._registry.get(session_id)
         if ss is not None:
             ss.last_active_at = dt
+
+    # -------------------------------------------------------------------
+    # §4.7 Vernacular / Interactive Sessions
+    # -------------------------------------------------------------------
+
+    _SENTINEL = "__POULE_SENTINEL_END__"
+
+    async def open_session(self, name: str) -> str:
+        """Open a coqtop-based interactive session for arbitrary vernacular commands.
+
+        Returns a session_id. The session is backed by a persistent coqtop
+        subprocess (not coq-lsp), suitable for commands like Print Assumptions,
+        About, Require Import, etc.
+        """
+        proc = await asyncio.create_subprocess_exec(
+            "coqtop", "-quiet",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        # Read any initial output from coqtop (it may print a welcome line
+        # even with -quiet in some versions). Use sentinel to drain.
+        sentinel_cmd = f'Print "{self._SENTINEL}".\n'
+        proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]
+        await proc.stdin.drain()  # type: ignore[union-attr]
+        await self._read_until_sentinel(proc)
+
+        session_id = uuid.uuid4().hex
+        now = datetime.now(timezone.utc)
+
+        ss = _SessionState(
+            session_id=session_id,
+            file_path="",
+            proof_name="",
+            state="active",
+            current_step=0,
+            total_steps=None,
+            step_history=[],
+            original_script=[],
+            coq_backend=None,
+            created_at=now,
+            last_active_at=now,
+            coqtop_proc=proc,
+        )
+
+        async with self._registry_lock:
+            self._registry[session_id] = ss
+
+        return session_id
+
+    async def _read_until_sentinel(
+        self, proc: Any, timeout: float = 30.0,
+    ) -> str:
+        """Read coqtop stdout until the sentinel string appears.
+
+        Returns everything before the sentinel line.
+        """
+        output_lines: list[str] = []
+        stdout = proc.stdout  # type: ignore[union-attr]
+        try:
+            while True:
+                line_bytes = await asyncio.wait_for(
+                    stdout.readline(), timeout=timeout,
+                )
+                if not line_bytes:
+                    break
+                line = line_bytes.decode("utf-8", errors="replace")
+                if self._SENTINEL in line:
+                    break
+                output_lines.append(line)
+        except asyncio.TimeoutError:
+            pass
+        return "".join(output_lines).strip()
+
+    async def send_command(self, session_id: str, command: str) -> str:
+        """Send a vernacular command to a coqtop session and return the output."""
+        ss = await self.lookup_session(session_id)
+        proc = ss.coqtop_proc
+        if proc is None:
+            # Fall back to coq_backend if available
+            if ss.coq_backend is not None:
+                return await ss.coq_backend.execute_vernacular(command)
+            raise SessionError(
+                BACKEND_CRASHED,
+                "Session has no interactive backend",
+            )
+
+        async with ss.lock:
+            # Send the user command followed by a sentinel
+            cmd_text = command.rstrip()
+            if not cmd_text.endswith("."):
+                cmd_text += "."
+            sentinel_cmd = f'Print "{self._SENTINEL}".\n'
+
+            proc.stdin.write((cmd_text + "\n").encode("utf-8"))  # type: ignore[union-attr]
+            proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]
+            await proc.stdin.drain()  # type: ignore[union-attr]
+
+            output = await self._read_until_sentinel(proc)
+            return output
+
+    async def submit_vernacular(self, session_id: str, vernacular: str) -> str:
+        """Alias for send_command. Used by poule.query.handler."""
+        return await self.send_command(session_id, vernacular)
+
+    async def execute_vernacular(self, session_id: str, command: str) -> str:
+        """Alias for send_command. Used by poule.typeclass.debugging."""
+        return await self.send_command(session_id, command)
+
+    async def submit_command(self, session_id: str, command: str) -> str:
+        """Alias for send_command. Used by poule.notation and poule.extraction."""
+        return await self.send_command(session_id, command)
+
+    async def coq_query(self, session_id: str, command: str) -> str:
+        """Alias for send_command. Used by poule.universe modules."""
+        return await self.send_command(session_id, command)
+
+    async def query_declaration_kind(self, session_id: str, name: str) -> str:
+        """Execute ``About <name>.`` and parse the output to extract the declaration kind.
+
+        Returns one of: "Axiom", "Parameter", "Lemma", "Theorem",
+        "Definition", "Opaque", "Transparent", etc.
+        """
+        output = await self.send_command(session_id, f"About {name}.")
+
+        # coqtop About output examples:
+        #   "classic : forall P : Prop, P \/ ~ P\n\nclassic is an axiom"
+        #   "trivial_lemma : True\n\ntrivial_lemma is defined"  (with Qed -> opaque)
+        #   "Nat.add : nat -> nat -> nat\n\nNat.add is recursively defined"
+        lower = output.lower()
+
+        # Check for "is an axiom" / "is a parameter"
+        if re.search(r"\bis an axiom\b", lower):
+            return "Axiom"
+        if re.search(r"\bis a parameter\b", lower):
+            return "Parameter"
+
+        # "is defined" with opacity check
+        # Opaque = proved with Qed (no body visible)
+        if re.search(r"\bis defined\b", lower):
+            # Check if About says it's opaque
+            if "opaque" in lower:
+                return "Opaque"
+            return "Definition"
+
+        # "is transparent" or "is not universe polymorphic"
+        if "transparent" in lower:
+            return "Transparent"
+
+        # "X is a ... (opaque)" pattern
+        if "opaque" in lower:
+            return "Opaque"
+
+        # Coq 8.18+ / Rocq: "About" output may say things like:
+        # "trivial_lemma is a lemma." or use different wording.
+        # Try to match "is a <kind>"
+        kind_match = re.search(r"\bis (?:a |an )?(\w+)", lower)
+        if kind_match:
+            kind_word = kind_match.group(1)
+            kind_map = {
+                "axiom": "Axiom",
+                "parameter": "Parameter",
+                "lemma": "Lemma",
+                "theorem": "Theorem",
+                "definition": "Definition",
+                "corollary": "Corollary",
+                "proposition": "Proposition",
+                "fact": "Fact",
+                "remark": "Remark",
+                "instance": "Instance",
+                "fixpoint": "Fixpoint",
+                "cofixpoint": "CoFixpoint",
+            }
+            return kind_map.get(kind_word, kind_word.capitalize())
+
+        return "Unknown"
+
+    async def observe_proof_state(self, session_id: str) -> ProofState:
+        """Alias for observe_state. Used by poule.hammer.engine."""
+        return await self.observe_state(session_id)
 
 
 # Alias used by some component tests.

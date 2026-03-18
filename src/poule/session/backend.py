@@ -417,6 +417,32 @@ class CoqProofBackend:
 
         return premises
 
+    async def execute_vernacular(self, command: str) -> str:
+        """Send a vernacular command through coq-lsp and return the output.
+
+        Creates a temporary document containing the command, opens it,
+        waits for diagnostics, and returns any diagnostic messages as
+        the command output.
+        """
+        self._next_id += 1
+        temp_uri = f"file:///tmp/poule_vernacular_{self._next_id}.v"
+        text = command.rstrip()
+        if not text.endswith("."):
+            text += "."
+
+        await self._open_document(temp_uri, text)
+        diags = await self._wait_for_diagnostics(temp_uri)
+
+        # Close the temporary document
+        await self._send_notification(
+            "textDocument/didClose",
+            {"textDocument": {"uri": temp_uri}},
+        )
+
+        # Collect diagnostic messages as output
+        messages = [d.get("message", "") for d in diags]
+        return "\n".join(messages)
+
     async def shutdown(self) -> None:
         if self._shut_down:
             return

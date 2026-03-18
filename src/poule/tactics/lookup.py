@@ -243,6 +243,17 @@ async def tactic_lookup(
     if not name:
         raise TacticDocError("INVALID_ARGUMENT", "Tactic name must not be empty.")
 
+    if coq_query is None:
+        from poule.query.handler import coq_query as _coq_query
+        from poule.query.process_pool import ProcessPool
+
+        _pool = ProcessPool()
+
+        async def coq_query(command, argument, session_id=None):
+            return await _coq_query(
+                command, argument, session_id=session_id, process_pool=_pool,
+            )
+
     result = await coq_query("Print", f"Ltac {name}", session_id=session_id)
     return _parse_ltac_output(name, result.output)
 
@@ -258,6 +269,17 @@ async def strategy_inspect(
     """
     if not constant_name:
         raise TacticDocError("INVALID_ARGUMENT", "Constant name must not be empty.")
+
+    if coq_query is None:
+        from poule.query.handler import coq_query as _coq_query
+        from poule.query.process_pool import ProcessPool
+
+        _pool = ProcessPool()
+
+        async def coq_query(command, argument, session_id=None):
+            return await _coq_query(
+                command, argument, session_id=session_id, process_pool=_pool,
+            )
 
     result = await coq_query("Print", f"Strategy {constant_name}", session_id=session_id)
     return _parse_strategy_output(constant_name, result.output)

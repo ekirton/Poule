@@ -1178,7 +1178,6 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_print_assumptions_closed_theorem(self):
         """Verify 'Closed under the global context' output for a closed theorem."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         from poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
@@ -1194,7 +1193,6 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_print_assumptions_classical_theorem(self):
         """Verify that classic appears in output for a classical theorem."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         from poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
@@ -1215,7 +1213,6 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_query_declaration_kind_axiom(self):
         """Verify that querying kind of an axiom returns 'Axiom' or 'Parameter'."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         from poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
@@ -1232,7 +1229,6 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_query_declaration_kind_opaque(self):
         """Verify that querying kind of a Qed lemma returns opaque indicator."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         from poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")
@@ -1250,7 +1246,6 @@ class TestContractSessionManager:
     @pytest.mark.asyncio
     async def test_print_module_lists_declarations(self):
         """Verify Print Module output contains theorem names."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         from poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.open_session("test_contract")

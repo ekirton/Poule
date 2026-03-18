@@ -408,7 +408,6 @@ class TestSingleStrategyExecution:
 
         Verifies that the mock-based tests above match the real interface.
         """
-        pytest.skip("SessionManager interactive API not yet implemented")
         execute_hammer = _import_execute_hammer()
         HammerResult, _ = _import_hammer_types()
         from poule.session.manager import ProofSessionManager

@@ -515,7 +515,6 @@ class TestFullGraphRetrieval:
     @pytest.mark.asyncio
     async def test_contract_retrieve_full_graph(self):
         """Contract test: real coq_query returns text that parses into a ConstraintGraph."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         retrieve_full_graph, _ = _import_retrieval()
         # This test exercises the real Coq backend.
         # Skipped when Coq is not available.
@@ -612,7 +611,6 @@ class TestDefinitionConstraintRetrieval:
     @pytest.mark.asyncio
     async def test_contract_retrieve_definition_constraints(self):
         """Contract test: real per-definition retrieval returns a ConstraintGraph."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         _, retrieve_definition_constraints = _import_retrieval()
         from poule.session.manager import SessionManager
         manager = SessionManager()
@@ -746,7 +744,6 @@ class TestInconsistencyDiagnosis:
     @pytest.mark.asyncio
     async def test_contract_diagnose_universe_error(self):
         """Contract test: real diagnosis against a Coq backend."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         diagnose = _import_diagnosis()
         from poule.session.manager import SessionManager
         manager = SessionManager()
@@ -878,7 +875,6 @@ class TestSourceAttribution:
     @pytest.mark.asyncio
     async def test_contract_attribution_uses_about_command(self):
         """Contract test: real attribution queries About for definitions."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         diagnose = _import_diagnosis()
         from poule.session.manager import SessionManager
         manager = SessionManager()
@@ -998,7 +994,6 @@ class TestPolymorphicInstantiationRetrieval:
     @pytest.mark.asyncio
     async def test_contract_retrieve_instantiations(self):
         """Contract test: real instantiation retrieval returns structured data."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         retrieve_instantiations, _ = _import_polymorphic()
         from poule.session.manager import SessionManager
         manager = SessionManager()
@@ -1075,7 +1070,6 @@ class TestPolymorphicCompatibilityComparison:
     @pytest.mark.asyncio
     async def test_contract_compare_definitions(self):
         """Contract test: real comparison against a Coq backend."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         _, compare_definitions = _import_polymorphic()
         from poule.session.manager import SessionManager
         manager = SessionManager()
@@ -1248,7 +1242,6 @@ class TestInterfaceContracts:
     @pytest.mark.asyncio
     async def test_contract_coq_query_returns_text(self):
         """Contract test: coq_query returns raw text for Print Universes."""
-        pytest.skip("SessionManager interactive API not yet implemented")
         from poule.session.manager import SessionManager
         manager = SessionManager()
         session_id = await manager.create_session("test.v", "test_proof")
