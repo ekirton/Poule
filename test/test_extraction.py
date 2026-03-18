@@ -571,6 +571,10 @@ class TestPostProcessingMetadata:
                 "poule.extraction.pipeline.process_declaration",
                 return_value=mock_result,
             ),
+            patch(
+                "poule.extraction.pipeline.detect_mathcomp_version",
+                return_value="2.2.0",
+            ),
         ):
             run_extraction(targets=["stdlib"], db_path=Path("/tmp/test.db"))
 
@@ -578,11 +582,12 @@ class TestPostProcessingMetadata:
         writer.write_metadata.assert_called()
         metadata_call = writer.write_metadata.call_args
         # The metadata must include schema_version, coq_version,
-        # mathcomp_version, created_at
-        args = metadata_call[0] if metadata_call[0] else ()
+        # mathcomp_version, created_at — all with non-None values
+        # (spec: extraction.md §4.6 step 2).
         kwargs = metadata_call[1] if metadata_call[1] else {}
-        # We check that the call was made; exact argument structure
-        # depends on implementation, but it must be invoked.
+        for key in ("schema_version", "coq_version", "mathcomp_version", "created_at"):
+            assert key in kwargs, f"missing metadata key: {key}"
+            assert kwargs[key] is not None, f"metadata key {key} must not be None"
 
 
 class TestPostProcessingFinalize:
