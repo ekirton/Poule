@@ -50,7 +50,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "ENVIRONMENT:"
             echo "  POULE_PROJECT_DIR   Directory to mount (default: current directory)"
-            echo "  ANTHROPIC_API_KEY   Required — your Anthropic API key"
+            echo "  ANTHROPIC_API_KEY   Optional — API key (Claude Max subscribers use OAuth login)"
             echo ""
             echo "EXAMPLES:"
             echo "  poule                  Start interactive shell in POULE_PROJECT_DIR"
@@ -70,13 +70,6 @@ done
 # ── Preflight checks ──────────────────────────────────────────────────────────
 if ! command -v docker >/dev/null 2>&1; then
     echo "Error: Docker is not installed. See https://docs.docker.com/get-docker/"
-    exit 1
-fi
-
-if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-    echo "Error: ANTHROPIC_API_KEY is not set."
-    echo "Add it to your ~/.zshrc:"
-    echo "  export ANTHROPIC_API_KEY=sk-ant-..."
     exit 1
 fi
 
