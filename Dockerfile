@@ -34,9 +34,17 @@ RUN opam init --disable-sandboxing --auto-setup --bare && \
 RUN opam switch create coq ocaml-base-compiler.4.14.2 && \
     eval $(opam env --switch=coq) && \
     opam repo add coq-released https://coq.inria.fr/opam/released --all-switches && \
-    opam install -y coq.8.19.2 coq-lsp coq-hammer coq-dpdgraph dune \
-        coq-mathcomp-ssreflect coq-stdpp coq-flocq coq-coquelicot coq-interval && \
+    opam install -y coq.8.19.2 coq-lsp coq-hammer coq-dpdgraph dune && \
     opam clean -a -c -s --logs
+
+# Install Coq libraries in reverse order of release frequency so that
+# a release of a frequently-updated library only invalidates its layer
+# and those below it.  Dependency chain: flocq → coquelicot → coq-interval.
+RUN eval $(opam env --switch=coq) && opam install -y coq-flocq && opam clean -a -c -s --logs
+RUN eval $(opam env --switch=coq) && opam install -y coq-coquelicot && opam clean -a -c -s --logs
+RUN eval $(opam env --switch=coq) && opam install -y coq-mathcomp-ssreflect && opam clean -a -c -s --logs
+RUN eval $(opam env --switch=coq) && opam install -y coq-interval && opam clean -a -c -s --logs
+RUN eval $(opam env --switch=coq) && opam install -y coq-stdpp && opam clean -a -c -s --logs
 
 # Move opam to /opt so it's accessible to any user,
 # then rewrite hardcoded /root/.opam paths so ocamlfind and coq-lsp work
