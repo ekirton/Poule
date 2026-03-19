@@ -8,6 +8,20 @@ Technical design for the multi-channel retrieval pipeline and fusion logic.
 
 ---
 
+## Channel-to-Implementation Mapping
+
+The feature document defines five retrieval channels by user-facing name. The table below maps each to its implementation algorithm and the section in this document that describes it.
+
+| Feature Channel | Implementation Metric | Section |
+|---|---|---|
+| Structural | WL (Weisfeiler-Leman histogram cosine similarity) | WL Kernel Screening |
+| Fine Structural | TED (Zhang-Shasha tree edit distance) | TED Fine Ranking |
+| Symbol Overlap | MePo (iterative breadth-first symbol selection) | MePo Symbol Overlap |
+| Constant Name | const_jaccard (Jaccard index over extracted constant names) | Fine-Ranking Metric Fusion |
+| Lexical | FTS5 (SQLite full-text search with BM25 ranking) | FTS5 Full-Text Search |
+
+`collapse_match` is an additional structural sub-metric used in the fine-ranking weighted sum; it does not correspond to a standalone feature channel.
+
 ## Neural Channel Integration
 
 When a neural model checkpoint and precomputed embeddings are available, a neural retrieval channel participates in query processing. See [neural-retrieval.md](neural-retrieval.md) for the full technical design of the neural channel (encoder, embedding storage, similarity search, model management).

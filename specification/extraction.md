@@ -8,11 +8,11 @@ Offline extraction of declarations from compiled Coq/Rocq libraries into the sea
 
 ## 1. Purpose
 
-Define the extraction pipeline that reads compiled `.vo` files via coq-lsp or SerAPI, converts declarations to normalized expression trees, computes derived data (symbol sets, WL histograms, dependencies), and writes everything to a SQLite index database.
+Define the extraction pipeline that reads compiled `.vo` files via coq-lsp, converts declarations to normalized expression trees, computes derived data (symbol sets, WL histograms, dependencies), and writes everything to a SQLite index database.
 
 ## 2. Scope
 
-**In scope**: Backend interface (coq-lsp / SerAPI), library discovery, version detection, two-pass extraction pipeline, kind mapping, module path derivation, progress reporting, CLI entry point.
+**In scope**: Backend interface (coq-lsp), library discovery, version detection, two-pass extraction pipeline, kind mapping, module path derivation, progress reporting, CLI entry point.
 
 **Out of scope**: Normalization algorithms (owned by coq-normalization and cse-normalization), storage schema (owned by storage), retrieval logic.
 
@@ -20,7 +20,7 @@ Define the extraction pipeline that reads compiled `.vo` files via coq-lsp or Se
 
 | Term | Definition |
 |------|-----------|
-| Backend | The external tool (coq-lsp or SerAPI) used to read `.vo` files and access `Constr.t` kernel terms |
+| Backend | The external tool (coq-lsp) used to read `.vo` files and extract declarations |
 | Pass 1 | Per-declaration processing: parse, normalize, extract symbols, compute WL vectors, write to database |
 | Pass 2 | Post-insertion dependency resolution: extract and write dependency edges |
 | Kind mapping | Translation from Coq declaration forms to storage kind values |
@@ -93,8 +93,6 @@ Backends that do not return fully qualified names directly (e.g., coq-lsp `Searc
 > **Given** a `.vo` file at `/path/to/user-contrib/mathcomp/ssreflect/ssrbool.vo` containing a declaration `negb_involutive`,
 > **When** `list_declarations` processes this file,
 > **Then** the returned name is `mathcomp.ssreflect.ssrbool.negb_involutive`.
-
-**SerAPI backend:** SerAPI returns fully qualified names directly; no additional derivation is needed.
 
 #### get_type(name)
 
@@ -300,7 +298,7 @@ Each message identifies the current stage name. Messages are written to stderr s
 
 ### 4.11 Backend Process Lifecycle
 
-When the extraction backend (coq-lsp or SerAPI) crashes or becomes unresponsive:
+When the extraction backend (coq-lsp) crashes or becomes unresponsive:
 - Abort the indexing run
 - Close the database connection
 - Delete the partial database file
@@ -373,8 +371,8 @@ for lib in ["stdlib", "mathcomp", "stdpp", "flocq", "coquelicot", "coqinterval"]
 
 ## 8. Language-Specific Notes (Python)
 
-- Use `subprocess` to manage coq-lsp or SerAPI processes.
-- Parse coq-lsp JSON responses with `json.loads`; parse SerAPI S-expressions with a lightweight parser.
+- Use `subprocess` to manage coq-lsp processes.
+- Parse coq-lsp JSON responses with `json.loads`.
 - Use `pathlib.Path` for `.vo` file discovery.
 - CLI entry point via `argparse` or `click`.
 - Package location: `src/poule/extraction/`.

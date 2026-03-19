@@ -29,6 +29,7 @@ System-level view of all components, their boundaries, and the dependency graph.
 | Code Extraction Management | Coq code extraction to OCaml/Haskell/Scheme with preview, write, and failure diagnosis | [code-extraction-management.md](code-extraction-management.md) |
 | Independent Proof Checking | coqchk subprocess adapter for independent verification of compiled .vo files | [independent-proof-checking.md](independent-proof-checking.md) |
 | Build System Integration | Build system detection, project file generation, build execution, package/dependency management via coq_makefile/dune/opam | [build-system-integration.md](build-system-integration.md) |
+| Compatibility Analysis | Dependency scanning, opam metadata resolution, constraint parsing, conflict detection, explanation building, resolution suggestion | [compatibility-analysis.md](compatibility-analysis.md) |
 | Notation Inspection | Notation lookup, scope inspection, precedence/associativity extraction, ambiguity resolution | [notation-inspection.md](notation-inspection.md) |
 | Tactic Documentation | Tactic lookup, comparison, contextual suggestion, hint database inspection | [tactic-documentation.md](tactic-documentation.md) |
 | Nightly Re-index Automation | Upstream version detection, per-library re-extraction, release publication, cron-friendly host launcher | [nightly-reindex.md](nightly-reindex.md) |
@@ -305,6 +306,36 @@ The Neural Training Pipeline is a batch-mode component invoked via CLI. It reads
 | Output | Embedding vectors written to `embeddings` table; model hash written to `index_meta` |
 | Availability | Optional; runs only when a neural model checkpoint is present |
 
+### Slash Command → Compatibility Analysis Engine
+
+| Property | Value |
+|----------|-------|
+| Mechanism | In-process function calls, invoked by Claude Code during `/check-compat` execution |
+| Direction | Request-response (each pipeline stage called independently) |
+| Input | Project directory + optional hypothetical additions (Stage 1); intermediate data structures flow between stages |
+| Output | DependencySet, ResolvedConstraintTree, ConflictSet or CompatibleSet, Explanations + Resolutions |
+| Statefulness | Stateless — no data persists between invocations |
+
+### Compatibility Analysis Engine → opam (subprocess)
+
+| Property | Value |
+|----------|-------|
+| Mechanism | Subprocess invocation (fresh process per query) |
+| Direction | Request-response |
+| Commands used | `opam show` (package metadata), `opam list` (installed packages) |
+| Read-only | Yes — no switch-modifying commands are ever invoked |
+| Timeout | Configurable per subprocess; default 30 seconds |
+| Caching | Results cached in-memory within a single analysis run |
+
+### Compatibility Analysis Engine → Build System Adapter (shared logic)
+
+| Property | Value |
+|----------|-------|
+| Mechanism | Shared build system detection function (in-process) |
+| Direction | Call |
+| Purpose | Locate `.opam`, `dune-project`, and `_CoqProject` files in the project directory |
+| Scope | Detection only — does not invoke build execution or dependency management functions |
+
 ### CLI → Neural Training Pipeline
 
 | Property | Value |
@@ -350,6 +381,7 @@ The Neural Training Pipeline is a batch-mode component invoked via CLI. It reads
 | [code-extraction-management.md](code-extraction-management.md) | [specification/code-extraction-management.md](../../specification/code-extraction-management.md) |
 | [independent-proof-checking.md](independent-proof-checking.md) | [specification/independent-proof-checking.md](../../specification/independent-proof-checking.md) |
 | [build-system-integration.md](build-system-integration.md) | [specification/build-system-integration.md](../../specification/build-system-integration.md) |
+| [compatibility-analysis.md](compatibility-analysis.md) | [specification/compatibility-analysis.md](../../specification/compatibility-analysis.md) |
 | [notation-inspection.md](notation-inspection.md) | [specification/notation-inspection.md](../../specification/notation-inspection.md) |
 | [tactic-documentation.md](tactic-documentation.md) | [specification/tactic-documentation.md](../../specification/tactic-documentation.md) |
 | [nightly-reindex.md](nightly-reindex.md) | [specification/nightly-reindex.md](../../specification/nightly-reindex.md) |

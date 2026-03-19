@@ -7,11 +7,14 @@ specification/proof-session.md.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Any, Callable, Coroutine, Optional
+
+logger = logging.getLogger(__name__)
 
 from Poule.session.errors import (
     BACKEND_CRASHED,
@@ -253,8 +256,12 @@ class SessionManager:
     async def submit_tactic(self, session_id: str, tactic: str) -> ProofState:
         ss = await self.lookup_session(session_id)
         async with ss.lock:
+            # Petanque/run requires tactic sentences to end with a period.
+            tac = tactic.rstrip()
+            if not tac.endswith("."):
+                tac += "."
             try:
-                new_state = await ss.coq_backend.execute_tactic(tactic)
+                new_state = await ss.coq_backend.execute_tactic(tac)
             except Exception as e:
                 raise SessionError(TACTIC_ERROR, str(e))
 
@@ -410,6 +417,13 @@ class SessionManager:
             for sid in to_remove:
                 ss = self._registry.pop(sid, None)
                 if ss is not None:
+                    idle_duration = now - ss.last_active_at
+                    logger.info(
+                        "Session timed out: session_id=%s proof_name=%s idle_duration=%s",
+                        sid,
+                        ss.proof_name,
+                        idle_duration,
+                    )
                     self._expired_ids.add(sid)
                     if ss.coq_backend is not None and ss.state == "active":
                         await ss.coq_backend.shutdown()
@@ -429,6 +443,24 @@ class SessionManager:
         if ss is not None:
             ss.state = "crashed"
             ss.coq_backend = None
+
+    async def _on_backend_crash(
+        self,
+        session_id: str,
+        exit_code: int | None = None,
+        signal: int | None = None,
+    ) -> None:
+        """Record a backend crash: mark session crashed and log required fields.
+
+        Spec §4.7: Log session ID, exit code, and signal (if available).
+        """
+        logger.warning(
+            "Backend crashed: session_id=%s exit_code=%s signal=%s",
+            session_id,
+            exit_code,
+            signal,
+        )
+        self._mark_crashed(session_id)
 
     def _set_last_active(self, session_id: str, dt: datetime) -> None:
         ss = self._registry.get(session_id)
@@ -452,12 +484,12 @@ class SessionManager:
             "coqtop", "-quiet",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
         )
 
         # Read any initial output from coqtop (it may print a welcome line
         # even with -quiet in some versions). Use sentinel to drain.
-        sentinel_cmd = f'Fail Check {self._SENTINEL}.\n'
+        sentinel_cmd = f'Check {self._SENTINEL}.\n'
         proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]
         await proc.stdin.drain()  # type: ignore[union-attr]
         await self._read_until_sentinel(proc)
@@ -490,7 +522,10 @@ class SessionManager:
     ) -> str:
         """Read coqtop stdout until the sentinel string appears.
 
-        Returns everything before the sentinel line.
+        Returns everything before the sentinel error block.  The sentinel
+        is triggered by ``Check <SENTINEL>.`` which produces a multi-line
+        error.  We strip the entire error block (starting from the
+        ``Toplevel input`` line that references the Check command).
         """
         output_lines: list[str] = []
         stdout = proc.stdout  # type: ignore[union-attr]
@@ -503,31 +538,56 @@ class SessionManager:
                     break
                 line = line_bytes.decode("utf-8", errors="replace")
                 if self._SENTINEL in line:
+                    # Consume remaining lines of the error block
+                    # (the "Error:" line and any trailing blank / prompt lines).
+                    try:
+                        while True:
+                            rest = await asyncio.wait_for(
+                                stdout.readline(), timeout=2.0,
+                            )
+                            if not rest:
+                                break
+                            rest_s = rest.decode("utf-8", errors="replace")
+                            # Stop once we hit the next prompt or EOF
+                            if rest_s.strip() == "" or rest_s.strip().endswith("<"):
+                                break
+                    except asyncio.TimeoutError:
+                        pass
                     break
                 output_lines.append(line)
         except asyncio.TimeoutError:
             pass
+        # Strip any trailing sentinel error preamble lines that appeared
+        # before the sentinel name itself (e.g. "Toplevel input, ..." and
+        # the caret line).
+        while output_lines and (
+            "Toplevel input" in output_lines[-1]
+            or output_lines[-1].strip().startswith(">")
+            or output_lines[-1].strip().startswith("^")
+        ):
+            output_lines.pop()
         return "".join(output_lines).strip()
 
     async def send_command(self, session_id: str, command: str) -> str:
         """Send a vernacular command to a coqtop session and return the output."""
         ss = await self.lookup_session(session_id)
-        proc = ss.coqtop_proc
-        if proc is None:
-            # Fall back to coq_backend if available
-            if ss.coq_backend is not None:
-                return await ss.coq_backend.execute_vernacular(command)
-            raise SessionError(
-                BACKEND_CRASHED,
-                "Session has no interactive backend",
-            )
 
         async with ss.lock:
+            proc = ss.coqtop_proc
+            if proc is None:
+                # Fall back to coq_backend if available
+                if ss.coq_backend is not None:
+                    return await ss.coq_backend.execute_vernacular(command)
+                raise SessionError(
+                    BACKEND_CRASHED,
+                    "Session has no interactive backend",
+                )
+
             # Send the user command followed by a sentinel
             cmd_text = command.rstrip()
             if not cmd_text.endswith("."):
                 cmd_text += "."
-            sentinel_cmd = f'Fail Check {self._SENTINEL}.\n'
+            sentinel_cmd = f'Check {self._SENTINEL}.\n'
 
             proc.stdin.write((cmd_text + "\n").encode("utf-8"))  # type: ignore[union-attr]
             proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]

@@ -90,12 +90,44 @@ The `constr_tree` BLOB format is defined in [storage.md](storage.md). See the st
 
 ### Phase 1 (MVP)
 
-- **Coq standard library**: All declarations from the installed Coq/Rocq stdlib `.vo` files.
-- **MathComp**: All declarations from the installed MathComp `.vo` files, indexed into the same database distinguished by module path.
+All declarations from the six Tier 0 libraries (see [extraction-library-support.md](../features/extraction-library-support.md)):
+
+- **Coq standard library** (stdlib)
+- **MathComp**
+- **stdpp**
+- **Flocq**
+- **Coquelicot**
+- **CoqInterval**
+
+Each library is indexed into a per-library SQLite database distinguished by module path. See [index-build-script.md](index-build-script.md) for the per-library build pipeline.
 
 ### Phase 2
 
 - **User project**: Declarations from a user-specified project directory. Supports incremental re-indexing — only changed files are re-extracted.
+
+## Tier Coverage
+
+The feature specification ([extraction-library-support.md](../features/extraction-library-support.md)) defines three tiers of library coverage with explicit success-rate targets. The architecture phases map to these tiers as follows:
+
+### Tier-to-phase mapping
+
+| Feature Tier | Libraries | Success-Rate Target | Architecture Phase |
+|---|---|---|---|
+| Tier 0 (P0) | Coq stdlib, MathComp, stdpp, Flocq, Coquelicot, CoqInterval | 95% (stdlib, Flocq, Coquelicot) / 90% (MathComp, stdpp, CoqInterval) | Phase 1 — the extraction pipeline, text-based type parser, and per-declaration error isolation described above are the mechanisms that achieve Tier 0 targets |
+| Tier 1 (P1) | Validated opam-installable projects (standard-Ltac and ssreflect-based) | Reported per-project | Phase 2 — user-project extraction with incremental re-indexing extends the pipeline to arbitrary opam-installable projects; Tier 1 projects are those where extraction has been validated |
+| Tier 2 (P2) | Custom proof mode projects (Iris, CompCert, Fiat-Crypto) | Best-effort | No dedicated phase — the existing pipeline extracts declarations from these projects but with reduced premise granularity where custom tactics wrap standard Coq tactics |
+
+### How the pipeline achieves tier targets
+
+**Tier 0 coverage** relies on three properties of the extraction pipeline:
+
+1. **Per-declaration error isolation**: Individual extraction failures are logged but do not abort the indexing run. This prevents a single malformed declaration from reducing the overall success rate.
+2. **Text-based type parsing consistency**: Both index-time and query-time parsing use the same `TypeExprParser`, so structural matching works correctly even without kernel-precise terms.
+3. **Batched kind detection**: The `About`-query batching mechanism (up to 100 queries per document) keeps extraction throughput high enough to process the full Tier 0 library set in a single indexing run.
+
+**Tier 1 coverage** adds incremental re-indexing (Phase 2) so that validated projects can be re-extracted efficiently as upstream libraries evolve. Success rates are reported per-project rather than guaranteed; the pipeline infrastructure is the same as Tier 0.
+
+**Tier 2 coverage** uses the same extraction pipeline without framework-specific adapters. Declarations are extracted and indexed, but premise annotations reflect the custom-tactic level rather than the underlying Coq-tactic level. The architecture does not provide framework-specific extraction plugins — this is an explicit scope boundary in the feature specification.
 
 ## Extraction Tooling
 
