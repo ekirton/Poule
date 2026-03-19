@@ -381,7 +381,7 @@ The Neural Training Pipeline is a batch-mode component invoked via CLI. It reads
 | [code-extraction-management.md](code-extraction-management.md) | [specification/code-extraction-management.md](../../specification/code-extraction-management.md) |
 | [independent-proof-checking.md](independent-proof-checking.md) | [specification/independent-proof-checking.md](../../specification/independent-proof-checking.md) |
 | [build-system-integration.md](build-system-integration.md) | [specification/build-system-integration.md](../../specification/build-system-integration.md) |
-| [compatibility-analysis.md](compatibility-analysis.md) | specification/compatibility-analysis.md (pending) |
+| [compatibility-analysis.md](compatibility-analysis.md) | [specification/compatibility-analysis.md](../../specification/compatibility-analysis.md) |
 | [notation-inspection.md](notation-inspection.md) | [specification/notation-inspection.md](../../specification/notation-inspection.md) |
 | [tactic-documentation.md](tactic-documentation.md) | [specification/tactic-documentation.md](../../specification/tactic-documentation.md) |
 | [nightly-reindex.md](nightly-reindex.md) | [specification/nightly-reindex.md](../../specification/nightly-reindex.md) |
