@@ -1049,6 +1049,41 @@ class TestCoqLspParserUnit:
         with pytest.raises(ParseError, match="coq-lsp not found on PATH"):
             parser.parse("nat")
 
+    @patch("Poule.pipeline.coqlsp_parser.subprocess.Popen")
+    def test_parse_raises_parse_error_on_text_only_messages(
+        self, mock_popen_cls
+    ):
+        """When coq-lsp returns text messages without structured ``raw``
+        data, parse() raises ParseError (spec §4.2: on failure raises
+        ParseError)."""
+        responses = _build_lsp_responses_for_parse(
+            diagnostics=[],
+            goals_messages=[{"level": 0, "text": "nat : Set"}],
+        )
+        proc = _mock_popen(responses)
+        mock_popen_cls.return_value = proc
+
+        parser = CoqLspParser()
+
+        with pytest.raises(ParseError, match="returned text but no structured"):
+            parser.parse("nat")
+
+    @patch("Poule.pipeline.coqlsp_parser.subprocess.Popen")
+    def test_parse_raises_parse_error_on_empty_messages(self, mock_popen_cls):
+        """When coq-lsp returns no messages for a valid expression,
+        parse() raises ParseError (spec §4.2: on failure raises ParseError)."""
+        responses = _build_lsp_responses_for_parse(
+            diagnostics=[],
+            goals_messages=[],
+        )
+        proc = _mock_popen(responses)
+        mock_popen_cls.return_value = proc
+
+        parser = CoqLspParser()
+
+        with pytest.raises(ParseError, match="No output from coq-lsp"):
+            parser.parse("nat")
+
     def test_ensure_started_is_lazy(self):
         """Verify coq-lsp isn't spawned until parse() is called."""
         parser = CoqLspParser()
@@ -1124,53 +1159,19 @@ class TestCoqLspParserContract:
     These tests require coq-lsp to be installed and on PATH.
     Run with: pytest -m requires_coq
 
-    Note: coq-lsp currently returns text output (not structured Constr.t
-    JSON) for ``Check`` commands via ``proof/goals``.  Positive parse tests
-    are marked ``xfail`` until coq-lsp supports structured constr output
-    or the parser is extended with a text-to-ConstrNode fallback.
+    coq-lsp returns text output (not structured Constr.t JSON) for
+    ``Check`` commands via ``proof/goals``, so ``parse()`` raises
+    ``ParseError`` for valid Coq expressions.  These tests verify the
+    actual coq-lsp behavior.
     """
 
-    @pytest.mark.xfail(
-        reason="coq-lsp returns text, not structured Constr.t JSON",
-        raises=ParseError,
-    )
-    def test_parse_simple_nat_expression(self):
-        """Parse "nat" — currently xfail because coq-lsp lacks structured output."""
+    def test_parse_valid_expression_raises_parse_error(self):
+        """parse("nat") raises ParseError because coq-lsp returns text,
+        not structured JSON (spec §4.2: on failure raises ParseError)."""
         parser = CoqLspParser()
         try:
-            result = parser.parse("nat")
-            import Poule.normalization.constr_node as cn
-
-            valid_types = (
-                cn.Rel, cn.Var, cn.Sort, cn.Cast, cn.Prod, cn.Lambda,
-                cn.LetIn, cn.App, cn.Const, cn.Ind, cn.Construct,
-                cn.Case, cn.Fix, cn.CoFix, cn.Proj, cn.Int, cn.Float,
-            )
-            assert isinstance(result, valid_types), (
-                f"Expected a ConstrNode variant, got {type(result)}"
-            )
-        finally:
-            parser.close()
-
-    @pytest.mark.xfail(
-        reason="coq-lsp returns text, not structured Constr.t JSON",
-        raises=ParseError,
-    )
-    def test_parse_forall_expression(self):
-        """Parse 'forall n : nat, n = n' — currently xfail."""
-        parser = CoqLspParser()
-        try:
-            result = parser.parse("forall n : nat, n = n")
-            import Poule.normalization.constr_node as cn
-
-            valid_types = (
-                cn.Rel, cn.Var, cn.Sort, cn.Cast, cn.Prod, cn.Lambda,
-                cn.LetIn, cn.App, cn.Const, cn.Ind, cn.Construct,
-                cn.Case, cn.Fix, cn.CoFix, cn.Proj, cn.Int, cn.Float,
-            )
-            assert isinstance(result, valid_types), (
-                f"Expected a ConstrNode variant, got {type(result)}"
-            )
+            with pytest.raises(ParseError):
+                parser.parse("nat")
         finally:
             parser.close()
 

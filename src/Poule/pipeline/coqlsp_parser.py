@@ -2,9 +2,14 @@
 
 Spawns ``coq-lsp`` as a subprocess and communicates via Content-Length
 framed JSON-RPC messages.  For each ``parse()`` call it opens a synthetic
-document containing ``Check <expression>.``, waits for diagnostics, queries
-``proof/goals`` for the structured output, and converts it to a ``ConstrNode``
-via ``parse_constr_json``.
+document containing ``Check <expression>.``, waits for diagnostics, and
+queries ``proof/goals`` for output.
+
+**Limitation:** coq-lsp's ``proof/goals`` endpoint returns text
+representations, not structured ``Constr.t`` JSON.  Consequently,
+``parse()`` raises ``ParseError`` for all valid Coq expressions.
+This parser is not usable as a production ``CoqParser`` — use
+``TypeExprParser`` instead.
 """
 
 from __future__ import annotations
@@ -212,9 +217,11 @@ class CoqLspParser:
         """Parse a Coq expression into a ConstrNode.
 
         Lazily starts coq-lsp on the first call.  Sends ``Check <expression>.``
-        to coq-lsp and converts the resulting Constr.t JSON into a ConstrNode.
+        to coq-lsp and queries ``proof/goals`` for the result.
 
-        Raises ParseError on failure.
+        Raises ``ParseError`` on failure.  Because coq-lsp returns text
+        (not structured ``Constr.t`` JSON) for ``Check`` output, this
+        method currently raises ``ParseError`` for all valid expressions.
         """
         self._ensure_started()
 
@@ -250,19 +257,18 @@ class CoqLspParser:
                     f"No output from coq-lsp for expression: {expression!r}"
                 )
 
-            # Find the first non-error message containing structured data
+            # Look for structured JSON in the ``raw`` field.  coq-lsp
+            # does not currently populate this for Check output, so the
+            # loop below will not find a match and we fall through to
+            # the ParseError path.
             for msg in messages:
                 if msg.get("level") == 1:
                     continue
-                # The message may contain the Constr.t as JSON in a
-                # structured field, or as text that we need to parse.
-                # coq-lsp returns structured JSON when available.
                 raw = msg.get("raw")
                 if raw is not None and isinstance(raw, (list, dict)):
                     return parse_constr_json(raw)
 
-            # Fallback: no structured data found in messages
-            # Collect text output for a useful error message
+            # No structured data — collect text for a useful error message
             texts = [
                 m["text"] for m in messages if m.get("level", 3) != 1
             ]
