@@ -301,25 +301,33 @@ Publish a new release when any of these change:
 
 ### Publishing
 
-1. Build per-library indexes:
+1. Check what upstream versions are available:
+
+```bash
+./scripts/check-latest.sh
+```
+
+2. Search the web for version incompatibilities between the libraries before choosing versions to bump.
+
+3. Update pinned versions in `Dockerfile` (do not commit yet), exit the container, and run `poule-dev` to rebuild with the new versions.
+
+4. Build per-library indexes:
 
 ```bash
 ./scripts/build-indexes.sh
 ```
 
-2. Publish both releases:
+5. **Decision gate.** Integration tests run automatically during the build, but verify the results yourself — check that proofs compile, indexes look correct, and nothing regressed. Decide whether to proceed with the version bump or roll back.
+
+6. Publish releases (must precede the PR — the Docker build downloads the index from these releases):
 
 ```bash
 ./scripts/publish-indexes.sh
-```
-
-3. Or include the neural model:
-
-```bash
+# Or include the neural model:
 ./scripts/publish-indexes.sh --model models/neural-premise-selector.onnx
 ```
 
-The script reads version metadata from each database, computes SHA-256 checksums, generates `manifest.json` for each release, and creates (or replaces) both tagged releases.
+7. Create a branch, commit the `Dockerfile` changes, push, and open a PR with auto-merge. The CI/CD pipeline will build a new container image with the updated index baked in.
 
 ### Release assets
 
