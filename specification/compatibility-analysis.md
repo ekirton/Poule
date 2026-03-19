@@ -43,7 +43,7 @@ When a `.opam` file is present, the scanner shall extract entries from the `depe
 
 When a `dune-project` file is present, the scanner shall extract entries from `(depends ...)` stanzas.
 
-When a `_CoqProject` file is present, the scanner shall infer opam package names from `-Q` and `-R` logical path roots using the `coq-` prefix convention (e.g., logical root `Mathcomp` maps to `coq-mathcomp-ssreflect`). When inference is ambiguous, the scanner shall include all candidates and flag the ambiguity in the DependencySet.
+When a `_CoqProject` file is present, the scanner shall infer opam package names from `-Q` and `-R` logical path roots by querying the opam repository. For each logical root, the scanner shall run `opam show` with candidate package names derived by lowercasing the root and prepending the `coq-` prefix (e.g., logical root `Equations` yields candidate `coq-equations`). When the root contains multiple segments separated by `.` (e.g., `Mathcomp.Algebra`), the scanner shall also try the top-level segment as candidate prefix (e.g., `coq-mathcomp-*`). When a single candidate matches an opam package, the scanner shall use it. When multiple candidates match (e.g., `coq-mathcomp-ssreflect`, `coq-mathcomp-algebra` for root `Mathcomp`), the scanner shall include all matching candidates and flag the ambiguity in the DependencySet. When no candidate matches, the scanner shall add the primary candidate (`coq-` + lowercase root) to `unknown_packages`.
 
 When a package name is not found in the opam repository, the scanner shall add it to `unknown_packages` and continue scanning remaining packages.
 
@@ -272,8 +272,10 @@ When no resolution exists within available versions, the suggester shall emit ex
 |-------|------|-------------|
 | `resource` | string | Required; the shared resource package name (e.g., `"coq"`, `"ocaml"`) |
 | `minimal_constraint_set` | ordered list of ConstraintEdge | Required; smallest set of constraints producing an empty intersection; at least two entries |
-| `explanation` | ExplanationText | Required |
-| `resolutions` | ordered list of Resolution | Required; empty only when no analysis has been performed yet |
+| `explanation` | ExplanationText or null | Null when returned by `detect_conflicts`; populated by `build_explanation` |
+| `resolutions` | ordered list of Resolution | Empty when returned by `detect_conflicts`; populated by `suggest_resolutions` |
+
+**Lifecycle**: `detect_conflicts` returns Conflict objects with `explanation = null` and `resolutions = []`. The caller passes each Conflict to `build_explanation` to obtain its ExplanationText, then to `suggest_resolutions` to obtain its Resolution list. Because the data structures are frozen, each call returns a new value rather than mutating the Conflict in place; the caller assembles the final Conflict with all fields populated.
 
 ### ExplanationText
 
@@ -300,12 +302,12 @@ When no resolution exists within available versions, the suggester shall emit ex
 |----------|-------|
 | Mechanism | In-process function calls, invoked by Claude Code during `/check-compat` execution |
 | Direction | Request-response (each pipeline stage called independently) |
-| Input | Stage 1: project directory + optional hypothetical additions. Stage 2: DependencySet. Stage 4: ResolvedConstraintTree. Stage 5: ConflictSet + ResolvedConstraintTree. |
-| Output | DependencySet, ResolvedConstraintTree, ConflictSet or CompatibleSet, list of Resolution |
+| Input | Stage 1: project directory + optional hypothetical additions. Stage 2: DependencySet. Stage 3: constraint expression string (internal to Stage 2; not called externally). Stage 4: ResolvedConstraintTree + optional target Coq version. Stage 5a: Conflict (from ConflictSet). Stage 5b: Conflict + ResolvedConstraintTree. |
+| Output | Stage 1: DependencySet. Stage 2: ResolvedConstraintTree. Stage 3: VersionConstraint (internal). Stage 4: ConflictSet or CompatibleSet. Stage 5a: ExplanationText. Stage 5b: list of Resolution. |
 | Statefulness | Stateless -- no data persists between invocations |
 | Concurrency | Serialized; one analysis pipeline at a time |
 | Idempotency | All operations are idempotent given the same opam repository state |
-| Error strategy | All errors returned as structured error values with error code and message; caller formats for user |
+| Error strategy | All errors raised as `CompatError` exceptions with error code and message; caller catches and formats for user |
 
 ### Compatibility Analysis Engine -> opam (subprocess)
 
@@ -329,6 +331,15 @@ When no resolution exists within available versions, the suggester shall emit ex
 | Scope | Detection only -- does not invoke build execution or dependency management functions |
 
 ## 7. Error Specification
+
+All errors are raised as `CompatError` exceptions. The caller catches the exception and formats the error for the user.
+
+### CompatError
+
+| Field | Type | Constraints |
+|-------|------|-------------|
+| `code` | string | Required; one of the error codes defined below |
+| `message` | string | Required; non-empty; human-readable error description |
 
 ### 7.1 Input Errors
 
@@ -513,6 +524,7 @@ Result (DependencySet):
   - `def build_explanation(conflict: Conflict) -> ExplanationText`
   - `async def suggest_resolutions(conflict: Conflict, tree: ResolvedConstraintTree) -> list[Resolution]`
 - Data structures (DependencySet, ResolvedConstraintTree, ConflictSet, CompatibleSet, Conflict, Resolution, etc.) shall be `dataclasses.dataclass` with `frozen=True`.
+- `CompatError` shall be an `Exception` subclass with `code: str` and `message: str` attributes, defined in `src/poule/compat/errors.py`. Error code constants (`PROJECT_NOT_FOUND`, `TOOL_NOT_FOUND`, etc.) shall be string constants in the same module.
 - VersionConstraint interval arithmetic: implement `intersect(a: VersionConstraint, b: VersionConstraint) -> VersionConstraint` and `is_empty(vc: VersionConstraint) -> bool` as standalone functions.
 - Version comparison: implement opam ordering rules (numeric segments, lexicographic segments, tilde, build suffix) in a `compare_versions(a: str, b: str) -> int` comparator function.
 - Constraint parsing: use a recursive descent parser for the opam constraint grammar. Tokenize with `re` module using compiled patterns.
