@@ -90,8 +90,16 @@ The `constr_tree` BLOB format is defined in [storage.md](storage.md). See the st
 
 ### Phase 1 (MVP)
 
-- **Coq standard library**: All declarations from the installed Coq/Rocq stdlib `.vo` files.
-- **MathComp**: All declarations from the installed MathComp `.vo` files, indexed into the same database distinguished by module path.
+All declarations from the six Tier 0 libraries (see [extraction-library-support.md](../features/extraction-library-support.md)):
+
+- **Coq standard library** (stdlib)
+- **MathComp**
+- **stdpp**
+- **Flocq**
+- **Coquelicot**
+- **CoqInterval**
+
+Each library is indexed into a per-library SQLite database distinguished by module path. See [index-build-script.md](index-build-script.md) for the per-library build pipeline.
 
 ### Phase 2
 
