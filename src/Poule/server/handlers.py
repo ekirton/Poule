@@ -168,9 +168,26 @@ def handle_list_modules(ctx: Any, *, prefix: str) -> dict:
 # Proof interaction handlers (Spec §4.3)
 # ---------------------------------------------------------------------------
 
+_SESSION_ERROR_TEMPLATES: dict[str, str] = {
+    "SESSION_NOT_FOUND": 'Proof session {sid} not found or has expired.',
+    "SESSION_EXPIRED": 'Proof session {sid} was closed after 30 minutes of inactivity.',
+    "BACKEND_CRASHED": 'The Coq backend for session {sid} has crashed. Close the session and open a new one.',
+}
+
+
 def _session_error_response(exc: SessionError) -> dict:
-    """Translate a SessionError into an MCP error response."""
-    return format_error(exc.code, exc.message)
+    """Translate a SessionError into an MCP error response.
+
+    Formats the message using spec-defined templates (mcp-server.md §5.2)
+    so that LLM clients receive actionable guidance instead of a raw
+    session ID.
+    """
+    template = _SESSION_ERROR_TEMPLATES.get(exc.code)
+    if template is not None:
+        message = template.format(sid=exc.message)
+    else:
+        message = exc.message
+    return format_error(exc.code, message)
 
 
 async def handle_open_proof_session(
