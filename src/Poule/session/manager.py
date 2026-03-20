@@ -690,8 +690,13 @@ class SessionManager:
         return await self.send_command(session_id, command)
 
     async def submit_command(self, session_id: str, command: str) -> str:
-        """Alias for send_command. Used by poule.notation and poule.extraction."""
-        return await self.send_command(session_id, command)
+        """Send a vernacular command, routing through coqtop for output capture.
+
+        Spec §4.4: submit_command routes through a coqtop subprocess
+        (not the session's CoqBackend) because coq-lsp cannot capture
+        vernacular output. See §4.4.1.
+        """
+        return await self.send_command(session_id, command, prefer_coqtop=True)
 
     async def coq_query(self, session_id: str, command: str) -> str:
         """Alias for send_command. Used by poule.universe modules."""

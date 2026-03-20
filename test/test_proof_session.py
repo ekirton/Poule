@@ -929,23 +929,37 @@ class TestSubmitCommand:
         assert not hasattr(result, "stderr")
 
     async def test_serialized_per_session(self):
-        """Concurrency: submit_command is serialized per session (§7.2)."""
+        """Concurrency: submit_command is serialized per session (§7.2).
+
+        submit_command routes through coqtop (prefer_coqtop=True per §4.4),
+        so we mock _read_until_sentinel to inject delays and track ordering."""
         SessionManager = _import_manager()
         backend = _make_mock_backend()
-        call_order = []
-        async def slow_vernacular(cmd):
-            call_order.append(("start", cmd))
-            await asyncio.sleep(0.01)
-            call_order.append(("end", cmd))
-            return f"result of {cmd}"
-        backend.execute_vernacular = AsyncMock(side_effect=slow_vernacular)
         mgr = SessionManager(backend_factory=_make_backend_factory(backend))
 
         sid, _ = await mgr.create_session("/file.v", "proof1")
-        r1, r2 = await asyncio.gather(
-            mgr.submit_command(sid, "cmd1"),
-            mgr.submit_command(sid, "cmd2"),
-        )
+
+        # Pre-set a coqtop_proc so _ensure_coqtop is not called
+        fake_proc = MagicMock()
+        fake_proc.stdin = MagicMock()
+        fake_proc.stdin.write = MagicMock()
+        fake_proc.stdin.drain = AsyncMock()
+        mgr._registry[sid].coqtop_proc = fake_proc
+
+        call_order = []
+
+        async def slow_sentinel(proc, timeout=30.0):
+            cmd_label = f"cmd{len([e for e in call_order if e[0] == 'start']) + 1}"
+            call_order.append(("start", cmd_label))
+            await asyncio.sleep(0.01)
+            call_order.append(("end", cmd_label))
+            return f"result of {cmd_label}"
+
+        with patch.object(mgr, '_read_until_sentinel', new_callable=AsyncMock, side_effect=slow_sentinel):
+            r1, r2 = await asyncio.gather(
+                mgr.submit_command(sid, "cmd1"),
+                mgr.submit_command(sid, "cmd2"),
+            )
         assert isinstance(r1, str)
         assert isinstance(r2, str)
         # Serialization: first command must finish before second starts
