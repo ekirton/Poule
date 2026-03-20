@@ -26,6 +26,7 @@ Define the vernacular query handler that, given a command name and argument, con
 | Session-free execution | Execution against a short-lived or pooled Coq process with only the default global environment |
 | Query result | The structured response containing the command echo, argument echo, parsed output, and extracted warnings |
 | Output parser | The transformation from raw Coq output to the `output` and `warnings` fields of `QueryResult` |
+| Prelude | A configurable sequence of Coq vernacular commands executed before each session-free query to establish the default global environment. Configurable at server startup; default: `From Coq Require Import Arith.` |
 | Search truncation limit | The maximum number of result entries returned for `Search` commands before truncation (default: 50) |
 
 ## 4. Behavioral Requirements
@@ -95,12 +96,22 @@ The `session_id` parameter determines the execution backend.
 #### Session-free execution (session_id omitted)
 
 1. The handler shall obtain a Coq process (spawned or drawn from a pool).
-2. The command shall execute against the default global environment (standard library and project-level imports configured for the MCP server).
-3. The process shall be released (returned to pool or terminated) after the command completes.
+2. The standalone process shall inherit the server process's environment variables, including `PATH` and `COQPATH`. This makes opam-installed Coq packages reachable via `Require Import` without explicit `-R` / `-Q` flags.
+3. Before executing the user's command, the process shall execute a configurable **prelude** — a sequence of Coq vernacular commands (typically `Require Import` statements) that establish the default global environment.
+4. The prelude shall be configurable at server startup. When no prelude is configured, the default prelude loads the Coq standard library arithmetic module: `From Coq Require Import Arith.`
+5. The command shall execute after the prelude completes. The process shall be released (returned to pool or terminated) after the command completes.
+
+- REQUIRES: The prelude is a valid sequence of Coq vernacular commands that terminates without error.
+- ENSURES: The user's command executes in an environment where (a) all prelude imports are available and (b) all opam-installed Coq packages are reachable via `Require Import` through the inherited `COQPATH`.
+- MAINTAINS: Each session-free invocation starts from a clean environment (prelude + command only). No state persists between invocations.
 
 > **Given** no `session_id` and `command = "Locate"`, `argument = "Nat.add"`
 > **When** `coq_query` executes session-free
 > **Then** the output contains the module path of `Nat.add` from the standard library
+
+> **Given** no `session_id`, MathComp is opam-installed, and `command = "Print"`, `argument = "leq"`
+> **When** `coq_query` executes session-free with prelude `From Coq Require Import Arith. From mathcomp Require Import all_ssreflect.`
+> **Then** the output contains MathComp's definition of `leq`
 
 ### 4.4 Output Parsing
 
@@ -320,3 +331,4 @@ Response:
 - Error classification: a `classify_error(raw: str) -> tuple[str, str]` function returning `(error_code, message)`, using compiled regex patterns.
 - Use the `anthropic` Python SDK's MCP server utilities for response envelope construction.
 - Timeout for `Compute` and `Eval`: enforce via `asyncio.wait_for` on the backend call (default: 30 seconds, configurable).
+- The standalone process pool accepts a `prelude` string parameter at construction time (default: `"From Coq Require Import Arith.\n"`). The MCP server passes this from its startup configuration.
