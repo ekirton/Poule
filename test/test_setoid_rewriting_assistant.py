@@ -1,20 +1,20 @@
 """TDD tests for the Setoid Rewriting Assistant (specification/setoid-rewriting-assistant.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until src/poule/setoid/ modules exist.
+until src/Poule/setoid/ modules exist.
 
 Spec: specification/setoid-rewriting-assistant.md
 Architecture: doc/architecture/setoid-rewriting-assistant.md
 
 Import paths under test:
-  poule.setoid.analyzer        (diagnose_rewrite)
-  poule.setoid.types           (RewriteDiagnosis, ParsedError, RelationSlot,
+  Poule.setoid.analyzer        (diagnose_rewrite)
+  Poule.setoid.types           (RewriteDiagnosis, ParsedError, RelationSlot,
                                 InstanceCheckResult, ExistingInstance,
                                 ProperSignature, ProofStrategy)
-  poule.setoid.parser          (ErrorParser)
-  poule.setoid.checker         (InstanceChecker)
-  poule.setoid.generator       (SignatureGenerator)
-  poule.setoid.advisor         (ProofAdvisor)
+  Poule.setoid.parser          (ErrorParser)
+  Poule.setoid.checker         (InstanceChecker)
+  Poule.setoid.generator       (SignatureGenerator)
+  Poule.setoid.advisor         (ProofAdvisor)
 """
 
 from unittest.mock import AsyncMock
@@ -28,13 +28,13 @@ import pytest
 
 
 def _import_analyzer():
-    from poule.setoid.analyzer import diagnose_rewrite
+    from Poule.setoid.analyzer import diagnose_rewrite
 
     return (diagnose_rewrite,)
 
 
 def _import_types():
-    from poule.setoid.types import (
+    from Poule.setoid.types import (
         ExistingInstance,
         InstanceCheckResult,
         ParsedError,
