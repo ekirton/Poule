@@ -162,7 +162,14 @@ TOOL_DEFINITIONS = [
     ),
     Tool(
         name="find_related",
-        description="Navigate the dependency graph from a Coq declaration.",
+        description=(
+            "Find declarations related to a given Coq declaration. "
+            "Use relation='uses' to see what it depends on, "
+            "'used_by' to see what depends on it (reverse dependencies), "
+            "'same_module' for siblings, or 'same_typeclass' for instances. "
+            "Covers the user's project and all indexed libraries "
+            "(stdlib, MathComp, stdpp, Flocq, Coquelicot, CoqInterval)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -628,15 +635,27 @@ TOOL_DEFINITIONS = [
     ),
     Tool(
         name="impact_analysis",
-        description="Compute the impact set (reverse transitive closure) from a declaration.",
+        description=(
+            "Find all declarations that transitively depend on a given declaration — "
+            "answers 'which lemmas use X?' and 'what breaks if I change X?'. "
+            "Searches the user's project and all indexed libraries. "
+            "Use max_depth to limit traversal depth (1 = direct dependents only)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
-                "name": {"type": "string"},
-                "max_depth": {"type": "integer"},
+                "name": {
+                    "type": "string",
+                    "description": "Fully qualified declaration name (e.g. Coq.Arith.PeanoNat.Nat.add_0_r)",
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "description": "Maximum traversal depth (1 = direct dependents only, omit for unlimited)",
+                },
                 "scope_filter": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "description": "Scope filters: 'same_project', 'module_prefix:<prefix>', 'exclude_prefix:<prefix>'",
                 },
             },
             "required": ["name"],
