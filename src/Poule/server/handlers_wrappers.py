@@ -655,6 +655,8 @@ async def handle_inspect_hint_db(
             session_id=session_id or None,
             coq_query=coq_query_fn,
         )
+    except SessionError as exc:
+        return _session_error_response(exc)
     except Exception as exc:
         if hasattr(exc, "code") and hasattr(exc, "message"):
             return format_error(exc.code, exc.message)

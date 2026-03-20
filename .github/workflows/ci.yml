@@ -18,5 +18,6 @@ jobs:
 
       - name: Run unit tests
         run: >-
-          uv run pytest -m "not requires_coq"
+          uv run pytest test/unit/
+          -m "not requires_coq"
           --cov=Poule --cov-report=xml -v
