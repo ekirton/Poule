@@ -9,6 +9,7 @@ Tested: 2026-03-21 (full retest of all 25 RETEST and 3 FAIL prompts)
 * When an issue is resolved, do not mark it as "FIXED", simply delete it from the list.
 * After rerunning tests, update the "Tested:" line above with the current date and the extent of the retest (e.g. if not all tests, give a very brief description of how tests were selected)
 * Summarize issues (bugs/gaps) in lists at the bottom with sufficient detail for them to be investigated further.
+* Prompts that pass shall be listed in examples/README.md.  Update it whenever this file changes.
 
 ## Example Data
 
