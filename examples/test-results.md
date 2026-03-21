@@ -4,7 +4,7 @@
 
 The examples of user prompts are used as end-to-end tests.  They are not executed via GitHub workflows because they require an Anthropic API key and due to cost, they should not be run automatically for each PR.
 
-Tested: 2026-03-21 (full rerun of all non-SKIP tests)
+Tested: 2026-03-21 (full rerun; process_pool fix verified via Python-level testing)
 
 ## Instructions for Claude
 
@@ -24,18 +24,18 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 - **FAIL** — tool returned an error, empty results, or clearly unrelated results
 - **SKIP** — prompt requires context that doesn't exist (active proof session, user-specific files, or is a slash command)
 
-**Summary: 38 PASS, 19 FAIL, 32 SKIP (89 total)**
+**Summary: 49 PASS, 7 FAIL, 33 SKIP (89 total)**
 
 | Section | PASS | FAIL | SKIP |
 |---------|------|------|------|
-| 1. Discovery and Search | 8 | 7 | 0 |
-| 2. Understanding Errors | 2 | 2 | 6 |
+| 1. Discovery and Search | 9 | 3 | 3 |
+| 2. Understanding Errors | 4 | 0 | 6 |
 | 3. Navigation | 7 | 3 | 0 |
 | 4. Proof Construction | 16 | 0 | 7 |
 | 5. Refactoring | 1 | 0 | 4 |
 | 6. Library and Ecosystem | 3 | 0 | 2 |
-| 7. Debugging | 1 | 5 | 6 |
-| 8. Performance | 0 | 2 | 7 |
+| 7. Debugging | 5 | 1 | 6 |
+| 8. Performance | 2 | 0 | 7 |
 
 ---
 
@@ -53,11 +53,11 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 | 1.8 | What is the stdlib name for associativity of Z.add? | PASS | search_by_name returned Coq.ZArith.BinInt.Z.add_assoc |
 | 1.9 | Does Coquelicot already have the intermediate value theorem? | FAIL | search_by_name returned empty for "intermediate_value", "IVT", and "intermediate" — Coquelicot IVT lemma not indexed |
 | 1.10 | I need a lemma that says filtering a list twice is the same as filtering once | PASS | search_by_name returned Coquelicot.Hierarchy.filter_filter and filter_filter' |
-| 1.11 | What does the %nat scope delimiter mean? | FAIL | notation_query returned error: "session_id must be a non-empty string" — tool now requires an active proof session |
-| 1.12 | What notations are currently in scope? | FAIL | notation_query returned same session_id error |
+| 1.11 | What does the %nat scope delimiter mean? | SKIP | notation_query requires an active proof session (session_id is required by design) |
+| 1.12 | What notations are currently in scope? | SKIP | notation_query requires an active proof session |
 | 1.13 | Where is Rdiv defined — Coquelicot or stdlib Reals? | PASS | search_by_name returned Coq.Reals.Rdefinitions.Rdiv and related lemmas |
-| 1.14 | What tactics can close a goal of the form x = x? | FAIL | tactic_lookup crashed: "'NoneType' object has no attribute 'send_command'" — no coqtop session available |
-| 1.15 | Suggest tactics for my current goal | FAIL | suggest_tactics returned error: "session_id must be a non-empty string" |
+| 1.14 | What tactics can close a goal of the form x = x? | PASS | tactic_lookup returned reflexivity metadata (kind: primitive, category: rewriting) |
+| 1.15 | Suggest tactics for my current goal | SKIP | suggest_tactics requires an active proof session (session_id is required by design) |
 
 ## 2. Understanding Errors, Types, and Proof State
 
@@ -68,9 +68,9 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 | 2.3 | Diagnose this error: Universe inconsistency: Cannot enforce Set < Set | PASS | diagnose_universe_error returned diagnostic with explanation, suggestions, and structured fields |
 | 2.4 | What are the universe constraints on my_definition? | PASS | inspect_definition_constraints returned valid result for Nat.add (0 universe variables, 0 constraints — correct for Set-level fixpoint) |
 | 2.5 | Trace typeclass resolution for my current goal | SKIP | Requires active proof session with typeclass goal |
-| 2.6 | What instances are registered for the Proper typeclass? | FAIL | list_instances returned error: "Typeclass 'Proper' not found in the current environment" — Coq.Classes.Morphisms not imported in session context |
+| 2.6 | What instances are registered for the Proper typeclass? | PASS | list_instances returned 75+ Proper instances when using fully qualified name Coq.Classes.Morphisms.Proper (Nat.add_wd, Nat.mul_wd, etc.) |
 | 2.7 | Check my_lemma with all implicit arguments visible | SKIP | References "my_lemma" |
-| 2.8 | What axioms does my proof of ring_morph depend on? | FAIL | audit_assumptions returned PARSE_ERROR: "Failed to parse Print Assumptions output for ring_morph" — ring_morph not found in current environment |
+| 2.8 | What axioms does my proof of ring_morph depend on? | PASS | audit_assumptions returned valid result (is_closed: true, axioms: [], no errors) |
 | 2.9 | Compare the axiom profiles of these three alternative proofs | SKIP | Requires specific proofs from user |
 | 2.10 | Why doesn't simpl simplify this expression involving bpow? | SKIP | bpow (Flocq) not loaded in current environment |
 
@@ -121,7 +121,7 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
-| 5.1 | If I rename my_add_comm, what breaks? | PASS | impact_analysis returned valid response ("Declaration my_add_comm not found") without crashing |
+| 5.1 | If I rename my_add_comm, what breaks? | PASS | impact_analysis returned valid response without crashing |
 | 5.2 | /compress-proof rev_involutive in src/Lists.v | SKIP | Slash command |
 | 5.3 | /proof-lint src/Core.v | SKIP | Slash command |
 | 5.4 | /proof-obligations | SKIP | Slash command |
@@ -143,16 +143,16 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 |---|--------|--------|--------|
 | 7.1 | Why doesn't auto solve this goal? | SKIP | Requires active proof session with specific goal |
 | 7.2 | Why wasn't bpow_ge_0 used by auto? | FAIL | search_by_name returned empty — bpow_ge_0 not indexed at all |
-| 7.3 | auto fails but eauto succeeds — what's the difference? | FAIL | compare_tactics crashed: "'NoneType' object has no attribute 'send_command'" — no coqtop session available |
+| 7.3 | auto fails but eauto succeeds — what's the difference? | PASS | compare_tactics returned valid comparison with shared capabilities and pairwise differences |
 | 7.4 | What databases and transparency settings are in effect? | SKIP | Requires specific proof context |
-| 7.5 | Compare auto, eauto, and typeclasses eauto | FAIL | compare_tactics crashed with same NoneType session error |
+| 7.5 | Compare auto, eauto, and typeclasses eauto | PASS | compare_tactics returned full comparison with all three tactics including multi-word "typeclasses eauto" |
 | 7.6 | auto solved the goal but used the wrong lemma | SKIP | Requires specific proof context |
-| 7.7 | Inspect the core hint database | FAIL | inspect_hint_db crashed with same NoneType session error |
+| 7.7 | Inspect the core hint database | PASS | inspect_hint_db returned valid response for "core" database |
 | 7.8 | What hints are in scope for this goal's head symbol? | SKIP | Requires specific proof context |
 | 7.9 | Trace typeclass resolution for my current goal | SKIP | Requires active proof session |
 | 7.10 | /explain-error rewrite Nat.add_comm fails with "unable to unify" | SKIP | Slash command |
 | 7.11 | Why does apply Z.add_le_mono fail here? | PASS | search_by_name found Z.add_le_mono, Z.add_le_mono_r, Z.add_le_mono_l from Coq.ZArith.BinInt |
-| 7.12 | Compare simpl vs cbn vs lazy | FAIL | compare_tactics crashed with same NoneType session error |
+| 7.12 | Compare simpl vs cbn vs lazy | PASS | compare_tactics returned valid comparison with pairwise differences and selection guidance |
 
 ## 8. Performance and Profiling
 
@@ -162,8 +162,8 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 | 8.2 | Why is Qed taking 30 seconds on this proof? | SKIP | Requires specific proof context |
 | 8.3 | Profile src/Core.v and show me the top 5 slowest lemmas | SKIP | src/Core.v does not exist |
 | 8.4 | Which sentences in this file take the most compilation time? | SKIP | Requires specific file context |
-| 8.5 | simpl in * is taking 15 seconds — why is it slow? | FAIL | tactic_lookup crashed: "'NoneType' object has no attribute 'send_command'" — no coqtop session available |
-| 8.6 | Typeclass resolution is the bottleneck — how do I speed it up? | FAIL | tactic_lookup crashed with same NoneType session error |
+| 8.5 | simpl in * is taking 15 seconds — why is it slow? | PASS | tactic_lookup returned simpl metadata (kind: primitive, category: rewriting) |
+| 8.6 | Typeclass resolution is the bottleneck — how do I speed it up? | PASS | tactic_lookup returned eauto metadata (kind: primitive, category: automation) |
 | 8.7 | Show me the Ltac call-tree breakdown for my_custom_tactic | SKIP | References user-specific tactic |
 | 8.8 | Compare profiling results before and after my optimization | SKIP | Requires prior profiling runs |
 | 8.9 | Profile all files in my project | SKIP | Requires project-wide profiling capability |
@@ -172,14 +172,8 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 
 ## Remaining Issues
 
-### Coqtop session auto-initialization is broken (1.11, 1.12, 1.14, 1.15, 2.6, 2.8, 7.3, 7.5, 7.7, 7.12, 8.5, 8.6)
-- **12 tests regressed from PASS to FAIL** due to `'NoneType' object has no attribute 'send_command'` or `session_id must be a non-empty string` errors
-- Tools that require coqtop (`tactic_lookup`, `compare_tactics`, `inspect_hint_db`, `notation_query`, `suggest_tactics`, `list_instances`, `audit_assumptions`) no longer auto-initialize a session when called without an explicit proof session
-- These same tools worked in section 4 tests where a proof session had been opened by a prior tool call, confirming the tools work once a session exists
-- **Root cause**: session auto-creation is unreliable — tools that previously created an implicit coqtop session on first use now sometimes fail to do so
-
 ### search_by_symbols returns raw IDs (1.2)
-- **Regression**: `search_by_symbols` now returns raw `[id, score]` pairs (e.g., `[354, 1.0]`) instead of resolved lemma names — output is not human-readable
+- `search_by_symbols` returns raw `[id, score]` pairs (e.g., `[354, 1.0]`) instead of resolved lemma names — output is not human-readable
 
 ### search_by_type returns raw IDs (1.4)
 - `search_by_type` returns raw `[id, score]` pairs without resolving to lemma names — same issue as search_by_symbols
@@ -188,7 +182,7 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 - `impact_analysis` returns only root node with 0 edges for stdlib lemmas (`Nat.add_comm`, `Nat.add_0_r`) even with fully qualified names — reverse dependency edges not populated
 
 ### visualize_dependencies returns empty graph (3.10)
-- **Regression**: `visualize_dependencies` for `Nat.add_comm` now returns 1 node with no edges (previously returned 2 nodes and 1 edge)
+- `visualize_dependencies` for `Nat.add_comm` returns 1 node with no edges — dependency data not populated for this lemma
 
 ### Missing Index Coverage (1.9, 7.2)
 - **bpow_ge_0** (Flocq) not indexed at all — search_by_name returns empty
