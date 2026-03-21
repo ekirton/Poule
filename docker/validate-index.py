@@ -71,7 +71,7 @@ def main():
 
     # ── Library versions ─────────────────────────────────────────────────────
     opam_packages = {
-        "mathcomp": "coq-mathcomp-ssreflect",
+        "mathcomp": "rocq-mathcomp-ssreflect",
         "stdpp": "coq-stdpp",
         "flocq": "coq-flocq",
         "coquelicot": "coq-coquelicot",

@@ -342,7 +342,7 @@ All paths are relative to the Coq base directory returned by `coqc -where`. File
 | Library | Detection method | opam package |
 |---------|-----------------|-------------|
 | `stdlib` | Parse version from `coqc --version` output | `coq` |
-| `mathcomp` | `opam show coq-mathcomp-ssreflect --field=version` | `coq-mathcomp-ssreflect` |
+| `mathcomp` | `opam show rocq-mathcomp-ssreflect --field=version` | `rocq-mathcomp-ssreflect` |
 | `stdpp` | `opam show coq-stdpp --field=version` | `coq-stdpp` |
 | `flocq` | `opam show coq-flocq --field=version` | `coq-flocq` |
 | `coquelicot` | `opam show coq-coquelicot --field=version` | `coq-coquelicot` |

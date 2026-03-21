@@ -55,7 +55,7 @@ class TestDetectLibraryVersionOpam:
     """detect_library_version for non-stdlib libraries uses opam show."""
 
     def test_mathcomp_version_from_opam(self):
-        """§4.9: mathcomp version from opam show coq-mathcomp-ssreflect."""
+        """§4.9: mathcomp version from opam show rocq-mathcomp-ssreflect."""
         from Poule.extraction.version_detection import detect_library_version
 
         with patch("Poule.extraction.version_detection.subprocess") as mock_sub:
@@ -67,7 +67,7 @@ class TestDetectLibraryVersionOpam:
 
         assert result == "2.2.0"
         cmd = mock_sub.run.call_args[0][0]
-        assert "coq-mathcomp-ssreflect" in cmd
+        assert "rocq-mathcomp-ssreflect" in cmd
 
     def test_stdpp_version_from_opam(self):
         """§4.9: stdpp version from opam show coq-stdpp."""

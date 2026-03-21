@@ -587,6 +587,7 @@ def _make_coq_query_fn(ctx: Any):
             argument,
             session_id=session_id,
             session_manager=ctx.session_manager,
+            process_pool=ctx.process_pool,
         )
     return _coq_query_fn
 

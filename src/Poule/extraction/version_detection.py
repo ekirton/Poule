@@ -57,7 +57,7 @@ def detect_mathcomp_version() -> str:
     """
     try:
         result = subprocess.run(
-            ["opam", "show", "coq-mathcomp-ssreflect", "--field=version"],
+            ["opam", "show", "rocq-mathcomp-ssreflect", "--field=version"],
             capture_output=True,
             text=True,
         )
@@ -71,7 +71,7 @@ def detect_mathcomp_version() -> str:
 
 
 _OPAM_PACKAGES = {
-    "mathcomp": "coq-mathcomp-ssreflect",
+    "mathcomp": "rocq-mathcomp-ssreflect",
     "stdpp": "coq-stdpp",
     "flocq": "coq-flocq",
     "coquelicot": "coq-coquelicot",

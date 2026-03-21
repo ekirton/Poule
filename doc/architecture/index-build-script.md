@@ -43,7 +43,7 @@ Each library's compiled `.vo` files reside under the Coq installation's `user-co
 | Library identifier | user-contrib directory | opam package |
 |-------------------|----------------------|-------------|
 | `stdlib` | `Stdlib` (Rocq 9.x) or `theories/` (Coq 8.x) | `coq` |
-| `mathcomp` | `mathcomp` | `coq-mathcomp-ssreflect` |
+| `mathcomp` | `mathcomp` | `rocq-mathcomp-ssreflect` |
 | `stdpp` | `stdpp` | `coq-stdpp` |
 | `flocq` | `Flocq` | `coq-flocq` |
 | `coquelicot` | `Coquelicot` | `coq-coquelicot` |
@@ -80,7 +80,7 @@ Library versions are detected by querying the opam package manager:
 | Library | Detection method |
 |---------|-----------------|
 | stdlib | Parse Coq version from `coqc --version` (stdlib version equals Coq version) |
-| mathcomp | `opam show coq-mathcomp-ssreflect --field=version` |
+| mathcomp | `opam show rocq-mathcomp-ssreflect --field=version` |
 | stdpp | `opam show coq-stdpp --field=version` |
 | flocq | `opam show coq-flocq --field=version` |
 | coquelicot | `opam show coq-coquelicot --field=version` |
@@ -99,6 +99,26 @@ Library versions are detected by querying the opam package manager:
 4. Prints a summary table of per-library declaration counts
 
 The script runs extractions sequentially — each library extraction is CPU-bound and memory-intensive, so parallelism provides no benefit within a single container.
+
+### Force Rebuild
+
+The `--force` flag rebuilds all selected per-library indexes regardless of whether the installed library version matches the version recorded in the existing index. Without `--force`, the script compares the installed version against the indexed version and skips libraries that are up to date.
+
+### Merge Step
+
+After all per-library extractions complete, the script merges all per-library indexes into a single `index.db` using `merge_indexes()` from the storage module.
+
+**Merge trigger conditions** — the merge runs when any of the following are true:
+
+1. `index.db` does not exist
+2. Any per-library index was rebuilt during this run (regardless of whether version strings changed)
+3. The version recorded in any per-library index differs from the corresponding version in `index.db`
+
+Condition 2 is essential: a `--force` rebuild may produce a different set of declarations (e.g., due to extraction pipeline improvements) even when the library version has not changed. Relying solely on version-string comparison would incorrectly skip the merge in this case.
+
+### Seed from GitHub Releases
+
+On a fresh container with no existing index files, the script downloads pre-built per-library indexes and the merged `index.db` from GitHub Releases. This allows only libraries whose versions have actually changed to be rebuilt from scratch, reducing build time. The seed step runs before the version comparison loop.
 
 ## Publish Script Updates
 
