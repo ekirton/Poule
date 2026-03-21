@@ -91,6 +91,36 @@ def _build_suffix_index(inverted_index):
     return suffix_index
 
 
+def _mock_context_corelib(parser=None):
+    """Return a PipelineContext-like mock with Corelib.* FQNs (Rocq 9.x naming)."""
+    ctx = MagicMock(spec=PipelineContext)
+    ctx.reader = MagicMock()
+    ctx.wl_histograms = {
+        1: {"label_A": 3, "label_B": 1},
+        2: {"label_A": 2, "label_C": 4},
+        3: {"label_B": 5},
+    }
+    ctx.inverted_index = {
+        "Corelib.Init.Nat.add": {1, 2},
+        "Corelib.Init.Datatypes.nat": {1, 2, 3},
+        "Corelib.Init.Logic.eq": {1, 3},
+    }
+    ctx.symbol_frequencies = {
+        "Corelib.Init.Nat.add": 2,
+        "Corelib.Init.Datatypes.nat": 3,
+        "Corelib.Init.Logic.eq": 2,
+    }
+    ctx.declaration_node_counts = {1: 10, 2: 20, 3: 60}
+    ctx.declaration_symbols = {
+        1: {"Corelib.Init.Nat.add", "Corelib.Init.Datatypes.nat", "Corelib.Init.Logic.eq"},
+        2: {"Corelib.Init.Nat.add", "Corelib.Init.Datatypes.nat"},
+        3: {"Corelib.Init.Datatypes.nat", "Corelib.Init.Logic.eq"},
+    }
+    ctx.suffix_index = _build_suffix_index(ctx.inverted_index)
+    ctx.parser = parser
+    return ctx
+
+
 def _mock_context(parser=None):
     """Return a PipelineContext-like mock with all expected fields."""
     ctx = MagicMock(spec=PipelineContext)
@@ -352,6 +382,64 @@ class TestResolveQuerySymbols:
         assert "Coq.Init.Nat.add" in resolved
         assert "Coq.Init.Logic.eq" in resolved
         assert "unknown" in resolved
+
+    def test_coq_prefix_resolves_to_corelib_fqn(self):
+        """Coq.* legacy prefix resolves to Corelib.* FQN when index uses Rocq 9.x naming."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context_corelib()
+
+        resolved = resolve_query_symbols(ctx, ["Coq.Init.Nat.add"])
+
+        # Must resolve to the Corelib FQN, not pass through as-is
+        assert "Corelib.Init.Nat.add" in resolved
+        assert "Coq.Init.Nat.add" not in resolved
+
+    def test_coq_prefix_resolution_multiple_symbols(self):
+        """Multiple Coq.* symbols all resolve to their Corelib.* counterparts."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context_corelib()
+
+        resolved = resolve_query_symbols(
+            ctx, ["Coq.Init.Nat.add", "Coq.Init.Datatypes.nat"]
+        )
+
+        assert "Corelib.Init.Nat.add" in resolved
+        assert "Corelib.Init.Datatypes.nat" in resolved
+
+    def test_coq_prefix_mixed_with_short_names(self):
+        """Coq.* prefix resolution works alongside suffix resolution."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context_corelib()
+
+        resolved = resolve_query_symbols(
+            ctx, ["Coq.Init.Nat.add", "Nat.add", "unknown"]
+        )
+
+        assert "Corelib.Init.Nat.add" in resolved
+        assert "unknown" in resolved
+
+    def test_corelib_exact_match_still_works(self):
+        """Direct Corelib.* FQN resolves via exact match as before."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context_corelib()
+
+        resolved = resolve_query_symbols(ctx, ["Corelib.Init.Nat.add"])
+
+        assert "Corelib.Init.Nat.add" in resolved
+
+    def test_coq_prefix_not_applied_when_exact_match_exists(self):
+        """If the index has a Coq.* key directly, exact match takes priority over alias."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context()  # uses Coq.* FQNs in the inverted index
+
+        resolved = resolve_query_symbols(ctx, ["Coq.Init.Nat.add"])
+
+        assert "Coq.Init.Nat.add" in resolved
 
 
 class TestSearchBySymbols:

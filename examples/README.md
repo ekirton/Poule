@@ -162,7 +162,7 @@ What lemmas are in the arith hint database?
 
 **Browse module contents:**
 ```
-What's in the Coq.Arith module?
+What's in the Corelib.Arith module?
 ```
 ```
 Give me an overview of the MathComp ssreflect sequence lemmas

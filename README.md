@@ -128,7 +128,7 @@ For example, you can ask Claude things like:
 - *"Find something in Flocq about rounding errors on addition"*
 
 **Exploration — navigate unfamiliar libraries:**
-- *"What's in the Coq.Arith module?"*
+- *"What's in the Corelib.Arith module?"*
 - *"Give me an overview of the MathComp ssreflect sequence lemmas"*
 - *"What typeclasses does std++ provide for finite maps?"*
 - *"How does Coquelicot define integration?"*
