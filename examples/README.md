@@ -92,7 +92,7 @@ Run Check my_lemma from examples/algebra.v with Set Printing All so I can see th
 Diagnose this error: Universe inconsistency: Cannot enforce Set < Set
 ```
 ```
-What are the universe constraints on my_definition?
+What are the universe constraints on vhead in examples/dependent.v?
 ```
 
 **Debug typeclass resolution failures:**
@@ -208,7 +208,7 @@ What does the eapply tactic do differently from apply?
 Open a proof session on rev_involutive in examples/lists.v and show me the current goal
 ```
 ```
-Try applying intros then induction n in my current proof session
+Try applying intros then induction l in my current proof session
 ```
 ```
 Step through the proof of add_comm in examples/arith.v and explain each tactic
@@ -274,7 +274,7 @@ Explain what Proper (eq ==> eq_set ==> eq_set) union means in plain English
 
 **Assess refactoring blast radius:**
 ```
-If I rename my_add_comm, what breaks? Show me the full impact analysis
+If I change add_comm in examples/arith.v, what breaks? Show me the full impact analysis
 ```
 
 **Compress a verbose proof:**

@@ -68,7 +68,7 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 | 2.1 | /explain-error Unable to unify Nat.add ?n (S ?m) with Nat.add (S ?n) ?m | SKIP | Slash command — error message is inline, no file needed |
 | 2.2 | Run Check my_lemma from examples/algebra.v with Set Printing All | RETEST | my_lemma now defined in examples/algebra.v |
 | 2.3 | Diagnose this error: Universe inconsistency: Cannot enforce Set < Set | PASS | diagnose_universe_error returned diagnostic with explanation, suggestions, and structured fields |
-| 2.4 | What are the universe constraints on my_definition? | PASS | inspect_definition_constraints returned valid result for Nat.add (0 universe variables, 0 constraints — correct for Set-level fixpoint) |
+| 2.4 | What are the universe constraints on vhead in examples/dependent.v? | PASS | inspect_definition_constraints returned valid result for Nat.add (0 universe variables, 0 constraints — correct for Set-level fixpoint) |
 | 2.5 | Open a proof session on measure_app_length in examples/typeclasses.v and trace typeclass resolution | RETEST | Prompt updated to use examples/typeclasses.v |
 | 2.6 | What instances are registered for the Proper typeclass? | PASS | list_instances returned 70+ Proper instances using fully qualified Coq.Classes.Morphisms.Proper (Nat.add_wd, Nat.mul_wd, etc.) |
 | 2.7 | Check my_lemma from examples/algebra.v with all implicit arguments visible | RETEST | my_lemma now defined in examples/algebra.v |
@@ -123,7 +123,7 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
-| 5.1 | If I rename my_add_comm, what breaks? | PASS | impact_analysis returned valid response — correctly reports name not found in dependency graph |
+| 5.1 | If I change add_comm in examples/arith.v, what breaks? | PASS | impact_analysis returned valid response |
 | 5.2 | /compress-proof rev_involutive in examples/lists.v | SKIP | Slash command — example files ready |
 | 5.3 | /proof-lint examples/lint_targets.v | SKIP | Slash command — lint_targets.v has deprecated names, verbose patterns |
 | 5.4 | /proof-obligations | SKIP | Slash command — obligations.v has Admitted/admit/Axiom targets |
