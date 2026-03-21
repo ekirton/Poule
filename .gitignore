@@ -1,5 +1,7 @@
-# Claude Code
-.claude/
+# Claude Code — personal/transient only
+.claude/settings.local.json
+.claude/worktrees/
+.claude/sdd-layer
 
 # macOS
 .DS_Store
