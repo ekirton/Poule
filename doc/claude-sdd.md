@@ -11,7 +11,8 @@ This guide explains how to use Claude Code with the project's Spec-Driven Develo
 | 3. Architecture | `doc/architecture/` | How it works at design level, data models |
 | 4. Specifications | `specification/` | Implementable contracts (Design by Contract) |
 | 5. Tasks | `tasks/` | Detailed implementation breakdown |
-| 6. Implementation | `src/`, `test/`, `commands/` | Code, tests, slash command prompts |
+| 6. Tests | `test/` | Test suite derived from specifications |
+| 7. Implementation | `src/`, `commands/` | Code, slash command prompts |
 
 Each layer is **derived from** the one above and **authoritative for** the one below. The core discipline: while working at one layer, do not edit layers above it.
 
@@ -21,7 +22,8 @@ Claude Code enforces the SDD discipline through **phase commands**. Each phase r
 
 | Command | Purpose |
 |---------|---------|
-| `/triage` | Read-only audit: trace a root cause up the authority chain, report which layer to fix first |
+| `/diagnose` | Investigate a bug report: find root cause, trace it up the authority chain, recommend which layer to fix |
+| `/triage` | Quick audit when you already know the root cause: trace it up the authority chain |
 
 | Command | Editable directories | Blocked from |
 |---------|---------------------|-------------|
@@ -30,6 +32,7 @@ Claude Code enforces the SDD discipline through **phase commands**. Each phase r
 | `/architecture` | `doc/architecture/` | everything else |
 | `/specification` | `specification/` | everything else |
 | `/tasks` | `tasks/` | everything else |
+| `/tests` | `test/` | everything else |
 | `/implementation` | `src/`, `commands/`, `tasks/` | `test/`, `specification/`, `doc/` |
 | `/free` | anything | nothing blocked |
 
@@ -92,6 +95,23 @@ Detailed writing standards for each layer are available as on-demand skills (not
 | `writing-tasks` | `/writing-tasks` | Task structure template, completion rules |
 | `writing-architecture` | `/writing-architecture` | Architecture doc format, component boundaries, data models |
 
+## Autonomy Rules
+
+Not all layers require the same level of human involvement:
+
+| Layer | Autonomy | When human approval is needed |
+|-------|----------|-------------------------------|
+| `doc/requirements/` | Human-in-the-loop | Always, unless propagating from a clear user request |
+| `doc/features/` | Human-in-the-loop | When originating changes; autonomous when propagating from requirements |
+| `doc/architecture/` | Human-in-the-loop | When originating changes or making design decisions; autonomous when propagating from features |
+| `specification/` | Fully autonomous | Never — Claude proceeds without asking |
+| `test/` | Fully autonomous | Never |
+| `src/` | Fully autonomous | Never |
+
+**Originating vs. propagating:** If Claude is flowing downward through the pipeline (requirements→features→architecture), it propagates autonomously. If Claude needs to change a doc/ layer for other reasons (fixing a gap found during triage, making a design decision not prescribed by the layer above), it presents options with analysis and waits for approval.
+
+**Feedback loop cap:** Claude tracks feedback resolution cycles (spec→tests→implementation→feedback→repeat). After 3 cycles, it stops and asks for direction rather than looping indefinitely.
+
 ## Full Pipeline: `/sdd`
 
 To build a feature end-to-end through all SDD layers, use:
@@ -112,52 +132,46 @@ You can skip earlier stages by providing a starting layer as the first argument:
 /sdd tests "add edge case coverage for empty input"      → starts at Stage 5
 ```
 
-This is the typical flow after a bug fix: `/triage` identifies the layer, then `/sdd <layer> "description"` executes the fix from that layer downward through implementation.
+This is the typical flow after a bug fix: `/diagnose` finds the root cause and identifies the layer, then `/sdd <layer> "description"` executes the fix downward through implementation.
 
 ## Bug Fix Workflow
 
 When fixing a bug, the issue usually doesn't start at requirements. Here is a step-by-step walkthrough.
 
-### Step 1: Diagnose
+### Step 1: Diagnose with `/diagnose`
 
-Ask Claude to find the root cause. No phase needed — diagnosis is read-only.
-
-```
-You:  Tests in test_mepo.py are failing with "KeyError: 'weight'". Find the root cause.
-```
-
-Claude investigates and identifies the root cause.
-
-### Step 2: Triage with `/triage`
-
-When Claude has identified the root cause and is ready to fix, **don't let it execute yet**. Instead, run `/triage` to have Claude trace the problem up the authority chain and determine which layer to start at:
+Pass the bug report directly to `/diagnose`. It investigates the code, finds the root cause, and traces it up the authority chain — all in one step, without editing any files:
 
 ```
-Claude: I've identified the root cause: the MePo symbol weighting doesn't
-        handle zero-frequency symbols. Here's my plan... Ready to proceed?
-
-You:    /triage "MePo zero-frequency symbol handling"
+You:  /diagnose "impact_analysis returns only root node with 0 edges for
+      stdlib lemmas (Nat.add_comm, Nat.add_0_r) — reverse dependency
+      edges not populated"
 ```
 
-Claude reads (without editing) the relevant documents at each layer and reports a table:
+Claude searches the codebase, traces the code path, reads the relevant spec and architecture docs, and reports:
 
 ```
+Root cause: impact_analysis in src/poule/server/handlers.py queries the
+dependency graph but the index only stores forward edges (A depends on B),
+not reverse edges (B is depended on by A). The handler at line 245 calls
+reader.get_dependents() which returns an empty list because reverse edges
+were never populated during extraction.
+
 | Layer          | Document                        | Status | Finding                              |
 |----------------|---------------------------------|--------|--------------------------------------|
-| Requirements   | doc/requirements/search.md      | OK     | No gap                               |
-| Features       | doc/features/premise-search.md  | OK     | Mentions symbol weighting             |
-| Architecture   | doc/architecture/retrieval.md   | OK     | Delegates formula to spec             |
-| Specification  | specification/channels.md       | GAP    | No zero-frequency edge case defined   |
-| Tests          | test/test_mepo.py               | GAP    | No test for zero-frequency input      |
-| Implementation | src/poule/channels/mepo.py      | ERROR  | KeyError when frequency is 0          |
+| Requirements   | doc/requirements/search.md      | OK     | Impact analysis is a P1 requirement  |
+| Features       | doc/features/dependency.md      | OK     | Specifies reverse dependency lookup  |
+| Architecture   | doc/architecture/retrieval.md   | GAP    | No mention of reverse edge storage   |
+| Specification  | specification/storage.md        | GAP    | No reverse edge schema defined       |
+| Tests          | test/test_impact.py             | GAP    | No test for stdlib reverse deps      |
+| Implementation | src/poule/extraction/pipeline.py| ERROR  | Only writes forward edges            |
 
-Recommendation: Start with /specification to add the zero-frequency edge case,
-then /implementation to fix the code.
+Recommendation: /sdd architecture "add reverse dependency edge storage"
 ```
 
-This tells you the fix starts at the specification layer, not just at the code.
+If you already know the root cause and just need the triage, use `/triage` instead — it skips the investigation and goes straight to the authority chain audit.
 
-### Step 3: Execute with `/sdd`
+### Step 2: Execute with `/sdd`
 
 Use `/sdd` with the starting layer from the triage recommendation. It handles all downstream stages automatically — specs, tests, implementation, and feedback loops:
 
@@ -176,7 +190,7 @@ Or if the triage shows the problem is purely in implementation:
 You:    /sdd implementation "fix MePo weight calculation to match spec"
 ```
 
-### Step 4: Handle feedback loops
+### Step 3: Handle feedback loops
 
 `/sdd` handles feedback loops automatically — if it encounters an upstream problem, it writes a feedback file and stops. Review the feedback and decide:
 
@@ -187,9 +201,9 @@ You:    /sdd implementation "fix MePo weight calculation to match spec"
 
 | Situation | What to say |
 |-----------|-------------|
+| You have a bug report | `/diagnose "bug description"` |
 | Claude found a root cause, wants to execute a plan | `/triage "description of the issue"` |
-| Triage done, fix is in code only | `/sdd implementation "fix description"` |
-| Triage done, fix starts at spec | `/sdd specification "fix description"` |
+| Diagnosis/triage done, ready to fix | `/sdd <layer> "fix description"` |
 | New feature, full pipeline | `/sdd "feature description"` |
 | Claude wants to edit tests during implementation | "Don't modify tests. If the test is wrong, file feedback in `test/feedback/`." |
 | You want to work without restrictions | `/free` |

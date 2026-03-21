@@ -303,14 +303,4 @@ See [doc/publishing-releases.md](doc/publishing-releases.md) for the full index 
 
 This project uses Spec-Driven Development (SDD) with enforced layer boundaries. Claude Code phase commands (`/specification`, `/implementation`, etc.) restrict which directories Claude can edit, preventing accidental upstream modifications.
 
-See **[doc/claude-sdd.md](doc/claude-sdd.md)** for the full guide: SDD layers, phase commands, enforcement hooks, the feedback mechanism, and a step-by-step bug fix workflow.
-
-## Documentation Layers
-
-| Layer | Location | Purpose |
-|-------|----------|---------|
-| Requirements | `doc/requirements/` | Business goals, user needs |
-| Features | `doc/features/` | What and why |
-| Architecture | `doc/architecture/` | How (language-agnostic design) |
-| Specifications | `specification/` | Implementable contracts |
-| Tasks | `tasks/` | Detailed implementation plans |
+See **[doc/claude-sdd.md](doc/claude-sdd.md)** for the full guide: SDD layers, phase commands, enforcement hooks, the feedback mechanism, autonomy rules, and a step-by-step bug fix workflow.

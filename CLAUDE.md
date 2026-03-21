@@ -27,7 +27,7 @@ Each layer answers "what" for the layer below and "how" for the layer above. A s
 
 # SDD Layer Enforcement
 
-Use `/triage` to trace a bug's root cause up the authority chain and determine which layer to fix first. Use `/requirements`, `/features`, `/architecture`, `/specification`, `/tasks`, or `/implementation` to enter a phase. Each phase restricts edits to the corresponding layer. Use `/free` to disable enforcement.
+Use `/diagnose` to investigate a bug and determine which SDD layer to fix first. Use `/sdd <layer> "description"` to execute a fix from that layer downward. Use `/requirements`, `/features`, `/architecture`, `/specification`, `/tasks`, `/tests`, or `/implementation` to enter a single phase. Use `/free` to disable enforcement.
 
 # Pull Request Process
 
