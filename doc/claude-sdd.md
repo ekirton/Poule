@@ -140,54 +140,52 @@ When fixing a bug, the issue usually doesn't start at requirements. Here is a st
 
 ### Step 1: Diagnose with `/diagnose`
 
-Pass the bug report directly to `/diagnose`. It investigates the code, finds the root cause, and traces it up the authority chain — all in one step, without editing any files:
+Pass the bug report directly to `/diagnose`. It investigates the code (using a subagent to keep context clean), finds the root cause, traces it up the authority chain, and then **acts on the result**:
+
+- **Fix is at `specification/` or below** (all doc/ layers OK): Claude automatically proceeds to `/sdd` and fixes the bug without waiting. You'll see the triage table followed by the fix.
+- **Fix requires `doc/` changes** (architecture, features, or requirements): Claude reports the triage table and presents options for your approval.
 
 ```
-You:  /diagnose "impact_analysis returns only root node with 0 edges for
-      stdlib lemmas (Nat.add_comm, Nat.add_0_r) — reverse dependency
-      edges not populated"
+You:  /diagnose "MePo symbol_weight raises KeyError for zero-frequency symbols"
+
+      → Claude investigates (subagent reads src/, test/, spec)
+      → Triage: all doc/ layers OK, spec has a gap
+      → Auto-fix: invokes /sdd specification "add zero-frequency edge case"
+      → Claude fixes spec, updates tests, fixes implementation
+      → Done
 ```
 
-Claude searches the codebase, traces the code path, reads the relevant spec and architecture docs, and reports:
+When the fix requires doc/ changes, Claude stops and asks:
 
 ```
-Root cause: impact_analysis in src/poule/server/handlers.py queries the
-dependency graph but the index only stores forward edges (A depends on B),
-not reverse edges (B is depended on by A). The handler at line 245 calls
-reader.get_dependents() which returns an empty list because reverse edges
-were never populated during extraction.
+You:  /diagnose "impact_analysis returns 0 edges for stdlib lemmas"
 
-| Layer          | Document                        | Status | Finding                              |
-|----------------|---------------------------------|--------|--------------------------------------|
-| Requirements   | doc/requirements/search.md      | OK     | Impact analysis is a P1 requirement  |
-| Features       | doc/features/dependency.md      | OK     | Specifies reverse dependency lookup  |
-| Architecture   | doc/architecture/retrieval.md   | GAP    | No mention of reverse edge storage   |
-| Specification  | specification/storage.md        | GAP    | No reverse edge schema defined       |
-| Tests          | test/test_impact.py             | GAP    | No test for stdlib reverse deps      |
-| Implementation | src/poule/extraction/pipeline.py| ERROR  | Only writes forward edges            |
-
-Recommendation: /sdd architecture "add reverse dependency edge storage"
+      → Triage: architecture has a GAP (no reverse edge storage)
+      → Claude presents options:
+        1. Add reverse edge table to storage architecture
+        2. Compute reverse edges at query time (no schema change)
+        3. ...
+      → Waits for your approval before proceeding
 ```
 
-If you already know the root cause and just need the triage, use `/triage` instead — it skips the investigation and goes straight to the authority chain audit.
+If you already know the root cause and just need the triage, use `/triage` instead — it skips the investigation and goes straight to the authority chain audit (runs in an isolated context, read-only).
 
-### Step 2: Execute with `/sdd`
+### Step 2: Handle the result
 
-Use `/sdd` with the starting layer from the triage recommendation. It handles all downstream stages automatically — specs, tests, implementation, and feedback loops:
+If `/diagnose` auto-fixed the bug (autonomous layers), you're done.
 
-```
-You:    /sdd specification "fix MePo zero-frequency handling"
-        → Claude fixes the spec (Stage 4)
-        → Claude updates tests (Stage 5)
-        → Claude fixes the implementation (Stage 8)
-        → PostToolUse hook runs pytest automatically
-        → Claude reports completion
-```
-
-Or if the triage shows the problem is purely in implementation:
+If `/diagnose` stopped for approval (doc/ layers), review the options and tell Claude which to proceed with. Claude will then run `/sdd` from the appropriate layer:
 
 ```
-You:    /sdd implementation "fix MePo weight calculation to match spec"
+You:    Option 1 — add reverse edge table.
+        → Claude runs /sdd architecture "add reverse dependency edge storage"
+        → Proceeds autonomously through spec, tests, implementation
+```
+
+You can also invoke `/sdd` directly if you prefer:
+
+```
+You:    /sdd architecture "add reverse dependency edge storage"
 ```
 
 ### Step 3: Handle feedback loops
@@ -201,10 +199,9 @@ You:    /sdd implementation "fix MePo weight calculation to match spec"
 
 | Situation | What to say |
 |-----------|-------------|
-| You have a bug report | `/diagnose "bug description"` |
-| Claude found a root cause, wants to execute a plan | `/triage "description of the issue"` |
-| Diagnosis/triage done, ready to fix | `/sdd <layer> "fix description"` |
+| You have a bug report | `/diagnose "bug description"` (auto-fixes if spec or below) |
+| Claude found a root cause, wants to execute a plan | `/triage "description"` (read-only audit) |
+| `/diagnose` stopped for approval on doc/ changes | Choose an option; Claude proceeds with `/sdd` |
 | New feature, full pipeline | `/sdd "feature description"` |
-| Claude wants to edit tests during implementation | "Don't modify tests. If the test is wrong, file feedback in `test/feedback/`." |
 | You want to work without restrictions | `/free` |
 | Claude wrote feedback and stopped | Review the feedback, then: `/sdd <upstream-layer> "fix the issue"` |
