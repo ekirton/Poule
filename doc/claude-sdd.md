@@ -16,14 +16,17 @@ This guide explains how to use Claude Code with the project's Spec-Driven Develo
 
 Each layer is **derived from** the one above and **authoritative for** the one below. The core discipline: while working at one layer, do not edit layers above it.
 
-## Phase Commands
-
-Claude Code enforces the SDD discipline through **phase commands**. Each phase restricts which directories Claude can edit:
+## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `/diagnose` | Investigate a bug report: find root cause, trace it up the authority chain, recommend which layer to fix |
-| `/triage` | Quick audit when you already know the root cause: trace it up the authority chain |
+| `/diagnose` | Investigate a bug: find root cause, triage, auto-fix if autonomous layers |
+| `/triage` | Read-only audit: trace a known root cause up the authority chain |
+| `/sdd` | Run the SDD pipeline from a given layer downward (TDD: tests before implementation) |
+
+### Phase commands
+
+Each phase restricts which directories Claude can edit:
 
 | Command | Editable directories | Blocked from |
 |---------|---------------------|-------------|
@@ -38,38 +41,17 @@ Claude Code enforces the SDD discipline through **phase commands**. Each phase r
 
 **Default phase is `free`** — no restrictions. Enter a phase when you want discipline enforced.
 
-### Example session
-
-```
-You:  /specification "add caching to retrieval pipeline"
-      → Claude enters SPECIFICATION phase
-      → Claude reads the architecture doc, writes to specification/
-      → If Claude tries to edit doc/architecture/: BLOCKED with feedback message
-
-You:  /implementation "implement caching per spec"
-      → Claude enters IMPLEMENTATION phase
-      → Claude reads spec and tests, writes to src/
-      → If Claude tries to edit specification/: BLOCKED
-
-You:  /free
-      → All restrictions lifted
-```
-
 ## How Enforcement Works
 
-Enforcement uses three mechanisms — none of which consume context tokens:
+Enforcement uses four mechanisms — none of which consume context tokens:
 
-### PreToolUse hook (`.claude/hooks/layer-guard.sh`)
+**PreToolUse hook** (`.claude/hooks/layer-guard.sh`) — Runs before every `Edit` or `Write` operation. Reads the current phase from `.claude/sdd-layer`, checks whether the target file is in an allowed directory, and blocks the operation (exit code 2) with a descriptive error message if not.
 
-Runs before every `Edit` or `Write` operation. Reads the current phase from `.claude/sdd-layer`, checks whether the target file is in an allowed directory, and blocks the operation (exit code 2) with a descriptive error message if not.
+**PostToolUse hook** (`.claude/hooks/post-edit.sh`) — Runs after every `Edit` or `Write` operation. During `implementation` or `free` phases, automatically runs `pytest` if the edited file is under `src/` or `test/`. Skipped during other phases to avoid noise when tests are expected to fail.
 
-### PostToolUse hook (`.claude/hooks/post-edit.sh`)
+**PostCompact hook** (`.claude/hooks/post-compact.sh`) — After context compaction, re-injects the current SDD phase so Claude doesn't forget which layer it's working in.
 
-Runs after every `Edit` or `Write` operation. If the edited file is under `src/` or `test/`, automatically runs `pytest` and injects the results into Claude's context.
-
-### Phase state file (`.claude/sdd-layer`)
-
-A single-line file containing the current phase name (`free`, `requirements`, `features`, etc.). Written by the slash commands, read by the hook. Gitignored — it's transient session state.
+**Phase state file** (`.claude/sdd-layer`) — Single-line file containing the current phase name. Written by commands, read by hooks. Gitignored.
 
 ## The Feedback Mechanism
 
@@ -82,22 +64,25 @@ When Claude encounters a problem in an upstream layer, it must not edit that lay
 | `src/` | `test/` | `test/feedback/` |
 | `src/` | `specification/` | `specification/feedback/` |
 
-After writing feedback, Claude notifies you and stops. You then decide whether to resolve the upstream issue before continuing.
+In **autonomous layers** (specification, tests, implementation), Claude resolves feedback itself — fixing the spec or test, deleting the feedback file, and continuing. It only stops and notifies you when:
+- The problem requires changes to a **doc/ layer** (architecture, features, requirements)
+- **3 feedback cycles** have been reached without resolution
 
-## Writing Guideline Skills
+## TDD: Tests Before Implementation
 
-Detailed writing standards for each layer are available as on-demand skills (not loaded every session):
+The `/sdd` pipeline follows Test-Driven Development: write a failing test first, then implement until it passes. This applies to both new features and bug fixes:
 
-| Skill | Invoke with | Covers |
-|-------|------------|--------|
-| `writing-specs` | `/writing-specs` | Document structure, EARS template, Design by Contract, state machines |
-| `writing-tests` | `/writing-tests` | Formula-derived bounds, mock discipline, contract tests |
-| `writing-tasks` | `/writing-tasks` | Task structure template, completion rules |
-| `writing-architecture` | `/writing-architecture` | Architecture doc format, component boundaries, data models |
+- `/sdd specification "..."` → writes spec → writes failing tests → implements → tests pass
+- `/sdd tests "..."` → writes failing test for the bug → implements → tests pass
+- `/sdd implementation "..."` → redirects to tests first (same as `/sdd tests`)
+
+To skip tests entirely (e.g., for a trivial fix you've already verified), use the `/implementation` phase command directly instead of `/sdd`.
+
+## Blast Radius Tracking
+
+When Claude modifies specifications (Stage 4), it records which spec files changed to `.claude/sdd-blast-radius`. This ensures the test-writing stage knows which tests to update, even if context compaction occurs between stages. The file is cleaned up at completion.
 
 ## Autonomy Rules
-
-Not all layers require the same level of human involvement:
 
 | Layer | Autonomy | When human approval is needed |
 |-------|----------|-------------------------------|
@@ -108,42 +93,43 @@ Not all layers require the same level of human involvement:
 | `test/` | Fully autonomous | Never |
 | `src/` | Fully autonomous | Never |
 
-**Originating vs. propagating:** If Claude is flowing downward through the pipeline (requirements→features→architecture), it propagates autonomously. If Claude needs to change a doc/ layer for other reasons (fixing a gap found during triage, making a design decision not prescribed by the layer above), it presents options with analysis and waits for approval.
+**Originating vs. propagating:** If Claude is flowing downward through the pipeline (requirements→features→architecture), it propagates autonomously. If Claude needs to change a doc/ layer for other reasons (fixing a gap, making a design decision not prescribed by the layer above), it presents options with analysis and waits for approval.
 
-**Feedback loop cap:** Claude tracks feedback resolution cycles (spec→tests→implementation→feedback→repeat). After 3 cycles, it stops and asks for direction rather than looping indefinitely.
+**Feedback loop cap:** After 3 feedback cycles, Claude stops and asks for direction rather than looping indefinitely.
+
+## Writing Guideline Skills
+
+Detailed writing standards are available as on-demand skills (not loaded every session):
+
+| Skill | Covers |
+|-------|--------|
+| `/writing-specs` | Document structure, EARS template, Design by Contract, state machines |
+| `/writing-tests` | Formula-derived bounds, mock discipline, contract tests |
+| `/writing-tasks` | Task structure template, completion rules |
+| `/writing-architecture` | Architecture doc format, component boundaries, data models |
 
 ## Full Pipeline: `/sdd`
 
-To build a feature end-to-end through all SDD layers, use:
+Build a feature end-to-end:
 
 ```
-You:  /sdd "add caching to the retrieval pipeline"
+/sdd "add caching to the retrieval pipeline"
 ```
 
-This runs the full pipeline — requirements through implementation — setting the correct phase at each stage, handling feedback loops, and stopping when it needs your input.
-
-### Starting from a specific layer
-
-You can skip earlier stages by providing a starting layer as the first argument:
+Start from a specific layer:
 
 ```
-/sdd specification "fix MePo zero-frequency handling"   → starts at Stage 4
-/sdd implementation "fix the weight calculation"         → starts at Stage 8
-/sdd tests "add edge case coverage for empty input"      → starts at Stage 5
+/sdd specification "fix MePo zero-frequency handling"   → starts at specifications
+/sdd tests "reproduce the off-by-one bug"               → starts at tests (TDD)
 ```
 
-This is the typical flow after a bug fix: `/diagnose` finds the root cause and identifies the layer, then `/sdd <layer> "description"` executes the fix downward through implementation.
+The pipeline flows: requirements → features → architecture → specifications → tests (failing) → implementation → tests (passing) → completion.
 
 ## Bug Fix Workflow
 
-When fixing a bug, the issue usually doesn't start at requirements. Here is a step-by-step walkthrough.
-
 ### Step 1: Diagnose with `/diagnose`
 
-Pass the bug report directly to `/diagnose`. It investigates the code (using a subagent to keep context clean), finds the root cause, traces it up the authority chain, and then **acts on the result**:
-
-- **Fix is at `specification/` or below** (all doc/ layers OK): Claude automatically proceeds to `/sdd` and fixes the bug without waiting. You'll see the triage table followed by the fix.
-- **Fix requires `doc/` changes** (architecture, features, or requirements): Claude reports the triage table and presents options for your approval.
+Pass the bug report directly. Claude investigates (using a subagent to keep context clean), triages, and **acts on the result**:
 
 ```
 You:  /diagnose "MePo symbol_weight raises KeyError for zero-frequency symbols"
@@ -151,7 +137,7 @@ You:  /diagnose "MePo symbol_weight raises KeyError for zero-frequency symbols"
       → Claude investigates (subagent reads src/, test/, spec)
       → Triage: all doc/ layers OK, spec has a gap
       → Auto-fix: invokes /sdd specification "add zero-frequency edge case"
-      → Claude fixes spec, updates tests, fixes implementation
+      → Claude fixes spec, writes failing test, fixes implementation, tests pass
       → Done
 ```
 
@@ -161,20 +147,17 @@ When the fix requires doc/ changes, Claude stops and asks:
 You:  /diagnose "impact_analysis returns 0 edges for stdlib lemmas"
 
       → Triage: architecture has a GAP (no reverse edge storage)
-      → Claude presents options:
-        1. Add reverse edge table to storage architecture
-        2. Compute reverse edges at query time (no schema change)
-        3. ...
+      → Claude presents options with critical analysis
       → Waits for your approval before proceeding
 ```
 
-If you already know the root cause and just need the triage, use `/triage` instead — it skips the investigation and goes straight to the authority chain audit (runs in an isolated context, read-only).
+Use `/triage` instead if you already know the root cause — it skips investigation and goes straight to the authority chain audit (runs in an isolated context, read-only).
 
 ### Step 2: Handle the result
 
 If `/diagnose` auto-fixed the bug (autonomous layers), you're done.
 
-If `/diagnose` stopped for approval (doc/ layers), review the options and tell Claude which to proceed with. Claude will then run `/sdd` from the appropriate layer:
+If `/diagnose` stopped for approval (doc/ layers), choose an option. Claude proceeds with `/sdd` from the appropriate layer:
 
 ```
 You:    Option 1 — add reverse edge table.
@@ -182,26 +165,21 @@ You:    Option 1 — add reverse edge table.
         → Proceeds autonomously through spec, tests, implementation
 ```
 
-You can also invoke `/sdd` directly if you prefer:
-
-```
-You:    /sdd architecture "add reverse dependency edge storage"
-```
-
 ### Step 3: Handle feedback loops
 
-`/sdd` handles feedback loops automatically — if it encounters an upstream problem, it writes a feedback file and stops. Review the feedback and decide:
+`/sdd` resolves feedback loops automatically within autonomous layers. It only stops when:
 
-- **Feedback is valid**: run `/sdd` again starting at the upstream layer (e.g., `/sdd architecture "fix the design issue"`)
-- **Feedback is invalid**: delete the feedback file and re-run `/sdd` from where it stopped
+- A doc/ layer needs changes (requires your approval)
+- 3 feedback cycles have been reached (asks for direction)
+- All feedback files are exhausted and tests pass (done)
 
-### Quick reference: what to say to Claude
+### Quick reference
 
 | Situation | What to say |
 |-----------|-------------|
-| You have a bug report | `/diagnose "bug description"` (auto-fixes if spec or below) |
-| Claude found a root cause, wants to execute a plan | `/triage "description"` (read-only audit) |
-| `/diagnose` stopped for approval on doc/ changes | Choose an option; Claude proceeds with `/sdd` |
+| You have a bug report | `/diagnose "bug description"` |
+| Claude found a root cause, wants to execute a plan | `/triage "description"` |
+| `/diagnose` stopped for approval on doc/ changes | Choose an option; Claude proceeds |
 | New feature, full pipeline | `/sdd "feature description"` |
 | You want to work without restrictions | `/free` |
-| Claude wrote feedback and stopped | Review the feedback, then: `/sdd <upstream-layer> "fix the issue"` |
+| Claude wrote feedback and stopped | Review, then: `/sdd <upstream-layer> "fix"` |
