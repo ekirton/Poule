@@ -17,7 +17,7 @@ declare -A OPAM_PACKAGES=(
     [coq]=coq
     [flocq]=coq-flocq
     [coquelicot]=coq-coquelicot
-    [mathcomp]=coq-mathcomp-ssreflect
+    [mathcomp]=rocq-mathcomp-ssreflect
     [coqinterval]=coq-interval
     [stdpp]=coq-stdpp
 )
