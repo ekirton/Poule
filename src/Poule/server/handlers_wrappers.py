@@ -761,7 +761,7 @@ async def handle_profile_proof(
             baseline_path=baseline_path or None,
             timeout_seconds=timeout_seconds or 300,
         )
-        result = await profile_proof(request)
+        result = await profile_proof(request, session_manager=ctx.session_manager)
     except ValueError as exc:
         return format_error(NOT_FOUND, str(exc))
     except Exception as exc:

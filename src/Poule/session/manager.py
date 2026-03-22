@@ -727,6 +727,11 @@ class SessionManager:
             output = await self._read_until_sentinel(proc)
             return output
 
+    async def get_original_script(self, session_id: str) -> list[str]:
+        """Return the original tactic script for the session's proof."""
+        ss = await self.lookup_session(session_id)
+        return list(ss.original_script)
+
     async def submit_vernacular(self, session_id: str, vernacular: str) -> str:
         """Send a vernacular introspection command, preferring coqtop for output capture.
 
