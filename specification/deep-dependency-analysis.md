@@ -107,6 +107,14 @@ The engine shall cache the in-memory `DependencyGraph` per project, keyed by the
 
 When `root` is not found in the graph, the engine shall return a `NOT_FOUND` error.
 
+#### Name Aliasing (MCP Handler)
+
+Before passing `root` to the engine, the MCP handler shall check whether `root` exists in the graph. When the name is not found, the handler shall apply bidirectional prefix aliasing (`Coq.* ↔ Corelib.*` via `alias_prefix`) to obtain an alternate form. When the aliased name exists in the graph, the handler shall use the aliased name. When neither the original nor the aliased name exists, the engine's `NOT_FOUND` error propagates unchanged. This is consistent with the aliasing behavior specified for `list_modules` in the MCP server specification.
+
+> **Given** a graph containing `Corelib.Init.Nat.add_comm` and an MCP `transitive_closure` call with `name = "Coq.Init.Nat.add_comm"`
+> **When** the handler resolves the name
+> **Then** the handler uses `Corelib.Init.Nat.add_comm` as the root and the query succeeds
+
 When `max_depth` is 1, the result shall contain exactly the same declaration set as `find_related(root, "uses")`.
 
 > **Given** a graph with edges `A → B → C → D` and no scope filter
@@ -158,6 +166,14 @@ When `root` exists in the graph but has no reverse edges, the engine shall retur
 When the graph was built from Storage and the returned `ImpactSet` contains only the root (no dependents), the MCP handler shall include a `hint` field in the response with the message: `"The index contains only type-level and axiom-level dependency edges. Proof-body dependencies (theorem-to-theorem) require importing a dependency graph via import_dependencies or providing a coq-dpdgraph DOT file via the dot_file_path parameter."` This hint is informational — it does not affect the `ImpactSet` data model or the engine's return value.
 
 When `root` is not found in the graph, the engine shall return a `NOT_FOUND` error.
+
+#### Name Aliasing (MCP Handler)
+
+Before passing `root` to the engine, the MCP handler shall check whether `root` exists in the graph. When the name is not found, the handler shall apply bidirectional prefix aliasing (`Coq.* ↔ Corelib.*` via `alias_prefix`) to obtain an alternate form. When the aliased name exists in the graph, the handler shall use the aliased name. When neither the original nor the aliased name exists, the engine's `NOT_FOUND` error propagates unchanged. This is consistent with the aliasing behavior specified for `list_modules` in the MCP server specification and for `transitive_closure` above.
+
+> **Given** a graph containing `Corelib.Init.Nat.add_comm` and an MCP `impact_analysis` call with `name = "Coq.Init.Nat.add_comm"`
+> **When** the handler resolves the name
+> **Then** the handler uses `Corelib.Init.Nat.add_comm` as the root and the query succeeds
 
 When `max_depth` is 1, the result shall contain exactly the same declaration set as `find_related(root, "used_by")`.
 
@@ -308,7 +324,7 @@ The engine does not call the Mermaid Renderer directly. The MCP Server extracts 
 
 | Condition | Error Code | Behavior |
 |-----------|-----------|----------|
-| `root` declaration not found in graph | `NOT_FOUND` | Return error with message: Declaration `{name}` not found in the dependency graph |
+| `root` declaration not found in graph | `NOT_FOUND` | MCP handler first attempts prefix aliasing (§4.3, §4.5); if neither original nor aliased name exists, return error with message: Declaration `{name}` not found in the dependency graph |
 | `max_depth` <= 0 | Clamp to 1 | No error; treat as depth-limited to 1 |
 | Empty `root` string | `INVALID_INPUT` | Return error with message: Root declaration name must be non-empty |
 

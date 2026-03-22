@@ -211,13 +211,13 @@ poule search-by-type "nat -> nat -> nat"
 poule --help
 ```
 
-## Development
-
-See [DEVELOPMENT.md](DEVELOPMENT.md) for architecture, project structure, testing, and documentation layers.
-
 ## FAQ
 
 See [FAQ.md](FAQ.md).
+
+## Development
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for architecture, project structure, testing, and documentation layers.
 
 ## License
 

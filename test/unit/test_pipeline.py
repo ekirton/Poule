@@ -21,6 +21,8 @@ import pytest
 
 from Poule.pipeline.context import PipelineContext, create_context
 from Poule.pipeline.search import (
+    _peel_n_prods,
+    normalize_type_query,
     score_candidates,
     search_by_name,
     search_by_structure,
@@ -275,6 +277,45 @@ class TestCreateContext:
         fqns = ctx.suffix_index["eq"]
         assert "Coq.Init.Logic.eq" in fqns
         assert "Coq.Arith.PeanoNat.Nat.eq" in fqns
+
+    @patch("Poule.pipeline.context.IndexReader")
+    def test_suffix_index_enriched_with_re_export_aliases(self, MockIndexReader):
+        """Re-export aliases contribute additional suffixes mapping to
+        the canonical FQN (spec §4.1 suffix index construction).
+
+        Alias: Coq.Lists.List.map → Coq.Lists.ListDef.map
+        Produces suffixes: Lists.List.map, List.map, map → all pointing
+        to Coq.Lists.ListDef.map."""
+        reader = _mock_reader()
+        # Add ListDef.map to the inverted index
+        reader.load_inverted_index.return_value["Coq.Lists.ListDef.map"] = {4}
+        # Add re-export alias
+        reader.load_re_export_aliases = MagicMock(
+            return_value={"Coq.Lists.List.map": "Coq.Lists.ListDef.map"}
+        )
+        MockIndexReader.return_value = reader
+
+        ctx = create_context("/tmp/test.db")
+
+        # "List.map" should be in the suffix index, mapping to the canonical FQN
+        assert "List.map" in ctx.suffix_index
+        assert "Coq.Lists.ListDef.map" in ctx.suffix_index["List.map"]
+        # "Lists.List.map" should also be present
+        assert "Lists.List.map" in ctx.suffix_index
+        assert "Coq.Lists.ListDef.map" in ctx.suffix_index["Lists.List.map"]
+
+    @patch("Poule.pipeline.context.IndexReader")
+    def test_suffix_index_no_aliases_when_reader_has_none(self, MockIndexReader):
+        """When the reader returns empty aliases, suffix index uses only
+        inverted index keys (backward compatibility)."""
+        reader = _mock_reader()
+        reader.load_re_export_aliases = MagicMock(return_value={})
+        MockIndexReader.return_value = reader
+
+        ctx = create_context("/tmp/test.db")
+
+        # Suffix index should still work from inverted index keys
+        assert "Nat.add" in ctx.suffix_index
 
 
 # ---------------------------------------------------------------------------
@@ -2005,3 +2046,293 @@ class TestCoqNormalizeFailureDegradation:
 
         warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert len(warning_records) >= 1
+
+
+# ---------------------------------------------------------------------------
+# _peel_n_prods: strips leading LProd layers from an ExprTree
+# ---------------------------------------------------------------------------
+
+
+class TestPeelNProds:
+    """_peel_n_prods strips up to n leading LProd layers, returning the body
+    as a new ExprTree with recomputed depths, IDs, and node count.
+
+    Spec: pipeline.md §4.7 step 2."""
+
+    def test_peel_zero_returns_same_tree(self):
+        """Peeling 0 binders returns an equivalent tree (identity)."""
+        from Poule.models.labels import LProd, LSort, LRel
+        from Poule.models.enums import SortKind
+        from Poule.models.tree import TreeNode, ExprTree
+
+        root = TreeNode(
+            label=LProd(),
+            children=[
+                TreeNode(label=LSort(SortKind.TYPE_UNIV), children=[]),
+                TreeNode(label=LRel(1), children=[]),
+            ],
+        )
+        original = ExprTree(root=root, node_count=3)
+        result = _peel_n_prods(original, 0)
+        # Same root node when n=0
+        assert result.root is root
+        assert result.node_count == 3
+
+    def test_peel_one_returns_body(self):
+        """Peeling 1 binder from Prod(Sort, body) returns body subtree."""
+        from Poule.models.labels import LProd, LSort, LConst
+        from Poule.models.enums import SortKind
+        from Poule.models.tree import TreeNode, ExprTree
+
+        body = TreeNode(
+            label=LConst("Coq.Init.Nat.add"),
+            children=[],
+        )
+        root = TreeNode(
+            label=LProd(),
+            children=[
+                TreeNode(label=LSort(SortKind.TYPE_UNIV), children=[]),
+                body,
+            ],
+        )
+        original = ExprTree(root=root, node_count=3)
+        result = _peel_n_prods(original, 1)
+        assert result.root is body
+        assert result.node_count == 1
+
+    def test_peel_three_strips_three_prod_layers(self):
+        """Peeling 3 from a chain of 3 Prods reaches the innermost body."""
+        from Poule.models.labels import LProd, LSort, LRel
+        from Poule.models.enums import SortKind
+        from Poule.models.tree import TreeNode, ExprTree
+
+        innermost = TreeNode(label=LRel(1), children=[])
+        layer2 = TreeNode(
+            label=LProd(),
+            children=[
+                TreeNode(label=LSort(SortKind.TYPE_UNIV), children=[]),
+                innermost,
+            ],
+        )
+        layer1 = TreeNode(
+            label=LProd(),
+            children=[
+                TreeNode(label=LSort(SortKind.TYPE_UNIV), children=[]),
+                layer2,
+            ],
+        )
+        root = TreeNode(
+            label=LProd(),
+            children=[
+                TreeNode(label=LSort(SortKind.TYPE_UNIV), children=[]),
+                layer1,
+            ],
+        )
+        # 3 Prod + 3 Sort + 1 Rel = 7 nodes
+        original = ExprTree(root=root, node_count=7)
+        result = _peel_n_prods(original, 3)
+        assert result.root is innermost
+        assert result.node_count == 1
+
+    def test_peel_more_than_available_stops_early(self):
+        """Peeling more binders than exist stops at the first non-Prod node."""
+        from Poule.models.labels import LProd, LSort, LConst
+        from Poule.models.enums import SortKind
+        from Poule.models.tree import TreeNode, ExprTree
+
+        body = TreeNode(label=LConst("Coq.Init.Nat.add"), children=[])
+        root = TreeNode(
+            label=LProd(),
+            children=[
+                TreeNode(label=LSort(SortKind.TYPE_UNIV), children=[]),
+                body,
+            ],
+        )
+        original = ExprTree(root=root, node_count=3)
+        # Ask to peel 5, but only 1 Prod exists
+        result = _peel_n_prods(original, 5)
+        assert result.root is body
+        assert result.node_count == 1
+
+    def test_peel_non_prod_root_returns_unchanged(self):
+        """Peeling from a non-Prod root returns the tree unchanged."""
+        from Poule.models.labels import LConst
+        from Poule.models.tree import TreeNode, ExprTree
+
+        root = TreeNode(label=LConst("Coq.Init.Nat.add"), children=[])
+        original = ExprTree(root=root, node_count=1)
+        result = _peel_n_prods(original, 3)
+        assert result.root is root
+        assert result.node_count == 1
+
+
+# ---------------------------------------------------------------------------
+# normalize_type_query: returns (ConstrNode, auto_binder_count)
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeTypeQueryReturnsTuple:
+    """normalize_type_query returns (ConstrNode, int) where the int is the
+    count of auto-generated forall binders.
+
+    Spec: pipeline.md §4.4.1."""
+
+    def test_no_free_vars_returns_zero_count(self):
+        """When no free variables are detected, count is 0."""
+        from Poule.normalization.constr_node import Const
+
+        ctx = MagicMock()
+        ctx.inverted_index = {"Coq.Init.Nat.add": {1}}
+        ctx.suffix_index = {}
+        # A single resolved const — no free vars
+        constr = Const("Coq.Init.Nat.add")
+        result, count = normalize_type_query(ctx, constr)
+        assert count == 0
+
+    def test_explicit_forall_returns_zero_count(self):
+        """When outermost node is already Prod, count is 0 (user wrote forall)."""
+        from Poule.normalization.constr_node import Prod, Sort, Rel
+
+        ctx = MagicMock()
+        ctx.inverted_index = {}
+        ctx.suffix_index = {}
+        # User wrote forall n : Type, ...
+        constr = Prod("n", Sort("Type"), Rel(1))
+        result, count = normalize_type_query(ctx, constr)
+        assert count == 0
+
+    def test_one_free_var_returns_count_one(self):
+        """One detected free variable → count is 1."""
+        from Poule.normalization.constr_node import Const, Prod
+
+        ctx = MagicMock()
+        ctx.inverted_index = {}
+        ctx.suffix_index = {}
+        # "a" is a free variable (lowercase, no dots, not a keyword)
+        constr = Const("a")
+        result, count = normalize_type_query(ctx, constr)
+        assert count == 1
+        assert isinstance(result, Prod)
+
+    def test_three_free_vars_returns_count_three(self):
+        """Three detected free variables → count is 3."""
+        from Poule.normalization.constr_node import App, Const, Prod
+
+        ctx = MagicMock()
+        ctx.inverted_index = {"Coq.Init.Logic.eq": {1}}
+        ctx.suffix_index = {}
+        # "f a b" has three free variables
+        constr = App(Const("Coq.Init.Logic.eq"), [Const("f"), Const("a"), Const("b")])
+        result, count = normalize_type_query(ctx, constr)
+        assert count == 3
+        # Should be wrapped in 3 Prod layers
+        assert isinstance(result, Prod)
+        assert isinstance(result.body, Prod)
+        assert isinstance(result.body.body, Prod)
+
+
+# ---------------------------------------------------------------------------
+# score_candidates: peeling with auto_binder_count
+# ---------------------------------------------------------------------------
+
+
+class TestScoreCandidatesWithAutoBinders:
+    """When auto_binder_count > 0, score_candidates peels that many leading
+    Prod layers from both query and candidate before computing collapse_match
+    and ted_similarity. WL cosine and const_jaccard use full trees.
+
+    Spec: pipeline.md §4.7 steps 2, 4b-4d."""
+
+    @patch("Poule.pipeline.search._peel_n_prods")
+    @patch("Poule.pipeline.search.ted_similarity")
+    @patch("Poule.pipeline.search.collapse_match")
+    @patch("Poule.pipeline.search.jaccard_similarity")
+    @patch("Poule.pipeline.search.extract_consts")
+    def test_peels_when_auto_binder_count_positive(
+        self,
+        mock_extract,
+        mock_jaccard,
+        mock_collapse,
+        mock_ted,
+        mock_peel,
+    ):
+        """With auto_binder_count=2, _peel_n_prods is called for query and
+        each candidate, and the peeled trees are passed to collapse_match
+        and ted_similarity."""
+        ctx = _mock_context()
+        query_tree = MagicMock()
+        query_tree.node_count = 15
+
+        candidate_tree = MagicMock()
+        candidate_tree.node_count = 12
+        ctx.reader.get_constr_trees.return_value = {1: candidate_tree}
+
+        # Peeled trees are smaller
+        peeled_query = MagicMock()
+        peeled_query.node_count = 8
+        peeled_candidate = MagicMock()
+        peeled_candidate.node_count = 6
+
+        # _peel_n_prods returns peeled_query for query, peeled_candidate for cand
+        mock_peel.side_effect = [peeled_query, peeled_candidate]
+
+        mock_extract.return_value = {"Coq.Init.Nat.add"}
+        mock_jaccard.return_value = 0.6
+        mock_collapse.return_value = 0.8
+        mock_ted.return_value = 0.7
+
+        candidates_with_wl = [(1, 0.9)]
+        scored = score_candidates(
+            query_tree, candidates_with_wl, ctx, auto_binder_count=2,
+        )
+
+        # _peel_n_prods called twice: once for query, once for candidate
+        assert mock_peel.call_count == 2
+        mock_peel.assert_any_call(query_tree, 2)
+        mock_peel.assert_any_call(candidate_tree, 2)
+
+        # collapse_match and ted_similarity use peeled trees
+        mock_collapse.assert_called_once_with(peeled_query, peeled_candidate)
+        mock_ted.assert_called_once_with(peeled_query, peeled_candidate)
+
+        # extract_consts uses the original query tree (not peeled)
+        mock_extract.assert_called_once_with(query_tree)
+
+        assert len(scored) == 1
+
+    @patch("Poule.pipeline.search._peel_n_prods")
+    @patch("Poule.pipeline.search.ted_similarity")
+    @patch("Poule.pipeline.search.collapse_match")
+    @patch("Poule.pipeline.search.jaccard_similarity")
+    @patch("Poule.pipeline.search.extract_consts")
+    def test_no_peeling_when_auto_binder_count_zero(
+        self,
+        mock_extract,
+        mock_jaccard,
+        mock_collapse,
+        mock_ted,
+        mock_peel,
+    ):
+        """With auto_binder_count=0 (default), _peel_n_prods is not called."""
+        ctx = _mock_context()
+        query_tree = MagicMock()
+        query_tree.node_count = 15
+
+        candidate_tree = MagicMock()
+        candidate_tree.node_count = 12
+        ctx.reader.get_constr_trees.return_value = {1: candidate_tree}
+
+        mock_extract.return_value = set()
+        mock_jaccard.return_value = 0.5
+        mock_collapse.return_value = 0.7
+        mock_ted.return_value = 0.6
+
+        candidates_with_wl = [(1, 0.9)]
+        scored = score_candidates(
+            query_tree, candidates_with_wl, ctx, auto_binder_count=0,
+        )
+
+        mock_peel.assert_not_called()
+        # collapse_match and ted use original trees
+        mock_collapse.assert_called_once_with(query_tree, candidate_tree)
+        mock_ted.assert_called_once_with(query_tree, candidate_tree)

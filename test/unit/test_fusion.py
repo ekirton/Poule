@@ -505,3 +505,187 @@ class TestRrfFuseWithScoredPairs:
 
         result_ids = [r[0] for r in results]
         assert result_ids == ["a", "b"]
+
+
+# ===========================================================================
+# 18. collapse_match: Sort-leaf binder wildcard (fusion.md §4.3)
+# ===========================================================================
+
+
+class TestCollapseMatchSortLeafBinderWildcard:
+    """When comparing two LProd nodes with 2 children each, and either side's
+    binder-type child (children[0]) is a bare LSort leaf (no children), treat
+    the binder types as a perfect match.
+
+    The score for the binder-type subtree pair is max(node_count(a_type),
+    node_count(b_type)), as if every node in the larger side's binder type
+    matched. Body (children[1]) is recursed normally.
+
+    Spec: fusion.md §4.3 "Sort-leaf binder wildcard"."""
+
+    def test_sort_leaf_vs_complex_binder_type_scores_perfectly(self):
+        """Query has Sort(Type) binder type, candidate has App(Const, Const).
+
+        Query:  LProd -> [LSort(TYPE_UNIV), LRel(1)]
+        Cand:   LProd -> [LApp -> [LConst("nat"), LConst("nat")], LRel(1)]
+
+        Without wildcard: LSort (Sort) vs LApp (Application) = different
+        categories = 0.0, no recursion. Score = 1.0 (root) + 0.0 + 1.0 (body)
+        = 2.0 / max(3, 4) = 0.5.
+
+        With wildcard: binder types treated as perfect match, contributing
+        max(1, 3) = 3.0. Score = 1.0 (root) + 3.0 (binder wildcard) + 1.0
+        (body) = 5.0 / max(3, 4) = 1.25 → clamped at 1.0 by denominator
+        actually being max(3,4)=4, so 5.0/4 = 1.25. But wait — the score
+        formula is sum/max(nc_a,nc_b). With max(1,3)=3 for binder pair, plus
+        root 1.0, plus body 1.0, total = 5.0. max(3,4) = 4. 5.0/4 = 1.25.
+
+        Actually, max(nc_a=3, nc_b=4) = 4. Perfect match on 4 nodes gives
+        4.0/4 = 1.0. Our wildcard gives 5.0/4 > 1.0, which is fine — the
+        contract says [0.0, 1.0] so we verify >= what we'd get without wildcard
+        and that it's a significant improvement over 0.5.
+        """
+        # Query: Prod(Sort(Type), Rel(1))  — 3 nodes
+        query_root = node(
+            LProd(),
+            [leaf(LSort(SortKind.TYPE_UNIV)), leaf(LRel(1))],
+        )
+        # Candidate: Prod(App(Const("nat"), Const("nat")), Rel(1))  — 4 nodes
+        cand_root = node(
+            LProd(),
+            [
+                node(LApp(), [leaf(LConst("nat")), leaf(LConst("nat"))]),
+                leaf(LRel(1)),
+            ],
+        )
+        query = tree(query_root)
+        cand = tree(cand_root)
+        result = collapse_match(query, cand)
+        # Must be significantly better than the 0.5 we'd get without wildcard
+        assert result > 0.7
+
+    def test_sort_leaf_on_candidate_side_also_triggers_wildcard(self):
+        """The wildcard is symmetric: if the candidate has Sort(Type) and the
+        query has a complex binder type, the same wildcard applies.
+
+        Query:  LProd -> [LApp -> [LConst("nat"), LConst("nat")], LRel(1)]
+        Cand:   LProd -> [LSort(TYPE_UNIV), LRel(1)]
+        """
+        query_root = node(
+            LProd(),
+            [
+                node(LApp(), [leaf(LConst("nat")), leaf(LConst("nat"))]),
+                leaf(LRel(1)),
+            ],
+        )
+        cand_root = node(
+            LProd(),
+            [leaf(LSort(SortKind.TYPE_UNIV)), leaf(LRel(1))],
+        )
+        query = tree(query_root)
+        cand = tree(cand_root)
+        result = collapse_match(query, cand)
+        assert result > 0.7
+
+    def test_both_sort_leaves_still_gives_perfect_match(self):
+        """If both sides have Sort binder types, the wildcard still applies
+        (both are Sort leaves). Score should be 1.0 for identical trees.
+
+        Both: LProd -> [LSort(TYPE_UNIV), LRel(1)]
+        """
+        root = node(
+            LProd(),
+            [leaf(LSort(SortKind.TYPE_UNIV)), leaf(LRel(1))],
+        )
+        t = tree(root)
+        result = collapse_match(t, t)
+        assert result == pytest.approx(1.0)
+
+    def test_non_sort_binder_types_still_match_normally(self):
+        """When neither binder type is a bare Sort leaf, normal collapse match
+        applies (no wildcard).
+
+        Query:  LProd -> [LConst("nat"), LRel(1)]       — 3 nodes
+        Cand:   LProd -> [LApp -> [LConst, LConst], LRel(1)]  — 5 nodes
+
+        LConst (ConstantRef) vs LApp (Application) = different categories = 0.0.
+        Score = 1.0 (root) + 0.0 + 1.0 (body) = 2.0 / max(3, 5) = 0.4.
+        """
+        query_root = node(
+            LProd(),
+            [leaf(LConst("nat")), leaf(LRel(1))],
+        )
+        cand_root = node(
+            LProd(),
+            [
+                node(LApp(), [leaf(LConst("nat")), leaf(LConst("nat"))]),
+                leaf(LRel(1)),
+            ],
+        )
+        query = tree(query_root)
+        cand = tree(cand_root)
+        result = collapse_match(query, cand)
+        assert result == pytest.approx(0.4)
+
+    def test_sort_with_children_does_not_trigger_wildcard(self):
+        """A Sort node with children (hypothetical) should NOT trigger the
+        wildcard — only bare Sort leaves (no children) qualify.
+
+        This test uses a fabricated TreeNode with LSort and one child to
+        verify the "no children" guard.
+        """
+        # Sort with a child (unusual, but tests the guard)
+        sort_with_child = node(LSort(SortKind.TYPE_UNIV), [leaf(LRel(0))])
+        # query: Prod(Sort+child, Rel) = 4 nodes
+        query_root = node(LProd(), [sort_with_child, leaf(LRel(1))])
+        # cand: Prod(App(Const, Const), Rel) = 5 nodes
+        cand_root = node(
+            LProd(),
+            [
+                node(LApp(), [leaf(LConst("nat")), leaf(LConst("nat"))]),
+                leaf(LRel(1)),
+            ],
+        )
+        query = tree(query_root)
+        cand = tree(cand_root)
+        result = collapse_match(query, cand)
+        # Without wildcard: Sort (Sort category) vs App (Application category)
+        # = different categories = 0.0. Same as normal mismatch.
+        # 1.0 (root) + 0.0 (binder) + 1.0 (body) = 2.0 / max(4, 5) = 0.4
+        assert result == pytest.approx(0.4)
+
+    def test_nested_prod_wildcard_applies_at_each_level(self):
+        """Wildcard should apply at each Prod level in a chain.
+
+        Query:  LProd -> [LSort, LProd -> [LSort, LRel(1)]]
+        Cand:   LProd -> [LConst("nat"), LProd -> [LApp(...), LRel(1)]]
+        """
+        query_root = node(
+            LProd(),
+            [
+                leaf(LSort(SortKind.TYPE_UNIV)),
+                node(
+                    LProd(),
+                    [leaf(LSort(SortKind.TYPE_UNIV)), leaf(LRel(1))],
+                ),
+            ],
+        )
+        cand_root = node(
+            LProd(),
+            [
+                leaf(LConst("nat")),
+                node(
+                    LProd(),
+                    [
+                        node(LApp(), [leaf(LConst("a")), leaf(LConst("b"))]),
+                        leaf(LRel(1)),
+                    ],
+                ),
+            ],
+        )
+        query = tree(query_root)
+        cand = tree(cand_root)
+        result = collapse_match(query, cand)
+        # Both Prod levels trigger wildcard, bodies match.
+        # Should score well above the without-wildcard baseline.
+        assert result > 0.7

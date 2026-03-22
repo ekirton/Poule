@@ -38,7 +38,7 @@ The system shall define a `PipelineContext` that holds:
 | `symbol_frequencies` | `dict[str, int]` | At context creation (from `reader.load_symbol_frequencies()`) |
 | `declaration_symbols` | `dict[int, set[str]]` | At context creation (derived from inverted index) |
 | `declaration_node_counts` | `dict[int, int]` | At context creation (from declarations table) |
-| `suffix_index` | `dict[str, list[str]]` | At context creation (derived from inverted index keys) |
+| `suffix_index` | `dict[str, list[str]]` | At context creation (derived from inverted index keys + re-export aliases) |
 | `parser` | `CoqParser` | Lazily on first structural/type query |
 | `neural_encoder` | `NeuralEncoder` or null | At context creation (if model checkpoint available) |
 | `embedding_index` | `EmbeddingIndex` or null | At context creation (if embeddings available and model hash matches) |
@@ -50,7 +50,7 @@ The system shall define a `PipelineContext` that holds:
 
 **WL histogram h-selection**: `reader.load_wl_histograms()` returns `decl_id → {h → histogram}` (see [storage.md](storage.md) §4.3). `create_context` shall select `h=3` from each declaration's nested map to produce the flat `decl_id → histogram` structure required by `wl_screen`. If a declaration has no h=3 entry, it is omitted from `wl_histograms`.
 
-**Suffix index construction**: For each FQN key in `inverted_index`, generate all proper dot-separated suffixes (e.g., `Coq.Init.Nat.add` → `Init.Nat.add`, `Nat.add`, `add`). Map each suffix to the list of FQNs it matches. Ambiguous suffixes (matching multiple FQNs) retain all matches — they are expanded at query time to maximize recall.
+**Suffix index construction**: For each FQN key in `inverted_index`, generate all proper dot-separated suffixes (e.g., `Coq.Init.Nat.add` → `Init.Nat.add`, `Nat.add`, `add`). Additionally, load re-export aliases via `reader.load_re_export_aliases()` and generate proper suffixes from each alias FQN, mapping them to the **canonical** FQN (e.g., alias `Coq.Lists.List.map` → suffixes `Lists.List.map`, `List.map`, `map`, all mapping to `Coq.Lists.ListDef.map`). Map each suffix to the list of FQNs it matches. Ambiguous suffixes (matching multiple FQNs) retain all matches — they are expanded at query time to maximize recall.
 
 ### 4.1.1 Prefix Aliasing
 
@@ -121,11 +121,11 @@ Algorithm:
 
 Algorithm:
 1. Parse `type_expr` via `ctx.parser.parse()` → `ConstrNode`
-2. `normalize_type_query(ctx, constr_node)` → normalized `ConstrNode` with FQNs resolved and free variables wrapped (see §4.4.1)
+2. `normalize_type_query(ctx, constr_node)` → `(normalized_constr, auto_binder_count)` with FQNs resolved and free variables wrapped (see §4.4.1)
 3. `coq_normalize(normalized_constr)` → normalized `ExprTree`; `cse_normalize(tree)` → CSE-reduced tree
 4. `wl_histogram(tree, h=3)` → query histogram
 5. `wl_screen(histogram, query_node_count, ctx.wl_histograms, ctx.declaration_node_counts, n=500, size_ratio=2.0)` → candidates with WL scores
-6. Structural scoring subroutine (§4.7) on candidates → structural ranked list
+6. Structural scoring subroutine (§4.7) on candidates, passing `auto_binder_count` → structural ranked list
 7. `extract_consts(tree)` → query symbols; run `mepo_select(symbols, ...)` → symbol ranked list
 8. `fts_query(type_expr)` → FTS5 query; `fts_search(query, limit=limit, reader)` → lexical ranked list
 9. If `ctx.neural_encoder` is not null and `ctx.embedding_index` is not null: `neural_retrieve(ctx, type_expr, limit=50)` → neural ranked list
@@ -137,8 +137,8 @@ Note: `extract_consts` at query time is equivalent to the MePo channel's `extrac
 #### 4.4.1 normalize_type_query(ctx, constr_node)
 
 - REQUIRES: `ctx` has a populated `suffix_index` and `inverted_index`. `constr_node` is a valid `ConstrNode` produced by the parser.
-- ENSURES: Returns a `ConstrNode` where (1) resolvable constant names are replaced with FQNs, and (2) detected free variables are wrapped in outer `Prod` binders with `Rel` references replacing the original `Const` nodes.
-- MAINTAINS: The transformation is deterministic. If the query already contains `forall` binders, only steps 1–2 below are applied (no wrapping).
+- ENSURES: Returns a tuple `(ConstrNode, int)` where the `ConstrNode` has (1) resolvable constant names replaced with FQNs, and (2) detected free variables wrapped in outer `Prod` binders with `Rel` references replacing the original `Const` nodes. The `int` is the count of auto-generated forall binders (0 when no wrapping occurred).
+- MAINTAINS: The transformation is deterministic. If the query already contains `forall` binders, only steps 1–2 below are applied (no wrapping, count is 0).
 
 **Step 1 — FQN Resolution.** Walk the `ConstrNode` tree. For each `Const(name)` node:
 1. If `name` is an exact key in `ctx.inverted_index`, keep it (already an FQN).
@@ -158,9 +158,9 @@ These are classified as free variables. Collect them in order of first occurrenc
 2. Replace all `Const(name)` references to that variable with `Rel(n)` where `n` is the correct 1-based de Bruijn index (distance from the binding `Prod` to the reference).
 3. Nest binders in order of first occurrence: the first-seen variable is outermost.
 
-> **Given** `type_expr = "List.map f (List.map g l) = List.map (fun x => f (g x)) l"` and the suffix index resolves `List.map` to `Coq.Lists.List.map` and `=` to `Coq.Init.Logic.eq`,
+> **Given** `type_expr = "List.map f (List.map g l) = List.map (fun x => f (g x)) l"` and the suffix index resolves `List.map` to `Coq.Lists.ListDef.map` (via re-export alias) and `=` to `Coq.Init.Logic.eq`,
 > **When** `normalize_type_query` is called,
-> **Then** the result is equivalent to `Prod("f", Sort("Type"), Prod("g", Sort("Type"), Prod("l", Sort("Type"), <body>)))` where `<body>` uses `Const("Coq.Lists.List.map")`, `Const("Coq.Init.Logic.eq")`, and `Rel(3)`, `Rel(2)`, `Rel(1)` for `f`, `g`, `l` respectively.
+> **Then** the result is equivalent to `Prod("f", Sort("Type"), Prod("g", Sort("Type"), Prod("l", Sort("Type"), <body>)))` where `<body>` uses `Const("Coq.Lists.ListDef.map")`, `Const("Coq.Init.Logic.eq")`, and `Rel(3)`, `Rel(2)`, `Rel(1)` for `f`, `g`, `l` respectively.
 
 > **Given** `type_expr = "forall n : nat, n + 0 = n"` (already has forall),
 > **When** `normalize_type_query` is called,
@@ -215,20 +215,22 @@ Algorithm:
 
 ### 4.7 Structural Scoring Subroutine
 
-#### score_candidates(query_tree, candidates_with_wl, ctx)
+#### score_candidates(query_tree, candidates_with_wl, ctx, auto_binder_count=0)
 
-- REQUIRES: `query_tree` is a normalized `ExprTree`. `candidates_with_wl` is a list of `(decl_id, wl_cosine_score)` pairs.
+- REQUIRES: `query_tree` is a normalized `ExprTree`. `candidates_with_wl` is a list of `(decl_id, wl_cosine_score)` pairs. `auto_binder_count` is a non-negative integer (0 for `search_by_structure`; the count of auto-generated forall binders for `search_by_type`).
 - ENSURES: Returns `(decl_id, structural_score)` pairs.
 
 Steps:
-1. Extract query constants: `extract_consts(query_tree)`
-2. Fetch candidate trees: `ctx.reader.get_constr_trees(candidate_ids)` (batched)
-3. For each candidate:
-   a. Compute `const_jaccard` via `jaccard_similarity`
-   b. Compute `collapse_match` via `collapse_match(query_tree, candidate_tree)`
-   c. If both `query_tree.node_count ≤ 50` and `candidate.node_count ≤ 50`: compute `ted_similarity`
-   d. Compute `structural_score` using the appropriate weighted sum
-4. Return scored candidates
+1. Extract query constants: `extract_consts(query_tree)` (uses the full tree — unaffected by binder structure)
+2. If `auto_binder_count > 0`: peel the query tree by stripping up to `auto_binder_count` leading `LProd` layers, following `children[1]` (body) at each step → `peeled_query`. Recompute depths, node IDs, and node count on the peeled tree. If `auto_binder_count == 0`, `peeled_query = query_tree`.
+3. Fetch candidate trees: `ctx.reader.get_constr_trees(candidate_ids)` (batched)
+4. For each candidate:
+   a. Compute `const_jaccard` via `jaccard_similarity` (uses full trees)
+   b. If `auto_binder_count > 0`: peel the candidate tree by the same count → `peeled_candidate`. Otherwise `peeled_candidate = candidate_tree`.
+   c. Compute `collapse_match` via `collapse_match(peeled_query, peeled_candidate)`
+   d. If both `peeled_query.node_count ≤ 50` and `peeled_candidate.node_count ≤ 50`: compute `ted_similarity` on peeled trees
+   e. Compute `structural_score` using the appropriate weighted sum (WL cosine is from the screening step, computed on full trees)
+5. Return scored candidates
 
 ### 4.8 Query Normalization Failure
 
