@@ -9,7 +9,8 @@ import re
 
 # Compiled regex patterns for error classification (compiled once at module load).
 _NOT_FOUND_RE = re.compile(
-    r"(?:The reference|The variable|Toplevel input).*not found", re.IGNORECASE
+    r"(?:The reference|The variable|Toplevel input).*not found|No such Hint database:",
+    re.IGNORECASE,
 )
 _TYPE_ERROR_RE = re.compile(
     r"has type.*while it is expected to have type|ill-typed|type mismatch",
@@ -40,7 +41,11 @@ def classify_error(raw: str) -> tuple[str, str]:
     body = re.sub(r"^Error:\s*", "", raw).strip()
 
     if _NOT_FOUND_RE.search(raw):
-        # Extract the name if possible
+        # Extract the name from the specific error pattern
+        m = re.search(r"No such Hint database:\s*(\S+)", raw)
+        if m:
+            db_name = m.group(1).rstrip(".")
+            return NOT_FOUND, f'Hint database "{db_name}" not found.'
         m = re.search(r"reference\s+(\S+)", raw)
         name = m.group(1) if m else "unknown"
         return NOT_FOUND, f'"{name}" not found in the current environment.'

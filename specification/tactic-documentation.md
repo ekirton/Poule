@@ -219,16 +219,23 @@ When no strong candidates are identified, the Suggester shall return a short lis
 
 #### Hint Entry Parsing
 
-The Hint Parser shall extract entries from `Print HintDb` output into HintEntry records:
+The Hint Parser shall extract entries from `Print HintDb` output into HintEntry records. Entries appear under `For <head_symbol> ->` group headings and may span multiple continuation lines (indented under the same group).
 
 | Hint type | Output pattern | Extracted fields |
 |-----------|---------------|-----------------|
-| Resolve | `Resolve <lemma_name> : <type> (cost <n>)` | `hint_type = "resolve"`, `name = <lemma_name>`, `cost = <n>` |
-| Unfold | `Unfold <constant_name> (cost <n>)` | `hint_type = "unfold"`, `name = <constant_name>`, `cost = <n>` |
-| Constructors | `Constructors <inductive_name> (cost <n>)` | `hint_type = "constructors"`, `name = <inductive_name>`, `cost = <n>` |
-| Extern | `Extern <n> (<pattern>) => <tactic>` | `hint_type = "extern"`, `pattern = <pattern>`, `tactic = <tactic>`, `cost = <n>` |
+| Resolve | `simple apply <name> (cost <n>, pattern <pat>, id <id>)` or `exact <name> (cost <n>, ...)` or `simple eapply <name> (cost <n>, ...)` | `hint_type = "resolve"`, `name = <name>`, `cost = <n>` |
+| Unfold | `unfold <name> (cost <n>, id <id>)` | `hint_type = "unfold"`, `name = <name>`, `cost = <n>` |
+| Extern | `(*external*) <tactic> (cost <n>, pattern <pat>, id <id>)` | `hint_type = "extern"`, `tactic = <tactic>`, `cost = <n>` |
+
+Constructors hints (registered via `Hint Constructors`) appear in the output using the same `exact`/`simple apply` format as Resolve hints; the parser shall classify them as `hint_type = "resolve"`. The `constructors_count` summary field shall always be 0.
+
+The resolve action keyword may be followed by a tactic modifier (e.g., `; trivial`, `; auto`) before the cost parenthetical; the modifier is not extracted.
 
 The parser shall group entries by type and prepend a HintSummary with counts per type. For databases exceeding the truncation limit, the parser shall include the total entry count in the truncation message.
+
+#### Not-Found Detection
+
+When the `Print HintDb` output contains the Coq error pattern `No such Hint database:`, the parser shall raise a `NOT_FOUND` error. When the coq_query layer detects a Coq `Error:` prefix before the hint parser runs, the error is propagated as a QueryError.
 
 ## 5. Data Model
 

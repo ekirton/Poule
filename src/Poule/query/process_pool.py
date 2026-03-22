@@ -8,6 +8,9 @@ import re
 # Strip the coqtop welcome banner that -quiet does not always suppress.
 _BANNER_RE = re.compile(r"^Welcome to Coq [\d.]+\s*\n?")
 
+# Detect Coq error lines in stderr (coqtop -quiet sends errors to stderr).
+_STDERR_ERROR_RE = re.compile(r"^Error:", re.MULTILINE)
+
 # Default prelude to load the standard library into session-free processes.
 # Spec 4.3.2: "execute against the default global environment (standard library
 # and project-level imports configured for the MCP server)."
@@ -66,4 +69,12 @@ class ProcessPool:
         # across all Coq versions.  Strip it here since the banner is a
         # process-lifecycle artifact, not part of the command output.
         output = _BANNER_RE.sub("", output)
+
+        # coqtop -quiet sends errors to stderr even on exit code 0.
+        # Surface error lines so downstream error detection works.
+        if not output.strip() and stderr:
+            err_text = stderr.decode()
+            if _STDERR_ERROR_RE.search(err_text):
+                return err_text
+
         return output

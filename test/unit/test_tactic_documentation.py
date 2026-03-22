@@ -1105,23 +1105,29 @@ class TestHintDatabaseInspection:
         (_, _, _, _, _, _, HintDatabase, _, _) = _import_types()
         coq_query = _make_mock_coq_query(responses={
             ("Print", "HintDb core"): (
-                "Resolve eq_refl : eq (cost 0)\n"
-                "Resolve eq_sym : eq (cost 1)\n"
-                "Unfold not (cost 1)\n"
-                "Constructors bool (cost 0)\n"
-                "Extern 5 (_ = _) => congruence\n"
+                "Non-discriminated database\n"
+                "Unfoldable variable definitions: none\n"
+                "Unfoldable constant definitions: none\n"
+                "Cut: emp\n"
+                "For eq ->   simple apply eq_refl (cost 0, pattern ?M = ?M, id 0)\n"
+                "            simple apply eq_sym (cost 1, pattern ?M1 = ?M2, id 0)\n"
+                "For not ->   unfold not (cost 1, id 0)\n"
+                "For bool ->   exact true (cost 0, pattern bool, id 0)\n"
+                "              simple apply S (cost 1, pattern bool, id 0)\n"
+                "For eq ->   (*external*) congruence (cost 5, pattern _ = _, id 0)\n"
             ),
         })
         result = await hint_inspect("core", coq_query=coq_query)
         assert isinstance(result, HintDatabase)
         assert result.name == "core"
-        assert result.summary.resolve_count == 2
+        # Constructors hints (exact true, simple apply S) are counted as resolve
+        assert result.summary.resolve_count == 4
         assert result.summary.unfold_count == 1
-        assert result.summary.constructors_count == 1
+        assert result.summary.constructors_count == 0  # Rocq 9.x: constructors indistinguishable
         assert result.summary.extern_count == 1
-        assert len(result.entries) == 5
+        assert len(result.entries) == 6
         assert result.truncated is False
-        assert result.total_entries == 5
+        assert result.total_entries == 6
 
     @pytest.mark.asyncio
     async def test_resolve_entry_parsed(self):
@@ -1129,7 +1135,7 @@ class TestHintDatabaseInspection:
         hint_inspect = _import_hint_inspect()
         (_, _, _, _, _, _, _, _, HintEntry) = _import_types()
         coq_query = _make_mock_coq_query(responses={
-            ("Print", "HintDb test_db"): "Resolve eq_refl : eq (cost 0)\n",
+            ("Print", "HintDb test_db"): "For eq ->   simple apply eq_refl (cost 0, pattern ?M = ?M, id 0)\n",
         })
         result = await hint_inspect("test_db", coq_query=coq_query)
         entry = result.entries[0]
@@ -1137,15 +1143,13 @@ class TestHintDatabaseInspection:
         assert entry.hint_type == "resolve"
         assert entry.name == "eq_refl"
         assert entry.cost == 0
-        assert entry.pattern is None
-        assert entry.tactic is None
 
     @pytest.mark.asyncio
     async def test_unfold_entry_parsed(self):
         """Unfold hint entry is parsed correctly."""
         hint_inspect = _import_hint_inspect()
         coq_query = _make_mock_coq_query(responses={
-            ("Print", "HintDb test_db"): "Unfold not (cost 1)\n",
+            ("Print", "HintDb test_db"): "For not ->   unfold not (cost 1, id 0)\n",
         })
         result = await hint_inspect("test_db", coq_query=coq_query)
         entry = result.entries[0]
@@ -1154,30 +1158,31 @@ class TestHintDatabaseInspection:
         assert entry.cost == 1
 
     @pytest.mark.asyncio
-    async def test_constructors_entry_parsed(self):
-        """Constructors hint entry is parsed correctly."""
+    async def test_constructors_classified_as_resolve(self):
+        """Constructors hints use exact/apply in Rocq 9.x — classified as resolve."""
         hint_inspect = _import_hint_inspect()
         coq_query = _make_mock_coq_query(responses={
-            ("Print", "HintDb test_db"): "Constructors bool (cost 0)\n",
+            ("Print", "HintDb test_db"): (
+                "For nat ->   exact 0 (cost 0, pattern nat, id 0)\n"
+                "             simple apply S (cost 1, pattern nat, id 0)\n"
+            ),
         })
         result = await hint_inspect("test_db", coq_query=coq_query)
-        entry = result.entries[0]
-        assert entry.hint_type == "constructors"
-        assert entry.name == "bool"
-        assert entry.cost == 0
+        assert len(result.entries) == 2
+        assert all(e.hint_type == "resolve" for e in result.entries)
+        assert result.summary.constructors_count == 0
 
     @pytest.mark.asyncio
     async def test_extern_entry_parsed(self):
-        """Extern hint entry is parsed with pattern and tactic fields."""
+        """Extern hint entry is parsed with tactic and cost fields."""
         hint_inspect = _import_hint_inspect()
         coq_query = _make_mock_coq_query(responses={
-            ("Print", "HintDb test_db"): "Extern 5 (_ = _) => congruence\n",
+            ("Print", "HintDb test_db"): "For eq ->   (*external*) congruence (cost 5, pattern _ = _, id 0)\n",
         })
         result = await hint_inspect("test_db", coq_query=coq_query)
         entry = result.entries[0]
         assert entry.hint_type == "extern"
         assert entry.name is None
-        assert entry.pattern == "(_ = _)"
         assert entry.tactic == "congruence"
         assert entry.cost == 5
 
@@ -1187,7 +1192,7 @@ class TestHintDatabaseInspection:
         hint_inspect = _import_hint_inspect()
         coq_query = _make_mock_coq_query(responses={
             ("Print", "HintDb nonexistent_db"):
-                "Error: nonexistent_db not found",
+                "Error: No such Hint database: nonexistent_db.",
         })
         with pytest.raises(Exception) as exc_info:
             await hint_inspect("nonexistent_db", coq_query=coq_query)
@@ -1225,9 +1230,9 @@ class TestHintDatabaseInspection:
     async def test_truncation_when_exceeds_limit(self):
         """section 4.5: database with entries exceeding truncation limit is truncated."""
         hint_inspect = _import_hint_inspect()
-        # Generate 500 resolve entries
+        # Generate 500 resolve entries in Rocq 9.x format
         lines = "\n".join(
-            f"Resolve lemma_{i} : type (cost {i % 10})" for i in range(500)
+            f"For eq ->   simple apply lemma_{i} (cost {i % 10}, pattern ?M = ?M, id 0)" for i in range(500)
         )
         coq_query = _make_mock_coq_query(responses={
             ("Print", "HintDb large_db"): lines,
@@ -1243,19 +1248,18 @@ class TestHintDatabaseInspection:
         hint_inspect = _import_hint_inspect()
         coq_query = _make_mock_coq_query(responses={
             ("Print", "HintDb mixed"): (
-                "Resolve lemma1 : type (cost 0)\n"
-                "Resolve lemma2 : type (cost 1)\n"
-                "Resolve lemma3 : type (cost 2)\n"
-                "Unfold const1 (cost 0)\n"
-                "Unfold const2 (cost 1)\n"
-                "Constructors ind1 (cost 0)\n"
-                "Extern 3 (_ = _) => congruence\n"
+                "For eq ->   simple apply lemma1 (cost 0, pattern ?M = ?M, id 0)\n"
+                "            simple apply lemma2 (cost 1, pattern ?M1 = ?M2, id 0)\n"
+                "            exact lemma3 (cost 2, pattern ?M = ?M, id 0)\n"
+                "For not ->   unfold const1 (cost 0, id 0)\n"
+                "             unfold const2 (cost 1, id 0)\n"
+                "For eq ->   (*external*) congruence (cost 3, pattern _ = _, id 0)\n"
             ),
         })
         result = await hint_inspect("mixed", coq_query=coq_query)
         assert result.summary.resolve_count == 3
         assert result.summary.unfold_count == 2
-        assert result.summary.constructors_count == 1
+        assert result.summary.constructors_count == 0  # Rocq 9.x: merged with resolve
         assert result.summary.extern_count == 1
 
     @pytest.mark.asyncio
@@ -1263,13 +1267,42 @@ class TestHintDatabaseInspection:
         """MAINTAINS: hint_inspect does not modify session state."""
         hint_inspect = _import_hint_inspect()
         coq_query = _make_mock_coq_query(responses={
-            ("Print", "HintDb core"): "Resolve eq_refl : eq (cost 0)\n",
+            ("Print", "HintDb core"): "For eq ->   simple apply eq_refl (cost 0, pattern ?M = ?M, id 0)\n",
         })
         await hint_inspect("core", session_id="s1", coq_query=coq_query)
         for call_args in coq_query.call_args_list:
             args = call_args[0] if call_args[0] else ()
             if args:
                 assert args[0] == "Print"
+
+    @pytest.mark.asyncio
+    async def test_resolve_with_tactic_modifier(self):
+        """Resolve entry with ; trivial modifier is parsed correctly."""
+        hint_inspect = _import_hint_inspect()
+        coq_query = _make_mock_coq_query(responses={
+            ("Print", "HintDb test_db"): (
+                "For eq ->   simple apply Nat.add_comm ; trivial (cost 1, pattern\n"
+                "            ?M + ?M2 = ?M2 + ?M, id 0)\n"
+            ),
+        })
+        result = await hint_inspect("test_db", coq_query=coq_query)
+        assert len(result.entries) == 1
+        assert result.entries[0].hint_type == "resolve"
+        assert result.entries[0].name == "Nat.add_comm"
+        assert result.entries[0].cost == 1
+
+    @pytest.mark.asyncio
+    async def test_eapply_entry_parsed_as_resolve(self):
+        """simple eapply entries are classified as resolve."""
+        hint_inspect = _import_hint_inspect()
+        coq_query = _make_mock_coq_query(responses={
+            ("Print", "HintDb test_db"): "For le ->   simple eapply Nat.le_trans (cost 3, pattern ?M <= ?M2, id 0)\n",
+        })
+        result = await hint_inspect("test_db", coq_query=coq_query)
+        assert len(result.entries) == 1
+        assert result.entries[0].hint_type == "resolve"
+        assert result.entries[0].name == "Nat.le_trans"
+        assert result.entries[0].cost == 3
 
 
 # ===========================================================================
@@ -1756,10 +1789,10 @@ class TestSpecExamples:
         hint_inspect = _import_hint_inspect()
         coq_query = _make_mock_coq_query(responses={
             ("Print", "HintDb core"): (
-                "Resolve eq_refl : eq (cost 0)\n"
-                "Unfold not (cost 1)\n"
-                "Constructors bool (cost 0)\n"
-                "Extern 5 (_ = _) => congruence\n"
+                "For eq ->   simple apply eq_refl (cost 0, pattern ?M = ?M, id 0)\n"
+                "For not ->   unfold not (cost 1, id 0)\n"
+                "For bool ->   exact true (cost 0, pattern bool, id 0)\n"
+                "For eq ->   (*external*) congruence (cost 5, pattern _ = _, id 0)\n"
             ),
         })
         result = await hint_inspect("core", session_id="abc123", coq_query=coq_query)
@@ -1769,7 +1802,6 @@ class TestSpecExamples:
         entry_types = [e.hint_type for e in result.entries]
         assert "resolve" in entry_types
         assert "unfold" in entry_types
-        assert "constructors" in entry_types
         assert "extern" in entry_types
 
 
