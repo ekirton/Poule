@@ -8,7 +8,11 @@ The user may provide a scope argument after `/run-e2e`:
 
 Use `Glob` with the pattern `test/e2e/test_*.md` to collect the list of test files.
 
-## Run tests
+## Run tests and collect results
+
+Before running any tests, read `test/e2e/results.md` and `examples/README.md` to understand their current structure and content.
+
+Accumulate all test results in memory as you go. For each result, store: the section name, the prompt number (e.g., 1.1), the prompt text, the result (PASS/FAIL), and the one-line reason.
 
 For each test file in scope, read the file and extract every prompt (text inside ``` fenced code blocks).
 
@@ -24,33 +28,33 @@ For each prompt:
 
 4. **Record a one-line reason** summarizing what happened: which tool was called, what it returned, and why it passes or fails. Be specific — name the tool, mention result counts, cite key identifiers found.
 
-## Update results.md
-
-Read `test/e2e/results.md` to understand its current structure.
-
-For each section, update or create the results table with columns: `#`, `Prompt`, `Result`, `Reason`.
-
 Number prompts sequentially within each section (e.g., 1.1, 1.2, ... for Discovery and Search; 2.1, 2.2, ... for Errors).
 
-After updating individual results:
+## Write results.md in one shot
 
-1. **Update the summary table** at the top with per-section PASS/FAIL/SKIP counts.
-2. **Update the total line** (e.g., "60 PASS, 19 FAIL, 10 SKIP (89 total)").
-3. **Update the "Tested:" line** with today's date and the extent of the retest (e.g., "full retest of all prompts" or "retested navigation and debugging sections only").
-4. **Update the "Remaining Issues" section:**
-   - Delete issues that are now resolved (all referenced tests pass).
-   - Add new issues for any new FAIL results, with sufficient detail to investigate.
-   - Do not mark issues as "FIXED" — simply delete resolved ones.
+Once all tests have been executed and results collected, generate the **complete** `test/e2e/results.md` file content and write it using the `Write` tool in a single call. Do NOT use the `Edit` tool to update rows one at a time.
 
-## Update examples/README.md
+The generated file must include:
 
-Read `examples/README.md` to understand its current structure.
+1. The header with the "Tested:" line (today's date and the extent of the retest, e.g., "full retest of all prompts" or "retested navigation and debugging sections only").
+2. The summary total line (e.g., "**Summary: 60 PASS, 19 FAIL, 10 SKIP (89 total)**").
+3. The per-section summary table with PASS/FAIL/SKIP counts.
+4. Each section with its full results table (columns: `#`, `Prompt`, `Result`, `Reason`).
+5. A "Remaining Issues" section:
+   - For a **full retest**: write issues only for current FAIL results. Start fresh — do not carry over old issues.
+   - For a **partial retest**: preserve existing issues for sections not retested. Delete issues whose referenced tests now pass. Add new issues for new FAIL results.
+
+For a partial retest (only some sections re-run): preserve the existing results rows for sections not in scope, and replace only the sections that were retested.
+
+## Write examples/README.md in one shot
+
+Generate the **complete** `examples/README.md` file content and write it using the `Write` tool in a single call. Do NOT use the `Edit` tool to add/remove prompts one at a time.
 
 Synchronize it with the test results:
-- **Add** passing prompts that are missing from `examples/README.md`, placing them under the appropriate section and subsection heading.
-- **Remove** failing prompts that are currently listed in `examples/README.md`.
+- **Include** all passing prompts under the appropriate section and subsection heading.
+- **Exclude** all failing prompts.
 - Slash command prompts follow the same PASS/FAIL rules as other prompts.
-- Preserve the existing section structure, introductory text, and subsection headings.
+- Preserve the existing section structure, introductory text, and subsection headings from the file you read at the start.
 
 ## Example data
 
