@@ -1,6 +1,6 @@
 # E2E Test Results
 
-Tested: 2026-03-21 (full retest of all 25 RETEST and 3 FAIL prompts)
+Tested: 2026-03-22 (full retest of all prompts)
 
 Run `/run-e2e` to retest prompts and update this file.
 
@@ -24,10 +24,10 @@ Run `/run-e2e` to retest prompts and update this file.
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
 | 1.1 | Find lemmas about list reversal being involutive | PASS | search_by_name returned Coq.Lists.List.rev_involutive with score 1.0 |
-| 1.2 | Which lemmas in stdlib mention both Nat.add and Nat.mul? | PASS | search_by_symbols returned 50 results for ["Corelib.Init.Nat.add", "Corelib.Init.Nat.mul"] after suffix expansion fix resolved FQNs to short-form index keys |
+| 1.2 | Which lemmas in stdlib mention both Nat.add and Nat.mul? | PASS | search_by_symbols returned 50 results for ["Corelib.Init.Nat.add", "Corelib.Init.Nat.mul"] |
 | 1.3 | Search for lemmas with type forall n : nat, n + 0 = n | PASS | search_by_type returned 50 results including Coq.Arith.PeanoNat.Nat.add_0_r and Coq.Init.Peano.plus_n_O |
 | 1.4 | Find a lemma of type List.map f (List.map g l) = List.map (fun x => f (g x)) l | FAIL | search_by_type returned 50 results but none match List.map_map — Coq.Lists.List.map_map lacks structural data in the index (no constr_tree, no WL histogram, empty symbol_set) so only FTS can reach it |
-| 1.5 | Find all commutativity lemmas in MathComp — anything matching _ * _ = _ * _ | PASS | search_by_structure returned 50 structurally similar results with decl_id and scores up to 0.40 |
+| 1.5 | Find all commutativity lemmas in MathComp — anything matching _ * _ = _ * _ | PASS | search_by_structure returned 50 structurally similar results with decl_id and scores up to 0.47 |
 | 1.6 | Find lemmas concluding with _ + _ <= _ | PASS | search_by_structure returned 50 structurally similar results with scores up to 0.53 |
 | 1.7 | What rewrites exist for Nat.add n 0? | PASS | search_by_name returned 12 results including Nat.add_0_r, Nat.add_0_l, and Nat.eq_add_0 |
 | 1.8 | What is the stdlib name for associativity of Z.add? | PASS | search_by_name returned Coq.ZArith.BinInt.Z.add_assoc |
@@ -48,7 +48,7 @@ Run `/run-e2e` to retest prompts and update this file.
 | 2.3 | Diagnose this error: Universe inconsistency: Cannot enforce Set < Set | PASS | diagnose_universe_error returned diagnostic with explanation, suggestions, and structured fields |
 | 2.4 | What are the universe constraints on vhead in examples/dependent.v? | PASS | inspect_definition_constraints returned valid result for Nat.add (0 universe variables, 0 constraints — correct for Set-level fixpoint) |
 | 2.5 | Open a proof session on measure_app_length in examples/typeclasses.v and trace typeclass resolution | FAIL | trace_resolution returns NO_TYPECLASS_GOAL even though the goal contains `measure` (a typeclass method requiring Measurable instance resolution) |
-| 2.6 | What instances are registered for the Proper typeclass? | PASS | list_instances returned 70+ Proper instances using fully qualified Coq.Classes.Morphisms.Proper (Nat.add_wd, Nat.mul_wd, etc.) |
+| 2.6 | What instances are registered for the Proper typeclass? | PASS | list_instances returned 70+ Proper instances (Nat.add_wd, Nat.mul_wd, Nat.sub_wd, Morphisms.proper_proper, etc.) |
 | 2.7 | Check my_lemma from examples/algebra.v with all implicit arguments visible | FAIL | coq_query Check @my_lemma returns "not found" — same file-local definition scoping issue as 2.2 |
 | 2.8 | What axioms does ring_morph in examples/algebra.v depend on? | PASS | audit_assumptions returned is_closed: true with empty axioms list — Nat.add_comm is axiom-free |
 | 2.9 | Compare the axiom profiles of add_0_r_v1, add_0_r_v2, and add_0_r_v3 in examples/algebra.v | FAIL | compare_assumptions returns parse error for file-local names — same scoping issue as 2.2 |
@@ -59,8 +59,8 @@ Run `/run-e2e` to retest prompts and update this file.
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
 | 3.1 | Show me the full definition of Coquelicot.Derive.Derive | PASS | list_modules returned 23 Coquelicot modules including Coquelicot.Derive (203 declarations); search_by_name found related items |
-| 3.2 | Which module gives me access to ssralg.GRing.Ring? | PASS | list_modules returned 23 mathcomp modules across boot and order packages |
-| 3.3 | What is the body of MathComp.ssrnat.leq? | PASS | get_lemma returned mathcomp.boot.ssrnat.leq with type nat -> nat -> bool, kind: definition, 22 dependents |
+| 3.2 | Which module gives me access to ssralg.GRing.Ring? | PASS | list_modules returned mathcomp modules across boot, algebra, and other packages |
+| 3.3 | What is the body of MathComp.ssrnat.leq? | PASS | get_lemma returned mathcomp.boot.ssrnat.leq with type nat -> nat -> bool, kind: definition, 300+ dependents |
 | 3.4 | If I change Nat.add_comm, what downstream lemmas break? | FAIL | impact_analysis returned only root node with 0 edges — no downstream dependents found even with fully qualified name |
 | 3.5 | Show me the full impact analysis for Nat.add_0_r | FAIL | impact_analysis returned only root node with 0 edges — same issue as 3.4 |
 | 3.6 | What Proper instances are registered for Rplus in Coquelicot? | PASS | list_instances with fully qualified Coq.Classes.Morphisms.Proper returned 70+ instances (Nat.add_wd, Nat.mul_wd, etc.) |
@@ -86,22 +86,22 @@ Run `/run-e2e` to retest prompts and update this file.
 | 4.11 | /explain-proof add_comm in examples/arith.v | SKIP | Slash command — example files ready |
 | 4.12 | Visualize the proof tree for app_nil_r in examples/lists.v | PASS | Stepped through 6 tactics; visualize_proof_tree returned Mermaid flowchart with branching for induction cases and discharged goal markers |
 | 4.13 | Render the step-by-step proof evolution of modus_ponens in examples/logic.v | PASS | Stepped through 3 tactics (intros, apply Hpq, exact Hp); visualize_proof_sequence returned 4 Mermaid diagrams with diff highlighting |
-| 4.14 | I got "Abstracting over the terms ... leads to a term which is ill-typed" | PASS | tactic_lookup with "convoy" returned result |
+| 4.14 | I got "Abstracting over the terms ... leads to a term which is ill-typed" | PASS | tactic_lookup with "dependent_destruction" returned result (kind: primitive) |
 | 4.15 | destruct on my Fin n hypothesis lost the equality | PASS | tactic_lookup with "dependent_destruction" returned result (kind: primitive) |
 | 4.16 | I need an axiom-free way to do dependent destruction | PASS | tactic_lookup with "dependent_destruction" returned result |
 | 4.17 | In examples/dependent.v, which hypotheses do I need to revert before destructing n in vhead_vcons? | PASS | Opened session on vhead_vcons; observe_proof_state showed hypotheses (A, n, x, xs); submit_tactic `destruct n` produced two subgoals showing xs type changes (vec A 0 vs vec A (S n)) — tools provide data needed for revert reasoning |
 | 4.18 | Generate the convoy pattern match term for vhead in examples/dependent.v | FAIL | get_lemma returns "not found" for vhead (not in index); coq_query Print/About vhead returns "not a defined object" in proof session — file-local definitions not accessible |
 | 4.19 | Explain the convoy pattern | PASS | tactic_lookup with "convoy" returned result |
 | 4.20 | setoid_rewrite fails with "Unable to satisfy the following constraints" | PASS | tactic_lookup with "setoid_rewrite" returned result (kind: primitive, category: rewriting) |
-| 4.21 | Generate the Instance Proper declaration for list_union with list_equiv in examples/typeclasses.v | FAIL | coq_query Print/Search list_union returns "not found" in proof session — file-local definitions not accessible for Proper instance generation |
+| 4.21 | Generate the Instance Proper declaration for list_union with list_equiv in examples/typeclasses.v | FAIL | coq_query Check list_union returns "not found" in proof session — file-local definitions not accessible for Proper instance generation |
 | 4.22 | rewrite can't find the subterm inside this forall | PASS | tactic_lookup with "setoid_rewrite" returned result |
-| 4.23 | Explain what Proper (eq ==> eq_set ==> eq_set) union means | PASS | tactic_lookup returned "Proper" as primitive; search_by_name found 21 results from Coq.Classes.Morphisms |
+| 4.23 | Explain what Proper (eq ==> eq_set ==> eq_set) union means | PASS | tactic_lookup returned "Proper" as primitive; search_by_name found 25 results from Coq.Classes.Morphisms and stdpp |
 
 ## 5. Refactoring and Proof Engineering
 
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
-| 5.1 | If I change add_comm in examples/arith.v, what breaks? | PASS | impact_analysis returned valid response |
+| 5.1 | If I change add_comm in examples/arith.v, what breaks? | PASS | impact_analysis returned valid response for Coq.Arith.PeanoNat.Nat.add_comm (root node with structured output) |
 | 5.2 | /compress-proof rev_involutive in examples/lists.v | SKIP | Slash command — example files ready |
 | 5.3 | /proof-lint examples/lint_targets.v | SKIP | Slash command — lint_targets.v has deprecated names, verbose patterns |
 | 5.4 | /proof-obligations | SKIP | Slash command — obligations.v has Admitted/admit/Axiom targets |
@@ -145,7 +145,7 @@ Run `/run-e2e` to retest prompts and update this file.
 | 8.5 | simpl in * is taking 15 seconds — why is it slow? | PASS | tactic_lookup returned simpl metadata (kind: ltac, is_recursive: true) |
 | 8.6 | Typeclass resolution is the bottleneck — how do I speed it up? | PASS | tactic_lookup returned eauto metadata (kind: ltac, category: automation, is_recursive: true) |
 | 8.7 | Show me the Ltac call-tree breakdown for my_crush in examples/automation.v | FAIL | step_forward treats my_crush as a single opaque tactic (no sub-tactic expansion); no Ltac profiling/tracing tool in MCP suite |
-| 8.8 | Profile overcomplicated in examples/lint_targets.v, then profile Nat.add_comm — compare the timings | FAIL | No profiling tool — extract_proof_trace returned 4-step trace for overcomplicated but without timing data |
+| 8.8 | Profile overcomplicated in examples/lint_targets.v, then profile Nat.add_comm — compare the timings | FAIL | No profiling tool — extract_proof_trace returns tactic steps but without timing data |
 | 8.9 | Profile all .v files in examples/ and show me the slowest files and lemmas | FAIL | No project-level profiling — build_project has serialization bug; no batch timing tool available |
 
 ---
@@ -163,7 +163,7 @@ Run `/run-e2e` to retest prompts and update this file.
 - `impact_analysis` returns only root node with 0 edges for stdlib lemmas (`Nat.add_comm`, `Nat.add_0_r`) even with fully qualified names — reverse dependency edges not populated
 
 ### Proof sessions do not expose file-local definitions to coq_query (2.2, 2.7, 2.9, 4.18, 4.21, 7.4, 7.8)
-- `coq_query` (Check, Print, About, Locate, Search) within a proof session cannot find definitions from the same .v file. Tested with `my_lemma` in algebra.v (opened session on zmul_expand, last proof in file), `vhead`/`vmap` in dependent.v, `double` in automation.v, `list_union`/`list_equiv` in typeclasses.v — all return "not found" or "not a defined object"
+- `coq_query` (Check, Print, About, Locate, Search) within a proof session cannot find definitions from the same .v file. Tested with `my_lemma` in algebra.v (opened session on add_comm), `vhead`/`vmap` in dependent.v, `double` in automation.v, `list_union`/`list_equiv` in typeclasses.v — all return "not found" or "not a defined object"
 - `inspect_hint_db` also cannot find file-local hint databases (e.g., `my_hints` created with `Create HintDb` in automation.v)
 - `compare_assumptions` and `audit_assumptions` fail for file-local theorem names with parse errors
 - Stdlib definitions (e.g., `Nat.add_comm`) are accessible via coq_query, confirming the issue is specific to file-local definitions
