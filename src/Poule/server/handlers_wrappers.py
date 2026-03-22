@@ -340,12 +340,14 @@ def _parse_scope_filters(filter_specs: list[str]) -> list | None:
 
 
 async def handle_transitive_closure(
-    ctx: Any, *, name: str, max_depth: int | None, scope_filter: list | None
+    ctx: Any, *, name: str, max_depth: int | None, scope_filter: list | None,
+    dot_file_path: str | None = None,
 ) -> dict:
     """Handle transitive_closure tool call."""
-    index_err = _check_index(ctx)
-    if index_err is not None:
-        return index_err
+    if dot_file_path is None:
+        index_err = _check_index(ctx)
+        if index_err is not None:
+            return index_err
     try:
         name = validate_string(name)
     except (ValueError, Exception):
@@ -355,7 +357,10 @@ async def handle_transitive_closure(
     except ValueError as exc:
         return format_error(PARSE_ERROR, str(exc))
     try:
-        graph = ctx.pipeline.build_graph()
+        if dot_file_path is not None:
+            graph = ctx.pipeline.build_graph(dot_file_path=dot_file_path)
+        else:
+            graph = ctx.pipeline.build_graph()
         from Poule.analysis.closure import transitive_closure
         result = transitive_closure(graph, name, max_depth or None, parsed_filters)
     except Exception as exc:
@@ -365,13 +370,23 @@ async def handle_transitive_closure(
     return _format_success(result)
 
 
+_SPARSE_RESULT_HINT = (
+    "The index contains only type-level and axiom-level dependency edges. "
+    "Proof-body dependencies (theorem-to-theorem) require importing a "
+    "dependency graph via import_dependencies or providing a coq-dpdgraph "
+    "DOT file via the dot_file_path parameter."
+)
+
+
 async def handle_impact_analysis(
-    ctx: Any, *, name: str, max_depth: int | None, scope_filter: list | None
+    ctx: Any, *, name: str, max_depth: int | None, scope_filter: list | None,
+    dot_file_path: str | None = None,
 ) -> dict:
     """Handle impact_analysis tool call."""
-    index_err = _check_index(ctx)
-    if index_err is not None:
-        return index_err
+    if dot_file_path is None:
+        index_err = _check_index(ctx)
+        if index_err is not None:
+            return index_err
     try:
         name = validate_string(name)
     except (ValueError, Exception):
@@ -381,9 +396,39 @@ async def handle_impact_analysis(
     except ValueError as exc:
         return format_error(PARSE_ERROR, str(exc))
     try:
-        graph = ctx.pipeline.build_graph()
+        if dot_file_path is not None:
+            graph = ctx.pipeline.build_graph(dot_file_path=dot_file_path)
+        else:
+            graph = ctx.pipeline.build_graph()
         from Poule.analysis.impact import impact_analysis
         result = impact_analysis(graph, name, max_depth or None, parsed_filters)
+    except Exception as exc:
+        if hasattr(exc, "code") and hasattr(exc, "message"):
+            return format_error(exc.code, exc.message)
+        raise
+    # Sparse-result hint: when graph is from storage and result has only root
+    if dot_file_path is None and len(result.impacted_nodes) == 1:
+        serialized = _serialize(result)
+        serialized["hint"] = _SPARSE_RESULT_HINT
+        return _format_success(serialized)
+    return _format_success(result)
+
+
+async def handle_detect_cycles(
+    ctx: Any, *, dot_file_path: str | None = None,
+) -> dict:
+    """Handle detect_cycles tool call."""
+    if dot_file_path is None:
+        index_err = _check_index(ctx)
+        if index_err is not None:
+            return index_err
+    try:
+        if dot_file_path is not None:
+            graph = ctx.pipeline.build_graph(dot_file_path=dot_file_path)
+        else:
+            graph = ctx.pipeline.build_graph()
+        from Poule.analysis.cycles import detect_cycles
+        result = detect_cycles(graph)
     except Exception as exc:
         if hasattr(exc, "code") and hasattr(exc, "message"):
             return format_error(exc.code, exc.message)
@@ -391,25 +436,25 @@ async def handle_impact_analysis(
     return _format_success(result)
 
 
-async def handle_detect_cycles(ctx: Any) -> dict:
-    """Handle detect_cycles tool call."""
-    index_err = _check_index(ctx)
-    if index_err is not None:
-        return index_err
-    graph = ctx.pipeline.build_graph()
-    from Poule.analysis.cycles import detect_cycles
-    result = detect_cycles(graph)
-    return _format_success(result)
-
-
-async def handle_module_summary(ctx: Any) -> dict:
+async def handle_module_summary(
+    ctx: Any, *, dot_file_path: str | None = None,
+) -> dict:
     """Handle module_summary tool call."""
-    index_err = _check_index(ctx)
-    if index_err is not None:
-        return index_err
-    graph = ctx.pipeline.build_graph()
-    from Poule.analysis.modules import module_summary
-    result = module_summary(graph)
+    if dot_file_path is None:
+        index_err = _check_index(ctx)
+        if index_err is not None:
+            return index_err
+    try:
+        if dot_file_path is not None:
+            graph = ctx.pipeline.build_graph(dot_file_path=dot_file_path)
+        else:
+            graph = ctx.pipeline.build_graph()
+        from Poule.analysis.modules import module_summary
+        result = module_summary(graph)
+    except Exception as exc:
+        if hasattr(exc, "code") and hasattr(exc, "message"):
+            return format_error(exc.code, exc.message)
+        raise
     return _format_success(result)
 
 

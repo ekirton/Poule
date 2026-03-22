@@ -47,6 +47,22 @@ class TypeclassError(Exception):
         super().__init__(f"{code}: {message}" if message else code)
 
 
+def _no_typeclass_goal_message(goal_text: str) -> str:
+    """Build an informative NO_TYPECLASS_GOAL error message (S7.2).
+
+    When goal_text is available, includes it so the user can see the goal and
+    understand that typeclass methods in sub-terms were resolved during elaboration.
+    """
+    if goal_text:
+        return (
+            f"The current goal `{goal_text}` is not a typeclass constraint. "
+            "trace_resolution requires a goal whose head term is a typeclass "
+            "(e.g., Decidable P, Eq nat). If the goal contains typeclass methods, "
+            "their instances were resolved during elaboration."
+        )
+    return "The current goal does not involve typeclass resolution."
+
+
 # ---------------------------------------------------------------------------
 # 4.1 Instance Listing
 # ---------------------------------------------------------------------------
@@ -211,10 +227,22 @@ async def trace_resolution(
 ) -> ResolutionTrace:
     """Trace typeclass resolution for the current goal.
 
-    REQUIRES: session_id references an active proof session at a typeclass goal.
+    REQUIRES: session_id references an active proof session at a typeclass
+              constraint (head term is a typeclass).
     ENSURES: Returns a ResolutionTrace.
     MAINTAINS: Debug mode is never left enabled. Proof state is unchanged.
     """
+    # Capture the current goal text for diagnostic messages (S7.2).
+    goal_text = ""
+    try:
+        proof_state = await session_manager.observe_proof_state(session_id)
+        if proof_state.goals and proof_state.focused_goal_index is not None:
+            goal_text = proof_state.goals[proof_state.focused_goal_index].type
+        elif proof_state.goals:
+            goal_text = proof_state.goals[0].type
+    except Exception:
+        pass  # Best-effort; goal_text remains "" if observation fails
+
     # Enable debug output
     await session_manager.send_command(
         session_id, "Set Typeclasses Debug Verbosity 2.", prefer_coqtop=True,
@@ -270,7 +298,7 @@ async def trace_resolution(
     if not debug_output or not debug_output.strip():
         raise TypeclassError(
             "NO_TYPECLASS_GOAL",
-            "The current goal does not involve typeclass resolution.",
+            _no_typeclass_goal_message(goal_text),
         )
 
     # Parse the debug output
@@ -283,7 +311,7 @@ async def trace_resolution(
         if "looking for" not in debug_output:
             raise TypeclassError(
                 "NO_TYPECLASS_GOAL",
-                "The current goal does not involve typeclass resolution.",
+                _no_typeclass_goal_message(goal_text),
             )
         raise TypeclassError(
             "PARSE_ERROR",
@@ -301,12 +329,30 @@ async def trace_resolution(
         if not has_resolution_lines:
             raise TypeclassError(
                 "NO_TYPECLASS_GOAL",
-                "The current goal does not involve typeclass resolution.",
+                _no_typeclass_goal_message(goal_text),
             )
         raise TypeclassError(
             "PARSE_ERROR",
             "Failed to parse typeclass debug output. Raw output is included in the response.",
             raw_output=debug_output,
+        )
+
+    # If parser created goal nodes but no instances were actually attempted,
+    # this is a non-typeclass goal that the engine examined but found no
+    # candidates for (e.g., goal head is `=` with typeclass projections
+    # already resolved during elaboration).
+    if "trying" not in debug_output:
+        # Use goal text from parsed nodes as fallback when observe_proof_state
+        # didn't capture it.
+        effective_goal = goal_text
+        if not effective_goal:
+            for node in root_nodes:
+                if node.goal:
+                    effective_goal = node.goal
+                    break
+        raise TypeclassError(
+            "NO_TYPECLASS_GOAL",
+            _no_typeclass_goal_message(effective_goal),
         )
 
     # Determine success and failure mode

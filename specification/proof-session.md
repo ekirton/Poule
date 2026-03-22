@@ -138,12 +138,12 @@ MAINTAINS: Every operation that targets a session by ID shall call `lookup_sessi
 #### extract_trace(session_id)
 
 - REQUIRES: Session exists and is active. The session has an original script (`total_steps` is not null).
-- ENSURES: If step_history length < `total_steps + 1`, replays the original script from the last cached step to the end, caching all states. Assembles and returns a ProofTrace containing all `total_steps + 1` TraceSteps (step 0 with `tactic = null`, steps 1..N with the original tactic strings).
+- ENSURES: If step_history length < `total_steps + 1`, replays the original script from the last cached step to the end, caching all states and recording wall-clock time (monotonic) for each tactic execution. Assembles and returns a ProofTrace containing all `total_steps + 1` TraceSteps (step 0 with `tactic = null` and `duration_ms = null`, steps 1..N with the original tactic strings and `duration_ms` set to the wall-clock milliseconds measured during replay, or `null` if the step was already cached before this call).
 - On session with no original script: returns `STEP_OUT_OF_RANGE` error (no complete proof to trace).
 
 > **Given** a session with total_steps = 3 and step_history cached through step 1
 > **When** `extract_trace(session_id)` is called
-> **Then** the backend replays tactics 2 and 3, and the returned ProofTrace contains 4 steps (step 0 with null tactic, steps 1-3 with tactic strings)
+> **Then** the backend replays tactics 2 and 3, and the returned ProofTrace contains 4 steps: step 0 with null tactic and null duration_ms; step 1 with tactic string and null duration_ms (already cached); steps 2-3 with tactic strings and non-negative float duration_ms values
 
 > **Given** a session opened on an incomplete proof (no original script)
 > **When** `extract_trace(session_id)` is called
@@ -242,7 +242,7 @@ The session's CoqBackend (coq-lsp) communicates via the LSP protocol, which does
 The session manager shall lazily spawn a coqtop subprocess on the first `submit_command` call for a given session. The subprocess:
 
 1. Is spawned with stdout and stderr merged into a single stream.
-2. Loads the session's file imports (the `Require`/`Import` commands from the `.v` file's preamble) so that the query context matches the session's environment.
+2. Loads the session's file context — all vernacular commands from the `.v` file that precede the proof target (imports, definitions, notations, section variables, prior lemmas with their proofs, etc.) — so that the query context matches the session's environment. If the session has no proof target (i.e., `proof_name` is empty), loads only the file's `Require`/`Import` commands.
 3. Persists for the lifetime of the session — subsequent `submit_command` calls reuse the same subprocess.
 4. Is terminated when the session is closed, times out, or the CoqBackend crashes.
 
@@ -257,7 +257,11 @@ The coqtop subprocess is independent of the CoqBackend process. Commands execute
 
 > **Given** a session that has never called `submit_command`
 > **When** `submit_command(session_id, "Check nat.")` is called for the first time
-> **Then** a coqtop subprocess is spawned, the file's imports are loaded, the command is executed, and the output is returned
+> **Then** a coqtop subprocess is spawned, the file's context (all vernacular commands preceding the proof target) is loaded, the command is executed, and the output is returned
+
+> **Given** a session on `add_comm` in a file containing `Lemma my_lemma : ... Proof. ... Qed.` before `add_comm`
+> **When** `submit_command(session_id, "Check my_lemma.")` is called
+> **Then** the output contains the type of `my_lemma`, because the file content preceding `add_comm` was loaded into the coqtop subprocess
 
 > **Given** a session with an active coqtop subprocess
 > **When** `submit_command(session_id, "Print nat.")` is called

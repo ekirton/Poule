@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -66,6 +67,40 @@ def _extract_imports(file_path: str) -> str:
         return "\n".join(lines)
     # Use finditer for full match strings
     return "\n".join(m.group(0) for m in _IMPORT_RE.finditer(text))
+
+
+# Matches lines that start a named proof obligation.
+# Use [ \t]* (not \s*) to avoid crossing line boundaries with re.MULTILINE.
+_PROOF_STARTER_RE = re.compile(
+    r"^[ \t]*(?:Lemma|Theorem|Proposition|Corollary|Example|Fact|Remark|"
+    r"Definition|Fixpoint|CoFixpoint|Program[ \t]+\w+)[ \t]+",
+    re.MULTILINE,
+)
+
+
+def _extract_file_prelude(file_path: str, proof_name: str) -> str:
+    """Extract all vernacular from a .v file up to (but not including) the proof target.
+
+    If *proof_name* is empty, falls back to extracting only imports.
+    If *proof_name* is not found in the file, returns the entire file content
+    (safe fallback — more context is better than less).
+    """
+    if not proof_name:
+        return _extract_imports(file_path)
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except (OSError, FileNotFoundError):
+        return ""
+    # Find the line that declares the proof target.
+    for m in _PROOF_STARTER_RE.finditer(text):
+        line = text[m.start() : text.index("\n", m.start()) if "\n" in text[m.start():] else len(text)]
+        # Check if the proof name appears as the next token after the keyword.
+        tokens = line.split()
+        if len(tokens) >= 2 and tokens[1].rstrip(":") == proof_name:
+            return text[: m.start()].rstrip()
+    # proof_name not found — return everything
+    return text.rstrip()
 
 
 def _normalize_session_id(session_id):
@@ -257,7 +292,27 @@ class SessionManager:
                     STEP_OUT_OF_RANGE,
                     "No original script to trace",
                 )
-            await self._materialize_through(ss, ss.total_steps)
+            # Record which steps need replay so we can time them.
+            first_replayed = len(ss.step_history)
+            timing: dict[int, float] = {}
+            while len(ss.step_history) <= ss.total_steps:
+                next_idx = len(ss.step_history)
+                if next_idx > len(ss.original_script):
+                    break
+                tactic = ss.original_script[next_idx - 1]
+                t0 = time.monotonic()
+                new_state = await ss.coq_backend.execute_tactic(tactic)
+                elapsed_ms = (time.monotonic() - t0) * 1000.0
+                new_state = ProofState(
+                    schema_version=new_state.schema_version,
+                    session_id=ss.session_id,
+                    step_index=next_idx,
+                    is_complete=new_state.is_complete,
+                    focused_goal_index=new_state.focused_goal_index,
+                    goals=new_state.goals,
+                )
+                ss.step_history.append(new_state)
+                timing[next_idx] = elapsed_ms
             steps = []
             for i in range(ss.total_steps + 1):
                 tactic = None if i == 0 else ss.original_script[i - 1]
@@ -265,6 +320,7 @@ class SessionManager:
                     step_index=i,
                     tactic=tactic,
                     state=ss.step_history[i],
+                    duration_ms=timing.get(i),
                 ))
             return ProofTrace(
                 schema_version=1,
@@ -600,8 +656,8 @@ class SessionManager:
         For proof sessions backed by coq-lsp, coq-lsp cannot capture
         the output of Print/Check/About commands (it only exposes
         diagnostics, not query results).  We spawn a coqtop subprocess
-        on first use, loading the file's imports so queries execute in
-        the correct context.
+        on first use, loading the file's vernacular content up to the
+        proof target so queries can see same-file definitions.
         """
         if ss.coqtop_proc is not None:
             return ss.coqtop_proc
@@ -619,9 +675,9 @@ class SessionManager:
         await proc.stdin.drain()  # type: ignore[union-attr]
         await self._read_until_sentinel(proc)
 
-        # Load the file's imports so queries have the right context.
+        # Load the file's context so queries can see same-file definitions.
         if ss.file_path:
-            prelude = _extract_imports(ss.file_path)
+            prelude = _extract_file_prelude(ss.file_path, ss.proof_name)
             if prelude:
                 proc.stdin.write((prelude + "\n").encode("utf-8"))  # type: ignore[union-attr]
                 proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]

@@ -24,31 +24,22 @@ class TacticDocError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Parsing
+# Parsing — Rocq 9.x Print HintDb output format
 # ---------------------------------------------------------------------------
 
-# Resolve <lemma_name> : <type> (cost <n>)
+# Resolve-style: simple apply|exact|simple eapply <name> [; modifier] (cost <n>, ...)
 _RE_RESOLVE = re.compile(
-    r'^Resolve\s+([\w.]+)\s*:\s*\S+\s*\(cost\s+(\d+)\)',
-    re.IGNORECASE,
+    r'(?:simple apply|exact|simple eapply)\s+([\w.]+)(?:\s*;[^(]*)?\s*\(cost\s+(\d+)',
 )
 
-# Unfold <constant_name> (cost <n>)
+# Unfold: unfold <name> (cost <n>, ...)
 _RE_UNFOLD = re.compile(
-    r'^Unfold\s+([\w.]+)\s*\(cost\s+(\d+)\)',
-    re.IGNORECASE,
+    r'unfold\s+([\w.]+)\s*\(cost\s+(\d+)',
 )
 
-# Constructors <inductive_name> (cost <n>)
-_RE_CONSTRUCTORS = re.compile(
-    r'^Constructors\s+([\w.]+)\s*\(cost\s+(\d+)\)',
-    re.IGNORECASE,
-)
-
-# Extern <n> (<pattern>) => <tactic>
+# Extern: (*external*) <tactic> (cost <n>, ...)
 _RE_EXTERN = re.compile(
-    r'^Extern\s+(\d+)\s+(.+?)\s+=>\s+(.+)$',
-    re.IGNORECASE,
+    r'\(\*external\*\)\s+(.+?)\s*\(cost\s+(\d+)',
 )
 
 
@@ -58,44 +49,28 @@ def _parse_hint_line(line: str) -> Optional[HintEntry]:
     if not line:
         return None
 
-    m = _RE_RESOLVE.match(line)
+    m = _RE_RESOLVE.search(line)
     if m:
         return HintEntry(
             hint_type="resolve",
             name=m.group(1),
-            pattern=None,
-            tactic=None,
             cost=int(m.group(2)),
         )
 
-    m = _RE_UNFOLD.match(line)
+    m = _RE_UNFOLD.search(line)
     if m:
         return HintEntry(
             hint_type="unfold",
             name=m.group(1),
-            pattern=None,
-            tactic=None,
             cost=int(m.group(2)),
         )
 
-    m = _RE_CONSTRUCTORS.match(line)
-    if m:
-        return HintEntry(
-            hint_type="constructors",
-            name=m.group(1),
-            pattern=None,
-            tactic=None,
-            cost=int(m.group(2)),
-        )
-
-    m = _RE_EXTERN.match(line)
+    m = _RE_EXTERN.search(line)
     if m:
         return HintEntry(
             hint_type="extern",
-            name=None,
-            pattern=m.group(2).strip(),
-            tactic=m.group(3).strip(),
-            cost=int(m.group(1)),
+            tactic=m.group(1).strip(),
+            cost=int(m.group(2)),
         )
 
     return None
@@ -103,7 +78,7 @@ def _parse_hint_line(line: str) -> Optional[HintEntry]:
 
 def _parse_hintdb_output(db_name: str, output: str) -> HintDatabase:
     """Parse the output of Print HintDb into a HintDatabase record."""
-    if re.search(r"Error:.*not found", output, re.IGNORECASE):
+    if re.search(r"No such Hint database:|Error:.*not found", output, re.IGNORECASE):
         raise TacticDocError(
             "NOT_FOUND",
             f'Hint database "{db_name}" not found.',

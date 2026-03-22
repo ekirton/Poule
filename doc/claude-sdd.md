@@ -82,6 +82,14 @@ To skip tests entirely (e.g., for a trivial fix you've already verified), use th
 
 When Claude modifies specifications (Stage 4), it records which spec files changed to `.claude/sdd-blast-radius`. This ensures the test-writing stage knows which tests to update, even if context compaction occurs between stages. The file is cleaned up at completion.
 
+## Single-Agent Limitation
+
+The SDD enforcement system is **single-agent, single-session only**. Do not run multiple Claude Code sessions against the same project directory simultaneously while any session is using SDD commands (`/sdd`, `/diagnose`, or any phase command).
+
+Phase state (`.claude/sdd-layer`) and blast radius tracking (`.claude/sdd-blast-radius`) are stored in shared files with no locking or synchronization. Concurrent sessions will overwrite each other's phase state, causing hooks to enforce the wrong layer and blast radius to point at the wrong spec files.
+
+**Safe concurrent use:** Multiple sessions can coexist if all are in `/free` mode (the default). The restriction applies only when at least one session activates a phase.
+
 ## Autonomy Rules
 
 | Layer | Autonomy | When human approval is needed |

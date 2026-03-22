@@ -573,6 +573,68 @@ class TestExtractTrace:
         assert trace.total_steps == 3
         assert len(trace.steps) == 4
 
+    async def test_trace_step0_has_null_duration(self):
+        """Spec §4.2: step 0 (initial state) has duration_ms = null."""
+        SessionManager = _import_manager()
+        states = [_make_stepped_state(i) for i in range(1, 4)]
+        states[-1] = _make_proof_state(step_index=3, is_complete=True)
+        backend = _make_mock_backend(
+            tactic_results=states,
+            original_script=["intro n.", "simpl.", "reflexivity."],
+        )
+        mgr = SessionManager(backend_factory=_make_backend_factory(backend))
+
+        sid, _ = await mgr.create_session("/file.v", "proof1")
+        trace = await mgr.extract_trace(sid)
+
+        assert trace.steps[0].duration_ms is None
+
+    async def test_trace_replayed_steps_have_duration(self):
+        """Spec §4.2: replayed steps have non-negative float duration_ms."""
+        SessionManager = _import_manager()
+        states = [_make_stepped_state(i) for i in range(1, 4)]
+        states[-1] = _make_proof_state(step_index=3, is_complete=True)
+        backend = _make_mock_backend(
+            tactic_results=states,
+            original_script=["intro n.", "simpl.", "reflexivity."],
+        )
+        mgr = SessionManager(backend_factory=_make_backend_factory(backend))
+
+        sid, _ = await mgr.create_session("/file.v", "proof1")
+        trace = await mgr.extract_trace(sid)
+
+        for step in trace.steps[1:]:
+            assert step.duration_ms is not None
+            assert isinstance(step.duration_ms, float)
+            assert step.duration_ms >= 0.0
+
+    async def test_trace_cached_steps_have_null_duration(self):
+        """Spec §4.2: already-cached steps have duration_ms = null."""
+        SessionManager = _import_manager()
+        state1 = _make_stepped_state(1)
+        state2 = _make_stepped_state(2)
+        state3 = _make_proof_state(step_index=3, is_complete=True)
+        backend = _make_mock_backend(
+            tactic_results=[state1, state2, state3],
+            original_script=["intro n.", "simpl.", "reflexivity."],
+        )
+        mgr = SessionManager(backend_factory=_make_backend_factory(backend))
+
+        sid, _ = await mgr.create_session("/file.v", "proof1")
+        # Step forward once — this caches step 1 without timing
+        await mgr.submit_tactic(sid, "intro n.")
+
+        trace = await mgr.extract_trace(sid)
+        # Step 0: initial state → null
+        assert trace.steps[0].duration_ms is None
+        # Step 1: was cached by submit_tactic → null
+        assert trace.steps[1].duration_ms is None
+        # Steps 2-3: replayed during extract_trace → non-negative float
+        for step in trace.steps[2:]:
+            assert step.duration_ms is not None
+            assert isinstance(step.duration_ms, float)
+            assert step.duration_ms >= 0.0
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # §4.3 Tactic Dispatch — submit_tactic
@@ -1891,13 +1953,13 @@ class TestCoqtopSubprocessLifecycle:
         state = await mgr.observe_state(sid)
         assert state.step_index == 1
 
-    async def test_coqtop_loads_file_imports(self):
-        """Spec §4.4.1 step 2: The subprocess loads the session's file imports
-        (the Require/Import commands from the .v file's preamble).
+    async def test_coqtop_loads_file_context(self):
+        """Spec §4.4.1 step 2: The subprocess loads the session's file context —
+        all vernacular commands preceding the proof target.
 
-        Given a session opened on a .v file with imports,
+        Given a session opened on a .v file with a proof_name,
         When coqtop is lazily spawned,
-        Then _ensure_coqtop loads the file's imports into coqtop."""
+        Then _ensure_coqtop has access to file_path and proof_name for context extraction."""
         SessionManager = _import_manager()
         backend = _make_mock_backend()
         mgr = SessionManager(backend_factory=_make_backend_factory(backend))
@@ -1905,13 +1967,13 @@ class TestCoqtopSubprocessLifecycle:
         sid, _ = await mgr.create_session("/file.v", "proof1")
 
         ensure_called = False
-        original_ensure = mgr._ensure_coqtop
 
         async def tracking_ensure(ss):
             nonlocal ensure_called
             ensure_called = True
-            # Verify the file_path is available for import extraction
+            # Verify both file_path and proof_name are available
             assert ss.file_path == "/file.v"
+            assert ss.proof_name == "proof1"
             # Set up a fake proc so we can proceed
             fake_proc = MagicMock()
             fake_proc.stdin = MagicMock()

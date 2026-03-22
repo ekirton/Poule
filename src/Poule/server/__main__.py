@@ -629,6 +629,10 @@ TOOL_DEFINITIONS = [
                     "type": "array",
                     "items": {"type": "string"},
                 },
+                "dot_file_path": {
+                    "type": "string",
+                    "description": "Path to a coq-dpdgraph DOT file. When provided, builds the graph from this file instead of the index database.",
+                },
             },
             "required": ["name"],
         },
@@ -657,6 +661,10 @@ TOOL_DEFINITIONS = [
                     "items": {"type": "string"},
                     "description": "Scope filters: 'same_project', 'module_prefix:<prefix>', 'exclude_prefix:<prefix>'",
                 },
+                "dot_file_path": {
+                    "type": "string",
+                    "description": "Path to a coq-dpdgraph DOT file. When provided, builds the graph from this file instead of the index database.",
+                },
             },
             "required": ["name"],
         },
@@ -664,12 +672,28 @@ TOOL_DEFINITIONS = [
     Tool(
         name="detect_cycles",
         description="Detect dependency cycles in the indexed Coq project.",
-        inputSchema={"type": "object", "properties": {}},
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "dot_file_path": {
+                    "type": "string",
+                    "description": "Path to a coq-dpdgraph DOT file. When provided, builds the graph from this file instead of the index database.",
+                },
+            },
+        },
     ),
     Tool(
         name="module_summary",
         description="Generate a dependency summary grouped by module.",
-        inputSchema={"type": "object", "properties": {}},
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "dot_file_path": {
+                    "type": "string",
+                    "description": "Path to a coq-dpdgraph DOT file. When provided, builds the graph from this file instead of the index database.",
+                },
+            },
+        },
     ),
     Tool(
         name="generate_documentation",
@@ -925,8 +949,14 @@ class _PipelineFacade:
         rows = reader.list_modules(prefix)
         return [{"name": r["module"], "decl_count": r["count"]} for r in rows]
 
-    def build_graph(self):
+    def build_graph(self, *, dot_file_path: str | None = None):
         from Poule.analysis.graph import build_graph
+        if dot_file_path is not None:
+            # DOT-sourced graphs are cached separately by file path
+            dot_cache_key = f"_dot_cache_{dot_file_path}"
+            if not hasattr(self, dot_cache_key):
+                setattr(self, dot_cache_key, build_graph(dot_file_path=dot_file_path))
+            return getattr(self, dot_cache_key)
         if not hasattr(self, "_graph_cache"):
             self._graph_cache = build_graph(index_reader=self._ctx.reader)
         return self._graph_cache
@@ -1176,6 +1206,7 @@ def _dispatch_tool(ctx: _ServerContext, name: str, arguments: dict):
             name=arguments.get("name", ""),
             max_depth=arguments.get("max_depth"),
             scope_filter=arguments.get("scope_filter"),
+            dot_file_path=arguments.get("dot_file_path"),
         )
     elif name == "impact_analysis":
         return handle_impact_analysis(
@@ -1183,11 +1214,18 @@ def _dispatch_tool(ctx: _ServerContext, name: str, arguments: dict):
             name=arguments.get("name", ""),
             max_depth=arguments.get("max_depth"),
             scope_filter=arguments.get("scope_filter"),
+            dot_file_path=arguments.get("dot_file_path"),
         )
     elif name == "detect_cycles":
-        return handle_detect_cycles(ctx)
+        return handle_detect_cycles(
+            ctx,
+            dot_file_path=arguments.get("dot_file_path"),
+        )
     elif name == "module_summary":
-        return handle_module_summary(ctx)
+        return handle_module_summary(
+            ctx,
+            dot_file_path=arguments.get("dot_file_path"),
+        )
     elif name == "generate_documentation":
         return handle_generate_documentation(
             ctx,
