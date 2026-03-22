@@ -259,6 +259,22 @@ if [[ "$EXTRACTED" -gt 0 ]]; then
     done
 fi
 
+# --- Post-extraction error analysis ---
+
+JSONL_FILES=()
+for lib in "${LIB_ARRAY[@]}"; do
+    f="${OUTPUT_DIR}/${lib}.jsonl"
+    if [[ -f "$f" ]]; then
+        JSONL_FILES+=("$f")
+    fi
+done
+
+if [[ ${#JSONL_FILES[@]} -gt 0 ]]; then
+    echo ""
+    echo "Running error analysis..."
+    poule analyze-errors --timeout "$TIMEOUT" "${JSONL_FILES[@]}" || true
+fi
+
 if [[ "$FAILED" -eq 1 ]]; then
     echo "" >&2
     echo "Some libraries failed to extract." >&2

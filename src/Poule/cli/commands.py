@@ -31,7 +31,7 @@ from Poule.storage.errors import IndexNotFoundError, IndexVersionError
 from Poule.cli.download import download_index
 from Poule.extraction.campaign import run_campaign
 from Poule.extraction.dependency_graph import extract_dependency_graph
-from Poule.extraction.reporting import generate_quality_report
+from Poule.extraction.reporting import analyze_errors, generate_quality_report
 from Poule.neural.training.errors import (
     CheckpointNotFoundError,
     InsufficientDataError,
@@ -592,6 +592,138 @@ def _format_quality_report_human(report) -> str:
                 f"  {p.project_id}  ({p.theorem_count} theorems, "
                 f"{p.premise_coverage * 100:.1f}% premise coverage)"
             )
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# analyze-errors
+# ---------------------------------------------------------------------------
+
+
+@cli.command("analyze-errors")
+@click.argument("files", nargs=-1, required=True)
+@click.option("--timeout", default=60, type=int, help="Timeout threshold in seconds for near-timeout detection.")
+@click.option("--json", "json_mode", is_flag=True, default=False, help="Output as JSON.")
+@click.option("--top-files", default=15, type=int, help="Number of top error-producing files to display.")
+@click.option("--output", default=None, type=click.Path(), help="Write report to file.")
+def cmd_analyze_errors(
+    files: tuple[str, ...],
+    timeout: int,
+    json_mode: bool,
+    top_files: int,
+    output: str | None,
+):
+    """Analyze extraction errors from JSONL output files."""
+    paths = _validate_input_files(files)
+
+    try:
+        report = analyze_errors(paths, timeout_threshold=timeout)
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+
+    if json_mode:
+        report_text = _format_error_analysis_json(report)
+    else:
+        report_text = _format_error_analysis_human(report, top_files=top_files)
+
+    if output:
+        Path(output).write_text(report_text + "\n", encoding="utf-8")
+    else:
+        click.echo(report_text)
+
+
+def _format_error_analysis_json(report) -> str:
+    """Format ErrorAnalysisReport as JSON."""
+    obj = {
+        "files_analyzed": report.files_analyzed,
+        "total_theorems": report.total_theorems,
+        "total_extracted": report.total_extracted,
+        "total_failed": report.total_failed,
+        "by_error_kind": report.by_error_kind,
+        "by_file": [
+            {
+                "source_file": f.source_file,
+                "error_count": f.error_count,
+                "by_kind": f.by_kind,
+            }
+            for f in report.by_file
+        ],
+        "near_timeout": [
+            {
+                "theorem_name": e.theorem_name,
+                "source_file": e.source_file,
+                "total_duration_s": e.total_duration_s,
+            }
+            for e in report.near_timeout
+        ],
+        "slowest_successful": [
+            {
+                "theorem_name": e.theorem_name,
+                "source_file": e.source_file,
+                "total_duration_s": e.total_duration_s,
+            }
+            for e in report.slowest_successful
+        ],
+        "timeout_threshold": report.timeout_threshold,
+    }
+    return json.dumps(obj, indent=2)
+
+
+def _format_error_analysis_human(report, *, top_files: int = 15) -> str:
+    """Format ErrorAnalysisReport as human-readable text."""
+    lines = [
+        "Extraction Error Analysis",
+        "=========================",
+        "",
+        f"Files analyzed: {report.files_analyzed}",
+        f"Total theorems: {report.total_theorems:,}",
+    ]
+
+    if report.total_theorems > 0:
+        ext_pct = report.total_extracted / report.total_theorems * 100
+        fail_pct = report.total_failed / report.total_theorems * 100
+        lines.append(f"  Extracted: {report.total_extracted:>8,} ({ext_pct:.1f}%)")
+        lines.append(f"  Failed:    {report.total_failed:>8,} ({fail_pct:.1f}%)")
+    else:
+        lines.append(f"  Extracted: {report.total_extracted:>8,}")
+        lines.append(f"  Failed:    {report.total_failed:>8,}")
+
+    if report.by_error_kind:
+        lines.append("")
+        lines.append("By error_kind:")
+        for kind, count in sorted(
+            report.by_error_kind.items(), key=lambda kv: -kv[1]
+        ):
+            pct = count / report.total_failed * 100 if report.total_failed else 0
+            lines.append(f"  {kind:<20s} {count:>5}  ({pct:5.1f}%)")
+
+    if report.by_file:
+        lines.append("")
+        lines.append(f"By module (top {top_files} by error count):")
+        for f in report.by_file[:top_files]:
+            kind_detail = ", ".join(
+                f"{count} {kind}"
+                for kind, count in sorted(f.by_kind.items(), key=lambda kv: -kv[1])
+            )
+            lines.append(f"  {f.source_file:<40s} {f.error_count:>5}  ({kind_detail})")
+
+    if report.slowest_successful:
+        lines.append("")
+        lines.append("Slowest successful extractions (top 20):")
+        for e in report.slowest_successful:
+            lines.append(
+                f"  {e.source_file} :: {e.theorem_name}  {e.total_duration_s:.1f}s"
+            )
+
+    if report.near_timeout:
+        lines.append("")
+        lines.append(f"Timeout analysis (threshold: {report.timeout_threshold}s):")
+        lines.append(
+            f"  Proofs within 10% of timeout (>{report.timeout_threshold * 0.9:.0f}s): "
+            f"{len(report.near_timeout)}"
+        )
+
     return "\n".join(lines)
 
 

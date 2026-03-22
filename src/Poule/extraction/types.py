@@ -237,6 +237,45 @@ class QualityReport:
 
 
 # ---------------------------------------------------------------------------
+# Error analysis report types
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FileErrorSummary:
+    source_file: str
+    error_count: int
+    by_kind: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class NearTimeoutEntry:
+    theorem_name: str
+    source_file: str
+    total_duration_s: float
+
+
+@dataclass(frozen=True)
+class TimingEntry:
+    theorem_name: str
+    source_file: str
+    total_duration_s: float
+
+
+@dataclass(frozen=True)
+class ErrorAnalysisReport:
+    files_analyzed: int
+    total_theorems: int
+    total_extracted: int
+    total_failed: int
+    by_error_kind: dict[str, int]
+    by_file: list[FileErrorSummary]
+    near_timeout: list[NearTimeoutEntry]
+    slowest_successful: list[TimingEntry]
+    timeout_threshold: int
+
+
+# ---------------------------------------------------------------------------
 # Scope filter
 # ---------------------------------------------------------------------------
 
