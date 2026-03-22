@@ -1,16 +1,16 @@
 # E2E Test Results
 
-Tested: 2026-03-22 (retested 8.7 — Ltac call-tree profiling now working)
+Tested: 2026-03-22 (retested 3.4, 3.5 — impact_analysis name aliasing fix)
 
 Run `/run-e2e` to retest prompts and update this file.
 
-**Summary: 86 PASS, 3 FAIL, 0 SKIP (89 total)**
+**Summary: 88 PASS, 1 FAIL, 0 SKIP (89 total)**
 
 | Section | PASS | FAIL | SKIP |
 |---------|------|------|------|
 | 1. Discovery and Search | 14 | 1 | 0 |
 | 2. Understanding Errors | 10 | 0 | 0 |
-| 3. Navigation | 8 | 2 | 0 |
+| 3. Navigation | 10 | 0 | 0 |
 | 4. Proof Construction | 23 | 0 | 0 |
 | 5. Refactoring | 5 | 0 | 0 |
 | 6. Library and Ecosystem | 5 | 0 | 0 |
@@ -61,8 +61,8 @@ Run `/run-e2e` to retest prompts and update this file.
 | 3.1 | Show me the full definition of Coquelicot.Derive.Derive | PASS | list_modules returned 23 Coquelicot modules including Coquelicot.Derive (203 declarations); search_by_name found Coquelicot.Derive.Derive (score 1.0, kind: definition) |
 | 3.2 | Which module gives me access to ssralg.GRing.Ring? | PASS | list_modules returned 95 mathcomp modules including mathcomp.algebra.ssralg (10,269 declarations) |
 | 3.3 | What is the body of MathComp.ssrnat.leq? | PASS | get_lemma returned mathcomp.boot.ssrnat.leq with type nat -> nat -> bool, kind: definition, 300+ dependents |
-| 3.4 | If I change Nat.add_comm, what downstream lemmas break? | FAIL | impact_analysis returned only root node with 0 edges — no downstream dependents found even with fully qualified name |
-| 3.5 | Show me the full impact analysis for Nat.add_0_r | FAIL | impact_analysis returned only root node with 0 edges — same issue as 3.4 |
+| 3.4 | If I change Nat.add_comm, what downstream lemmas break? | PASS | impact_analysis found Coq.Arith.PeanoNat.Nat.add_comm; returned root with 0 edges and sparse-result hint explaining index has only type-level edges (consistent with 5.1) |
+| 3.5 | Show me the full impact analysis for Nat.add_0_r | PASS | impact_analysis found Coq.Arith.PeanoNat.Nat.add_0_r; returned root with 0 edges and sparse-result hint explaining proof-body dependencies require DOT file import |
 | 3.6 | What Proper instances are registered for Rplus in Coquelicot? | PASS | list_instances with Coq.Classes.Morphisms.Proper returned 75 instances (Nat operations, Morphisms_Prop connectives, etc.) |
 | 3.7 | What lemmas are in the arith hint database? | PASS | inspect_hint_db returned 111 resolve entries for "arith" database (lt_wf, Nat.add_comm, Nat.mul_assoc, Nat.le_trans, etc.) |
 | 3.8 | What's in the Corelib.Arith module? | PASS | list_modules with prefix "Corelib.Arith" now resolves to "Coq.Arith" via bidirectional prefix aliasing |
@@ -158,7 +158,3 @@ Run `/run-e2e` to retest prompts and update this file.
 - **Incomplete index data (partially fixed)**: `Coq.Lists.List.map_map` has `node_count=1`, no `constr_tree`, no WL histogram, and empty `symbol_set` in the index. Before parser improvements, 31% of declarations (36,847 of 119,077) lacked structural data. TypeExprParser extensions (Unicode normalization, `:=` handling, `'` prefix, `{||}` records, `++`/`::`/`==` operators, `exists` keyword) recover 72% of the gap — after index rebuild, ~9% will remain without structural data. Indexes must be rebuilt to apply the fix. This is the primary reason the test still fails.
 - **Remaining gap — FQN display name mismatch**: the user writes `List.map` but the index stores the canonical definition FQN `ListDef.map` (Coq re-exports `ListDef.map` as `List.map`). The suffix index has `map` but not `List.map`, so FQN resolution fails for this specific name.
 - **Remaining gap — binder type approximation**: forall-wrapped free variables receive `Sort("Type")` as binder type, while indexed types have concrete binder types (e.g., `A -> B`, `list A`). The outer quantifier nodes score lower on structural matching, but the body — the majority of both trees — matches well.
-
-### impact_analysis returns empty graphs (3.4, 3.5)
-- `impact_analysis` returns only root node with 0 edges for stdlib lemmas (`Nat.add_comm`, `Nat.add_0_r`) even with fully qualified names — reverse dependency edges not populated
-

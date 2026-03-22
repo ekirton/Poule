@@ -139,6 +139,14 @@ Which module gives me access to ssralg.GRing.Ring?
 What is the body of MathComp.ssrnat.leq?
 ```
 
+**Reverse dependency — who uses a lemma:**
+```
+If I change Nat.add_comm, what downstream lemmas break?
+```
+```
+Show me the full impact analysis for Nat.add_0_r
+```
+
 **Browse instances for a typeclass:**
 ```
 What Proper instances are registered for Rplus in Coquelicot?
@@ -150,6 +158,9 @@ What lemmas are in the arith hint database?
 ```
 
 **Browse module contents:**
+```
+What's in the Corelib.Arith module?
+```
 ```
 Give me an overview of the MathComp ssreflect sequence lemmas
 ```

@@ -18,6 +18,7 @@ from Poule.server.errors import (
 )
 from Poule.server.validation import validate_string
 from Poule.session.errors import SessionError
+from Poule.pipeline.search import alias_prefix
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +340,22 @@ def _parse_scope_filters(filter_specs: list[str]) -> list | None:
     return filters or None
 
 
+def _resolve_graph_name(name: str, graph: Any) -> str:
+    """Resolve *name* against *graph*, trying prefix aliasing if not found.
+
+    Returns the original name if it exists in the graph, the aliased form
+    if that exists, or the original name unchanged (letting the engine
+    raise NOT_FOUND).
+    """
+    if name in graph.forward_adj or name in graph.reverse_adj or name in graph.metadata:
+        return name
+    aliased = alias_prefix(name)
+    if aliased is not None:
+        if aliased in graph.forward_adj or aliased in graph.reverse_adj or aliased in graph.metadata:
+            return aliased
+    return name
+
+
 async def handle_transitive_closure(
     ctx: Any, *, name: str, max_depth: int | None, scope_filter: list | None,
     dot_file_path: str | None = None,
@@ -361,6 +378,7 @@ async def handle_transitive_closure(
             graph = ctx.pipeline.build_graph(dot_file_path=dot_file_path)
         else:
             graph = ctx.pipeline.build_graph()
+        name = _resolve_graph_name(name, graph)
         from Poule.analysis.closure import transitive_closure
         result = transitive_closure(graph, name, max_depth or None, parsed_filters)
     except Exception as exc:
@@ -400,6 +418,7 @@ async def handle_impact_analysis(
             graph = ctx.pipeline.build_graph(dot_file_path=dot_file_path)
         else:
             graph = ctx.pipeline.build_graph()
+        name = _resolve_graph_name(name, graph)
         from Poule.analysis.impact import impact_analysis
         result = impact_analysis(graph, name, max_depth or None, parsed_filters)
     except Exception as exc:
