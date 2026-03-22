@@ -446,13 +446,14 @@ def cmd_extract(
         module_list = [m.strip() for m in modules.split(",")] if modules else None
         scope_filter = ScopeFilter(name_pattern=name_pattern, module_prefixes=module_list)
 
-    kwargs = {}
+    kwargs = {
+        "session_manager": SessionManager(),
+        "timeout_seconds": timeout,
+    }
     if scope_filter is not None:
         kwargs["scope_filter"] = scope_filter
     if include_diffs:
         kwargs["include_diffs"] = include_diffs
-    if timeout != 60:
-        kwargs["timeout_seconds"] = timeout
 
     summary = asyncio.run(run_campaign(
         list(project_dirs), output, kwargs,

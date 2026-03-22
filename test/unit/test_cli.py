@@ -862,6 +862,87 @@ class TestExtractSubcommand:
             ])
         assert result.exit_code == 0
 
+    def test_session_manager_passed_to_run_campaign(self, runner, tmp_path):
+        """cmd_extract must provide a real SessionManager, not _NullSessionManager."""
+        cli = _import_cli()
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        with patch(
+            "Poule.cli.commands.run_campaign",
+        ) as mock_run:
+            from Poule.extraction.types import ExtractionSummary
+            mock_run.return_value = ExtractionSummary(
+                schema_version=1, record_type="extraction_summary",
+                total_theorems_found=0, total_extracted=0,
+                total_failed=0, total_skipped=0, per_project=[],
+            )
+            runner.invoke(cli, [
+                "extract", str(project_dir),
+                "--output", str(tmp_path / "out.jsonl"),
+            ])
+        # run_campaign(project_dirs, output, kwargs) — kwargs is arg index 2
+        call_args = mock_run.call_args
+        kwargs_dict = call_args[0][2]  # positional arg 2 = kwargs dict
+        assert "session_manager" in kwargs_dict, (
+            "cmd_extract must pass a session_manager in kwargs; "
+            "without it, run_campaign falls back to _NullSessionManager "
+            "which rejects every proof"
+        )
+        from Poule.session.manager import SessionManager
+        assert isinstance(kwargs_dict["session_manager"], SessionManager), (
+            "session_manager must be a real SessionManager instance"
+        )
+
+    def test_default_timeout_passed_to_run_campaign(self, runner, tmp_path):
+        """Default timeout=60 must be passed as timeout_seconds, not omitted."""
+        cli = _import_cli()
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        with patch(
+            "Poule.cli.commands.run_campaign",
+        ) as mock_run:
+            from Poule.extraction.types import ExtractionSummary
+            mock_run.return_value = ExtractionSummary(
+                schema_version=1, record_type="extraction_summary",
+                total_theorems_found=0, total_extracted=0,
+                total_failed=0, total_skipped=0, per_project=[],
+            )
+            runner.invoke(cli, [
+                "extract", str(project_dir),
+                "--output", str(tmp_path / "out.jsonl"),
+                # No --timeout flag: uses default of 60
+            ])
+        call_args = mock_run.call_args
+        kwargs_dict = call_args[0][2]
+        assert "timeout_seconds" in kwargs_dict, (
+            "Default timeout must be passed to run_campaign; "
+            "omitting it means timeout_seconds=None (no timeout)"
+        )
+        assert kwargs_dict["timeout_seconds"] == 60
+
+    def test_custom_timeout_passed_to_run_campaign(self, runner, tmp_path):
+        """--timeout 120 must be forwarded as timeout_seconds=120."""
+        cli = _import_cli()
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        with patch(
+            "Poule.cli.commands.run_campaign",
+        ) as mock_run:
+            from Poule.extraction.types import ExtractionSummary
+            mock_run.return_value = ExtractionSummary(
+                schema_version=1, record_type="extraction_summary",
+                total_theorems_found=0, total_extracted=0,
+                total_failed=0, total_skipped=0, per_project=[],
+            )
+            runner.invoke(cli, [
+                "extract", str(project_dir),
+                "--output", str(tmp_path / "out.jsonl"),
+                "--timeout", "120",
+            ])
+        call_args = mock_run.call_args
+        kwargs_dict = call_args[0][2]
+        assert kwargs_dict.get("timeout_seconds") == 120
+
 
 # ===========================================================================
 # 15. extract-deps subcommand (§4.8)
