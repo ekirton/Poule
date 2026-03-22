@@ -394,6 +394,11 @@ Profile all .v files in examples/ and show me the slowest files and lemmas
 Profile overcomplicated in examples/lint_targets.v, then profile Nat.add_comm — compare the timings. Did the verbose version regress?
 ```
 
+**Profile Ltac tactics:**
+```
+Show me the Ltac call-tree breakdown for my_crush in examples/automation.v — which sub-tactic is expensive?
+```
+
 **Get optimization suggestions:**
 ```
 simpl in * is taking 15 seconds — why is it slow and what should I use instead?

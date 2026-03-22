@@ -1,10 +1,10 @@
 # E2E Test Results
 
-Tested: 2026-03-22 (retested 10 previously skipped slash commands)
+Tested: 2026-03-22 (retested 8.7 — Ltac call-tree profiling now working)
 
 Run `/run-e2e` to retest prompts and update this file.
 
-**Summary: 85 PASS, 4 FAIL, 0 SKIP (89 total)**
+**Summary: 86 PASS, 3 FAIL, 0 SKIP (89 total)**
 
 | Section | PASS | FAIL | SKIP |
 |---------|------|------|------|
@@ -15,7 +15,7 @@ Run `/run-e2e` to retest prompts and update this file.
 | 5. Refactoring | 5 | 0 | 0 |
 | 6. Library and Ecosystem | 5 | 0 | 0 |
 | 7. Debugging | 12 | 0 | 0 |
-| 8. Performance | 8 | 1 | 0 |
+| 8. Performance | 9 | 0 | 0 |
 
 ---
 
@@ -144,7 +144,7 @@ Run `/run-e2e` to retest prompts and update this file.
 | 8.4 | Which sentences in examples/algebra.v take the most compilation time? | PASS | profile_proof timing mode returned 68 per-sentence entries with real_time_s, user_time_s, sys_time_s; slowest sentence: From Coq Require Import at 0.262s, followed by Qed sentences at 0.003-0.004s |
 | 8.5 | simpl in * is taking 15 seconds — why is it slow? | PASS | tactic_lookup returned simpl metadata (kind: ltac, is_recursive: true) |
 | 8.6 | Typeclass resolution is the bottleneck — how do I speed it up? | PASS | tactic_lookup returned eauto metadata (kind: ltac, category: automation, is_recursive: true) |
-| 8.7 | Show me the Ltac call-tree breakdown for my_crush in examples/automation.v | FAIL | profile_proof ltac mode returns "session_manager is required for Ltac profiling" — ltac profiling backend not yet wired to standalone usage |
+| 8.7 | Show me the Ltac call-tree breakdown for my_crush in examples/automation.v | PASS | profile_proof ltac mode returned call-tree for crush_test_2: my_crush 100% → lia 94.3% → zchecker 56.2%, with sub-tactics zify_op 6.4%, reflexivity 2.8%, intros 1.7% |
 | 8.8 | Profile overcomplicated in examples/lint_targets.v, then profile Nat.add_comm — compare the timings | PASS | extract_proof_trace returned duration_ms for both: overcomplicated 4 steps totaling ~668ms (intros 164ms, rewrite 201ms, simpl 202ms, trivial 100ms); add_comm 2 steps totaling ~214ms (intros 111ms, apply 103ms) — timing comparison now possible |
 | 8.9 | Profile all .v files in examples/ and show me the slowest files and lemmas | PASS | profile_proof timing mode called on all 8 .v files; slowest files: algebra.v 0.284s, lint_targets.v 0.264s, flocq.v 0.206s, automation.v 0.169s; slowest lemma: ring_morph 5ms |
 
@@ -162,7 +162,3 @@ Run `/run-e2e` to retest prompts and update this file.
 ### impact_analysis returns empty graphs (3.4, 3.5)
 - `impact_analysis` returns only root node with 0 edges for stdlib lemmas (`Nat.add_comm`, `Nat.add_0_r`) even with fully qualified names — reverse dependency edges not populated
 
-### Ltac call-tree profiling not available (8.7)
-- `profile_proof` ltac mode returns "session_manager is required for Ltac profiling" — the ltac profiling backend requires a session_manager that is not wired up for standalone `profile_proof` calls
-- `step_forward` treats Ltac macros (e.g., `my_crush`) as single opaque steps with no sub-tactic expansion
-- **Remaining gap**: no MCP tool provides Ltac call-tree profiling (`Set Ltac Profiling`)

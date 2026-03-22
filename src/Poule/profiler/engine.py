@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -333,6 +334,96 @@ async def profile_single_proof(
 # 4.10 Ltac Profiling
 # ---------------------------------------------------------------------------
 
+_LTAC_SENTINEL = "__POULE_LTAC_SENTINEL__"
+
+# Declaration keywords that introduce a proof
+_DECL_PATTERN = re.compile(
+    r"\b(Lemma|Theorem|Proposition|Corollary|Fact|Remark|Example"
+    r"|Definition|Fixpoint|CoFixpoint|Let|Instance|Program)\s+",
+)
+
+
+def _split_at_proof(source: str, lemma_name: str) -> Tuple[str, Optional[str]]:
+    """Split source into (prelude, proof_statement) at the given lemma.
+
+    Returns the file content before the declaration as prelude, and the
+    declaration statement (``Lemma foo : type.``) as proof_statement.
+    Returns ``(source, None)`` if the lemma is not found.
+    """
+    pattern = re.compile(
+        r"\b(?:Lemma|Theorem|Proposition|Corollary|Fact|Remark|Example"
+        r"|Definition|Fixpoint|CoFixpoint|Let|Instance|Program)\s+"
+        + re.escape(lemma_name) + r"\b",
+    )
+    m = pattern.search(source)
+    if m is None:
+        return source, None
+    decl_start = m.start()
+    # The declaration ends at the first period after the match
+    period_pos = source.find(".", m.end())
+    if period_pos == -1:
+        return source, None
+    prelude = source[:decl_start]
+    proof_stmt = source[decl_start : period_pos + 1]
+    return prelude, proof_stmt
+
+
+async def _coqtop_send(
+    proc: asyncio.subprocess.Process, text: str,
+) -> str:
+    """Send a command to coqtop and read output until the sentinel."""
+    cmd = text.rstrip()
+    if not cmd.endswith("."):
+        cmd += "."
+    sentinel_cmd = f"Check {_LTAC_SENTINEL}.\n"
+    proc.stdin.write((cmd + "\n").encode("utf-8"))  # type: ignore[union-attr]
+    proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]
+    await proc.stdin.drain()  # type: ignore[union-attr]
+    return await _coqtop_read_sentinel(proc)
+
+
+async def _coqtop_read_sentinel(
+    proc: asyncio.subprocess.Process, timeout: float = 30.0,
+) -> str:
+    """Read coqtop stdout until the sentinel string appears."""
+    output_lines: list[str] = []
+    stdout = proc.stdout  # type: ignore[union-attr]
+    try:
+        while True:
+            line_bytes = await asyncio.wait_for(
+                stdout.readline(), timeout=timeout,
+            )
+            if not line_bytes:
+                break
+            line = line_bytes.decode("utf-8", errors="replace")
+            if _LTAC_SENTINEL in line:
+                # Drain the rest of the sentinel error block
+                try:
+                    while True:
+                        rest = await asyncio.wait_for(
+                            stdout.readline(), timeout=2.0,
+                        )
+                        if not rest:
+                            break
+                        rest_s = rest.decode("utf-8", errors="replace")
+                        if rest_s.strip() == "" or rest_s.strip().endswith("<"):
+                            break
+                except asyncio.TimeoutError:
+                    pass
+                break
+            output_lines.append(line)
+    except asyncio.TimeoutError:
+        pass
+    # Strip sentinel preamble lines
+    while output_lines and (
+        "Toplevel input" in output_lines[-1]
+        or output_lines[-1].strip().startswith(">")
+        or output_lines[-1].strip().startswith("^")
+    ):
+        output_lines.pop()
+    return "".join(output_lines).strip()
+
+
 async def profile_ltac(
     file_path: str,
     lemma_name: str,
@@ -341,38 +432,72 @@ async def profile_ltac(
 ) -> LtacProfile:
     """Profile Ltac tactic execution for a specific proof.
 
-    Uses the Proof Session Manager to instrument profiling commands.
-    The session_manager parameter must provide open_proof_session,
-    submit_command, submit_tactic, and close_proof_session methods.
+    Uses the Proof Session Manager to obtain the original tactic script,
+    then spawns a dedicated coqtop process to replay the proof with
+    ``Set Ltac Profiling`` enabled.  All profiling commands and tactic
+    replay happen in the same coqtop process so the profiler sees the
+    tactic execution.
     """
     if session_manager is None:
         raise ValueError("session_manager is required for Ltac profiling")
 
     session_id = None
+    proc = None
     try:
-        session_id, _initial_state = await session_manager.open_proof_session(
+        # 1. Open a session to get the original tactic script
+        session_id, _initial_state = await session_manager.create_session(
             file_path, lemma_name,
         )
+        tactics = await session_manager.get_original_script(session_id)
 
-        # Enable Ltac profiling
-        await session_manager.submit_command(session_id, "Set Ltac Profiling.")
-        await session_manager.submit_command(session_id, "Reset Ltac Profile.")
+        # 2. Split the source file at the proof declaration
+        source = Path(file_path).read_text(errors="replace")
+        prelude, proof_stmt = _split_at_proof(source, lemma_name)
+        if proof_stmt is None:
+            raise ValueError(
+                f"NOT_FOUND: Cannot find declaration for '{lemma_name}' in {file_path}"
+            )
 
-        # Replay proof tactics
-        # The session manager should provide the original script
-        original_script = getattr(
-            session_manager, "get_original_script",
-            lambda sid: [],
+        # 3. Spawn a dedicated coqtop process
+        load_paths, include_paths = resolve_paths(file_path)
+        cmd = ["coqtop", "-quiet"]
+        for logical, physical in load_paths:
+            cmd.extend(["-Q", physical, logical])
+        for inc in include_paths:
+            cmd.extend(["-I", inc])
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
         )
-        tactics = original_script(session_id) if callable(original_script) else []
 
+        # Drain welcome output
+        proc.stdin.write(  # type: ignore[union-attr]
+            f"Check {_LTAC_SENTINEL}.\n".encode("utf-8"),
+        )
+        await proc.stdin.drain()  # type: ignore[union-attr]
+        await _coqtop_read_sentinel(proc)
+
+        # 4. Load the file prelude (everything before the proof)
+        if prelude.strip():
+            await _coqtop_send(proc, prelude)
+
+        # 5. Enable Ltac profiling BEFORE the proof
+        await _coqtop_send(proc, "Set Ltac Profiling.")
+        await _coqtop_send(proc, "Reset Ltac Profile.")
+
+        # 6. Enter the proof
+        await _coqtop_send(proc, proof_stmt)
+        await _coqtop_send(proc, "Proof.")
+
+        # 7. Replay each tactic through the same coqtop process
         for tactic in tactics:
-            await session_manager.submit_tactic(session_id, tactic)
+            await _coqtop_send(proc, tactic)
 
-        # Capture profile
-        output = await session_manager.submit_command(
-            session_id, "Show Ltac Profile CutOff 0.",
-        )
+        # 8. Capture the Ltac profile
+        output = await _coqtop_send(proc, "Show Ltac Profile CutOff 0.")
 
         profile = parse_ltac_profile(output or "")
         profile.lemma_name = lemma_name
@@ -387,7 +512,14 @@ async def profile_ltac(
     finally:
         if session_id is not None:
             try:
-                await session_manager.close_proof_session(session_id)
+                await session_manager.close_session(session_id)
+            except Exception:
+                pass
+        if proc is not None:
+            try:
+                proc.stdin.close()  # type: ignore[union-attr]
+                proc.kill()
+                await proc.wait()
             except Exception:
                 pass
 
@@ -483,6 +615,7 @@ async def compare_profiles(
 
 async def profile_proof(
     request: ProfileRequest,
+    session_manager: object = None,
 ) -> Union[FileProfile, ProofProfile, LtacProfile, TimingComparison]:
     """Main entry point for the profiling engine."""
     err = validate_request(request)
@@ -505,6 +638,7 @@ async def profile_proof(
             request.file_path,
             request.lemma_name,
             request.timeout_seconds,
+            session_manager=session_manager,
         )
 
     elif request.mode == "compare":

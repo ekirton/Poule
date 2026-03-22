@@ -371,14 +371,29 @@ class TestProfileSingleProof:
 class TestProfileLtac:
     """profile_ltac — Spec 4.10."""
 
-    def _make_mock_session_manager(self, ltac_output=""):
+    SAMPLE_V = (
+        "Require Import Coq.Arith.Arith.\n"
+        "Lemma foo : forall n, n + 0 = n.\n"
+        "Proof. intros. lia. Qed.\n"
+    )
+
+    def _make_mock_session_manager(self, tactics=None):
         mgr = AsyncMock()
-        mgr.open_proof_session = AsyncMock(return_value=("session-1", {}))
-        mgr.submit_command = AsyncMock(return_value=ltac_output)
-        mgr.submit_tactic = AsyncMock()
-        mgr.close_proof_session = AsyncMock()
-        mgr.get_original_script = MagicMock(return_value=[])
+        mgr.create_session = AsyncMock(return_value=("session-1", {}))
+        mgr.get_original_script = AsyncMock(return_value=tactics or [])
+        mgr.close_session = AsyncMock()
         return mgr
+
+    def _make_mock_proc(self):
+        """Create a mock coqtop subprocess."""
+        proc = AsyncMock()
+        proc.stdin = MagicMock()
+        proc.stdin.write = MagicMock()
+        proc.stdin.drain = AsyncMock()
+        proc.stdin.close = MagicMock()
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+        return proc
 
     @pytest.mark.asyncio
     async def test_requires_session_manager(self):
@@ -387,23 +402,12 @@ class TestProfileLtac:
             await profile_ltac("/tmp/test.v", "foo", session_manager=None)
 
     @pytest.mark.asyncio
-    async def test_enables_ltac_profiling(self):
-        """Submits Set Ltac Profiling and Reset Ltac Profile."""
+    async def test_returns_ltac_profile(self, tmp_path):
+        """Parses Ltac profile output and returns LtacProfile."""
         _, _, profile_ltac, *_ = _import_engine()
 
-        ltac_output = "total time: 1.000s\n\n─auto -------------------- 50.0%  50.0%       5    0.100s\n"
-        mgr = self._make_mock_session_manager(ltac_output)
-
-        result = await profile_ltac("/tmp/test.v", "foo", session_manager=mgr)
-
-        # Verify profiling was enabled
-        calls = [str(c) for c in mgr.submit_command.call_args_list]
-        assert any("Set Ltac Profiling" in c for c in calls)
-        assert any("Reset Ltac Profile" in c for c in calls)
-
-    @pytest.mark.asyncio
-    async def test_returns_ltac_profile(self):
-        _, _, profile_ltac, *_ = _import_engine()
+        f = tmp_path / "test.v"
+        f.write_text(self.SAMPLE_V)
 
         ltac_output = (
             "total time: 3.200s\n"
@@ -411,42 +415,95 @@ class TestProfileLtac:
             "─omega ------------------- 45.0%  45.0%      12    0.200s\n"
             "─eauto ------------------- 30.0%  30.0%       8    0.300s\n"
         )
-        mgr = self._make_mock_session_manager(ltac_output)
+        mgr = self._make_mock_session_manager(tactics=["intros.", "lia."])
+        proc = self._make_mock_proc()
 
-        result = await profile_ltac("/tmp/test.v", "my_lemma", session_manager=mgr)
+        async def mock_send(p, text):
+            if "Show Ltac Profile" in text:
+                return ltac_output
+            return ""
 
-        assert result.lemma_name == "my_lemma"
+        with patch("Poule.profiler.engine._coqtop_send", side_effect=mock_send), \
+             patch("Poule.profiler.engine._coqtop_read_sentinel", AsyncMock(return_value="")), \
+             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            result = await profile_ltac(str(f), "foo", session_manager=mgr)
+
+        assert result.lemma_name == "foo"
         assert result.total_time_s == pytest.approx(3.2)
         assert len(result.entries) == 2
 
     @pytest.mark.asyncio
-    async def test_session_always_closed(self):
+    async def test_enables_ltac_profiling(self, tmp_path):
+        """Sends Set Ltac Profiling and Reset Ltac Profile to coqtop."""
+        _, _, profile_ltac, *_ = _import_engine()
+
+        f = tmp_path / "test.v"
+        f.write_text(self.SAMPLE_V)
+
+        mgr = self._make_mock_session_manager(tactics=["intros.", "lia."])
+        proc = self._make_mock_proc()
+
+        sent_commands = []
+
+        async def mock_send(p, text):
+            sent_commands.append(text)
+            return ""
+
+        with patch("Poule.profiler.engine._coqtop_send", side_effect=mock_send), \
+             patch("Poule.profiler.engine._coqtop_read_sentinel", AsyncMock(return_value="")), \
+             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            await profile_ltac(str(f), "foo", session_manager=mgr)
+
+        assert any("Set Ltac Profiling" in c for c in sent_commands)
+        assert any("Reset Ltac Profile" in c for c in sent_commands)
+
+    @pytest.mark.asyncio
+    async def test_session_always_closed(self, tmp_path):
         """Session is closed even on error."""
         _, _, profile_ltac, *_ = _import_engine()
 
-        mgr = AsyncMock()
-        mgr.open_proof_session = AsyncMock(return_value=("session-1", {}))
-        mgr.submit_command = AsyncMock(side_effect=RuntimeError("boom"))
-        mgr.close_proof_session = AsyncMock()
-        mgr.get_original_script = MagicMock(return_value=[])
+        f = tmp_path / "test.v"
+        f.write_text(self.SAMPLE_V)
 
-        with pytest.raises(RuntimeError, match="boom"):
-            await profile_ltac("/tmp/test.v", "foo", session_manager=mgr)
+        mgr = self._make_mock_session_manager(tactics=["intros."])
+        proc = self._make_mock_proc()
 
-        mgr.close_proof_session.assert_called_once_with("session-1")
+        async def mock_send_error(p, text):
+            if "intros" in text:
+                raise RuntimeError("boom")
+            return ""
+
+        with patch("Poule.profiler.engine._coqtop_send", side_effect=mock_send_error), \
+             patch("Poule.profiler.engine._coqtop_read_sentinel", AsyncMock(return_value="")), \
+             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            with pytest.raises(RuntimeError, match="boom"):
+                await profile_ltac(str(f), "foo", session_manager=mgr)
+
+        mgr.close_session.assert_called_once_with("session-1")
 
     @pytest.mark.asyncio
-    async def test_captures_show_ltac_profile(self):
-        """Submits 'Show Ltac Profile CutOff 0.' to capture the profile."""
+    async def test_captures_show_ltac_profile(self, tmp_path):
+        """Sends 'Show Ltac Profile CutOff 0.' to capture the profile."""
         _, _, profile_ltac, *_ = _import_engine()
 
-        ltac_output = "total time: 0.500s\n\n─intro ------------------- 100.0% 100.0%     1    0.500s\n"
-        mgr = self._make_mock_session_manager(ltac_output)
+        f = tmp_path / "test.v"
+        f.write_text(self.SAMPLE_V)
 
-        await profile_ltac("/tmp/test.v", "foo", session_manager=mgr)
+        mgr = self._make_mock_session_manager(tactics=["intros.", "lia."])
+        proc = self._make_mock_proc()
 
-        calls = [str(c) for c in mgr.submit_command.call_args_list]
-        assert any("Show Ltac Profile CutOff 0" in c for c in calls)
+        sent_commands = []
+
+        async def mock_send(p, text):
+            sent_commands.append(text)
+            return ""
+
+        with patch("Poule.profiler.engine._coqtop_send", side_effect=mock_send), \
+             patch("Poule.profiler.engine._coqtop_read_sentinel", AsyncMock(return_value="")), \
+             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            await profile_ltac(str(f), "foo", session_manager=mgr)
+
+        assert any("Show Ltac Profile CutOff 0" in c for c in sent_commands)
 
 
 # ===================================================================
@@ -638,6 +695,51 @@ class TestProfileProofEntryPoint:
 
         assert isinstance(result, ProofProfile)
         assert result.lemma_name == "slow_add"
+
+    @pytest.mark.asyncio
+    async def test_ltac_mode_routes_to_ltac_profiling(self, coq_v_file):
+        """Ltac mode passes session_manager through to profile_ltac."""
+        *_, profile_proof, _ = _import_engine()
+        _, LtacProfile, ProfileRequest, _, _ = _import_types()
+
+        ltac_output = "total time: 1.000s\n\n─auto -------------------- 50.0%  50.0%       5    0.100s\n"
+        mgr = AsyncMock()
+        mgr.create_session = AsyncMock(return_value=("session-1", {}))
+        mgr.close_session = AsyncMock()
+        mgr.get_original_script = AsyncMock(return_value=["simpl.", "lia."])
+
+        proc = AsyncMock()
+        proc.stdin = MagicMock()
+        proc.stdin.write = MagicMock()
+        proc.stdin.drain = AsyncMock()
+        proc.stdin.close = MagicMock()
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+
+        async def mock_send(p, text):
+            if "Show Ltac Profile" in text:
+                return ltac_output
+            return ""
+
+        req = ProfileRequest(file_path=str(coq_v_file), mode="ltac", lemma_name="slow_add")
+        with patch("Poule.profiler.engine._coqtop_send", side_effect=mock_send), \
+             patch("Poule.profiler.engine._coqtop_read_sentinel", AsyncMock(return_value="")), \
+             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            result = await profile_proof(req, session_manager=mgr)
+
+        assert isinstance(result, LtacProfile)
+        mgr.create_session.assert_called_once()
+        mgr.close_session.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_ltac_mode_without_session_manager_raises(self, coq_v_file):
+        """Ltac mode without session_manager raises ValueError."""
+        *_, profile_proof, _ = _import_engine()
+        _, _, ProfileRequest, _, _ = _import_types()
+
+        req = ProfileRequest(file_path=str(coq_v_file), mode="ltac", lemma_name="slow_add")
+        with pytest.raises(ValueError, match="session_manager"):
+            await profile_proof(req, session_manager=None)
 
     @pytest.mark.asyncio
     async def test_unknown_mode_returns_error(self, coq_v_file):
