@@ -19,7 +19,7 @@ The feature document defines five retrieval channels by user-facing name. The ta
 | Constant Name | const_jaccard (Jaccard index over extracted constant names) | Fine-Ranking Metric Fusion |
 | Lexical | FTS5 (SQLite full-text search with BM25 ranking) | FTS5 Full-Text Search |
 
-`collapse_match` is an additional structural sub-metric used in the fine-ranking weighted sum; it does not correspond to a standalone feature channel.
+`collapse_match` is an additional structural sub-metric used in the fine-ranking weighted sum; it does not correspond to a standalone feature channel. When comparing `Prod` nodes, collapse match treats a bare `Sort(Type)` leaf (no children) as a binder-type wildcard: if either side's binder type is such a leaf, the binder types are scored as a perfect match (contributing the larger side's node count to the score sum). This prevents auto-generated `Sort(Type)` binder types from penalizing candidates with concrete binder types.
 
 ## Neural Channel Integration
 
@@ -71,6 +71,8 @@ The neural channel is optional. When unavailable (no model checkpoint, no embedd
 **Query normalization rationale**: Users write type patterns like `List.map f (List.map g l) = List.map (fun x => f (g x)) l` where `f`, `g`, `l` are free variables and `List.map` is a short name. The index stores fully quantified types with bound variables, FQNs, and forall wrappers. Without normalization, all channels fail: the WL size filter rejects due to size mismatch, MePo finds zero symbol overlap (short vs FQN), and collapse match scores 0 at every free variable position (ConstantRef vs Variable category). Query normalization bridges this gap before any channel processing.
 
 **Relaxed size ratio**: `search_by_type` uses a wider WL size ratio (2.0 vs the standard 1.2) because user queries inherently omit type parameters (e.g., `A B C : Type`) present in indexed types. The wider threshold avoids rejecting valid candidates. Cosine similarity still ranks the 500 screened candidates effectively.
+
+**Body extraction for structural scoring**: `normalize_type_query` tracks the count of auto-generated forall binders (those wrapping detected free variables). The structural scoring subroutine uses this count to peel that many leading `Prod` layers from both the query and candidate trees before computing TED and collapse match. This focuses fine-grained structural comparison on the body — the part encoding the user's intent — rather than the auto-generated quantifier prefix whose `Sort(Type)` binder types would otherwise penalize scoring against candidates with concrete binder types. WL cosine uses the full tree (it has already been computed during screening). Const Jaccard uses the full tree (it operates on constant names, which are unaffected by binder structure).
 
 Note: `extract_symbols` at query time is equivalent to `extract_consts` (const-jaccard) operating on the `ExprTree`. Implementations should reuse `extract_consts`.
 

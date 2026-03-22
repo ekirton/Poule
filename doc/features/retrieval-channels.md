@@ -59,7 +59,9 @@ Users write type queries as patterns — the body of a type with free variables 
 
 4. **Relaxed size filtering**: Type queries inherently omit type parameters (e.g., `A B C : Type`) that are present in the indexed type. The structural channel uses a wider size tolerance for `search_by_type` to avoid rejecting valid candidates whose indexed types are larger due to these invisible binders.
 
-**Remaining limitation**: Forall-wrapped free variables receive a generic `Type` binder type. Indexed types have concrete binder types (e.g., `A -> B`, `list A`). The outer quantifier nodes will score lower on structural matching, but the body — which is the majority of both trees — matches well. Combined with symbol overlap signal from FQN resolution, fusion compensates for this gap.
+5. **Body extraction for structural scoring**: Forall-wrapped free variables receive a generic `Type` binder type, while indexed types have concrete binder types (e.g., `A -> B`, `list A`). To prevent binder-type mismatches from penalizing structural scores, the scoring subroutine peels the auto-generated quantifier chain from both query and candidate trees before computing tree edit distance and collapse match. This focuses structural comparison on the body — the part that encodes the user's actual intent. The number of auto-generated binders is tracked from the wrapping step and used to peel exactly that many leading binders.
+
+6. **Sort-leaf binder wildcard**: As a complementary measure, when collapse match encounters a `Prod` node where one side's binder type is a bare `Sort(Type)` leaf (the signature of an auto-generated or fully polymorphic binder), it treats the binder types as perfectly matching. This compensates for cases where the candidate has fewer leading binders than the query, so not all auto-generated wrappers can be peeled.
 
 ### Acceptance Criteria
 
@@ -69,6 +71,8 @@ Users write type queries as patterns — the body of a type with free variables 
 - GIVEN a type query with short constant names WHEN `search_by_type` executes THEN constant names are resolved to FQNs before channel processing
 - GIVEN a type query with unbound lowercase identifiers WHEN `search_by_type` executes THEN they are treated as pattern variables and wrapped in universal quantifiers
 - GIVEN a type query without explicit quantifiers WHEN structural screening executes THEN candidates with larger quantifier-wrapped types are not rejected by the size filter
+- GIVEN a type query with auto-detected free variables WHEN structural scoring executes THEN tree edit distance and collapse match are computed on body subtrees with auto-generated binders peeled, not on full quantifier-wrapped trees
+- GIVEN a `Prod` comparison where one side has a bare `Sort(Type)` binder type WHEN collapse match executes THEN the binder types are treated as a perfect match
 
 ## Design Rationale
 

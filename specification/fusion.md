@@ -63,6 +63,8 @@ Algorithm (recursive):
 2. If roots have different labels but the same category: score 0.5 for this node, recurse into children.
 3. If roots have different categories: score 0.0 for this subtree (no recursion).
 
+**Sort-leaf binder wildcard**: When both roots are `LProd` with exactly 2 children, and either side's binder-type child (children[0]) is a bare `LSort` leaf (no children): treat the binder types as a perfect match. The score for the binder-type subtree pair is `max(node_count(a_type), node_count(b_type))` — as if every node in the larger side's binder type matched. Then recurse into children[1] (body) normally. This prevents auto-generated `Sort(Type)` binder types from penalizing candidates with concrete binder types.
+
 Final score: sum of all node scores / max(node_count(tree_a), node_count(tree_b)).
 
 ### 4.4 Fine-Ranking Weighted Sum

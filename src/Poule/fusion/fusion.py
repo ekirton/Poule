@@ -121,10 +121,41 @@ def rrf_fuse(
 # ---------------------------------------------------------------------------
 
 
+def _count_subtree(node: TreeNode) -> int:
+    """Count nodes in a subtree (iterative)."""
+    count = 0
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        count += 1
+        stack.extend(n.children)
+    return count
+
+
+def _is_sort_leaf(node: TreeNode) -> bool:
+    """True if *node* is a bare LSort with no children."""
+    return isinstance(node.label, LSort) and not node.children
+
+
 def _collapse_node(a: TreeNode, b: TreeNode) -> float:
     """Return the sum of node-level scores for the subtree pair."""
     cat_a = node_category(a.label)
     cat_b = node_category(b.label)
+
+    # Sort-leaf binder wildcard: when both roots are LProd with 2 children
+    # and either side's binder-type child is a bare LSort leaf, treat the
+    # binder types as a perfect match (spec: fusion.md §4.3).
+    if (
+        isinstance(a.label, LProd)
+        and isinstance(b.label, LProd)
+        and len(a.children) == 2
+        and len(b.children) == 2
+        and (_is_sort_leaf(a.children[0]) or _is_sort_leaf(b.children[0]))
+    ):
+        type_score = float(max(_count_subtree(a.children[0]),
+                               _count_subtree(b.children[0])))
+        body_score = _collapse_node(a.children[1], b.children[1])
+        return 1.0 + type_score + body_score
 
     if cat_a != cat_b:
         # Different category: 0.0, no recursion.

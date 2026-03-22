@@ -9,7 +9,10 @@ from typing import Any
 from Poule.channels.const_jaccard import jaccard_similarity
 from Poule.channels.fts import fts_query, fts_search
 from Poule.channels.mepo import extract_consts, mepo_select
+from Poule.models.labels import LProd
 from Poule.models.responses import SearchResult
+from Poule.models.tree import ExprTree, recompute_depths, assign_node_ids
+from Poule.models.tree import node_count as _node_count
 from Poule.channels.ted import ted_similarity
 from Poule.channels.wl_kernel import wl_histogram, wl_screen
 from Poule.fusion.fusion import collapse_match, rrf_fuse
@@ -309,14 +312,39 @@ def _replace_free_vars(node: object, var_map: dict[str, int], depth: int) -> obj
     return node
 
 
-def normalize_type_query(ctx: Any, constr_node: object) -> object:
+def _peel_n_prods(tree: ExprTree, n: int) -> ExprTree:
+    """Strip up to *n* leading ``LProd`` layers, returning the body subtree.
+
+    Follows ``children[1]`` (body) at each ``LProd`` node.  Stops early if
+    the current root is not ``LProd`` or has fewer than 2 children.
+    Returns a new ``ExprTree`` with recomputed depths, IDs, and node count.
+    """
+    if n <= 0:
+        return tree
+    current = tree.root
+    peeled = 0
+    while peeled < n and isinstance(current.label, LProd) and len(current.children) == 2:
+        current = current.children[1]
+        peeled += 1
+    if peeled == 0:
+        return tree
+    nc = _node_count(current)
+    body_tree = ExprTree(root=current, node_count=nc)
+    recompute_depths(body_tree)
+    assign_node_ids(body_tree)
+    return body_tree
+
+
+def normalize_type_query(ctx: Any, constr_node: object) -> tuple[object, int]:
     """Normalize a parsed type query for search_by_type.
 
     1. Resolve constant names to FQNs via the suffix index.
     2. Detect free variables (unresolved simple lowercase identifiers).
     3. Wrap in forall binders, converting free variable Const nodes to Rel.
 
-    Returns the transformed ConstrNode.
+    Returns ``(transformed_constr_node, auto_binder_count)`` where
+    *auto_binder_count* is the number of forall binders that were
+    auto-generated (0 when no wrapping occurred).
     """
     # Step 1: Resolve constants to FQNs
     resolved = _resolve_consts_in_tree(constr_node, ctx)
@@ -324,11 +352,11 @@ def normalize_type_query(ctx: Any, constr_node: object) -> object:
     # Step 2: Detect free variables
     free_vars = _collect_free_vars(resolved)
     if not free_vars:
-        return resolved
+        return resolved, 0
 
     # Step 3: Skip wrapping if outermost node is already Prod (user wrote forall)
     if isinstance(resolved, Prod):
-        return resolved
+        return resolved, 0
 
     # Build var_map: maps each free var name to its binding depth (0-based)
     # Outermost binder is depth 0, next is depth 1, etc.
@@ -345,7 +373,7 @@ def normalize_type_query(ctx: Any, constr_node: object) -> object:
     for name in reversed(free_vars):
         result = Prod(name, Sort("Type"), result)
 
-    return result
+    return result, len(free_vars)
 
 
 def search_by_structure(ctx: Any, expression: str, limit: int) -> list[Any]:
@@ -460,7 +488,7 @@ def search_by_type(ctx: Any, type_expr: str, limit: int) -> list[Any]:
     constr_node = ctx.parser.parse(type_expr)
 
     # Step 2: Query-time type normalization (FQN resolution + free var wrapping)
-    constr_node = normalize_type_query(ctx, constr_node)
+    constr_node, auto_binder_count = normalize_type_query(ctx, constr_node)
 
     # Step 3: Normalize (NormalizationError -> empty results)
     try:
@@ -486,7 +514,10 @@ def search_by_type(ctx: Any, type_expr: str, limit: int) -> list[Any]:
         n=500,
         size_ratio=2.0,
     )
-    structural_scored = score_candidates(cse_tree, candidates_with_wl, ctx)
+    structural_scored = score_candidates(
+        cse_tree, candidates_with_wl, ctx,
+        auto_binder_count=auto_binder_count,
+    )
 
     # Step 3: Symbol channel via MePo
     query_symbols = extract_consts(cse_tree)
@@ -525,16 +556,28 @@ def score_candidates(
     query_tree: Any,
     candidates_with_wl: list[tuple[int, float]],
     ctx: Any,
+    *,
+    auto_binder_count: int = 0,
 ) -> list[tuple[int, float]]:
     """Compute structural scores for candidates.
+
+    When *auto_binder_count* > 0, peels that many leading ``LProd`` layers
+    from both query and candidate trees before computing collapse_match and
+    ted_similarity.  WL cosine and const_jaccard use the full (unpeeled) trees.
 
     Returns (decl_id, structural_score) pairs.
     """
     if not candidates_with_wl:
         return []
 
-    # Extract query constants
+    # Extract query constants (uses full tree)
     query_consts = extract_consts(query_tree)
+
+    # Peel query tree once (outside loop) if auto binders were generated
+    if auto_binder_count > 0:
+        peeled_query = _peel_n_prods(query_tree, auto_binder_count)
+    else:
+        peeled_query = query_tree
 
     # Fetch candidate trees in batch
     candidate_ids = [decl_id for decl_id, _ in candidates_with_wl]
@@ -546,18 +589,24 @@ def score_candidates(
         if candidate_tree is None:
             continue
 
-        # Compute const jaccard using pre-computed declaration symbols
+        # Compute const jaccard using pre-computed declaration symbols (full tree)
         candidate_consts = ctx.declaration_symbols.get(decl_id, set())
         cj = jaccard_similarity(query_consts, candidate_consts)
 
-        # Compute collapse match
-        cm = collapse_match(query_tree, candidate_tree)
+        # Peel candidate tree for structural comparison
+        if auto_binder_count > 0:
+            peeled_candidate = _peel_n_prods(candidate_tree, auto_binder_count)
+        else:
+            peeled_candidate = candidate_tree
 
-        # Determine if TED should be computed
-        use_ted = (query_tree.node_count <= 50 and candidate_tree.node_count <= 50)
+        # Compute collapse match on peeled trees
+        cm = collapse_match(peeled_query, peeled_candidate)
+
+        # Determine if TED should be computed (size check on peeled trees)
+        use_ted = (peeled_query.node_count <= 50 and peeled_candidate.node_count <= 50)
 
         if use_ted:
-            ted_sim = ted_similarity(query_tree, candidate_tree)
+            ted_sim = ted_similarity(peeled_query, peeled_candidate)
             # Weights: 0.15 * wl + 0.40 * ted + 0.30 * collapse + 0.15 * jaccard
             structural = 0.15 * wl_cosine + 0.40 * ted_sim + 0.30 * cm + 0.15 * cj
         else:
