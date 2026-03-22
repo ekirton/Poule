@@ -1891,13 +1891,13 @@ class TestCoqtopSubprocessLifecycle:
         state = await mgr.observe_state(sid)
         assert state.step_index == 1
 
-    async def test_coqtop_loads_file_imports(self):
-        """Spec §4.4.1 step 2: The subprocess loads the session's file imports
-        (the Require/Import commands from the .v file's preamble).
+    async def test_coqtop_loads_file_context(self):
+        """Spec §4.4.1 step 2: The subprocess loads the session's file context —
+        all vernacular commands preceding the proof target.
 
-        Given a session opened on a .v file with imports,
+        Given a session opened on a .v file with a proof_name,
         When coqtop is lazily spawned,
-        Then _ensure_coqtop loads the file's imports into coqtop."""
+        Then _ensure_coqtop has access to file_path and proof_name for context extraction."""
         SessionManager = _import_manager()
         backend = _make_mock_backend()
         mgr = SessionManager(backend_factory=_make_backend_factory(backend))
@@ -1905,13 +1905,13 @@ class TestCoqtopSubprocessLifecycle:
         sid, _ = await mgr.create_session("/file.v", "proof1")
 
         ensure_called = False
-        original_ensure = mgr._ensure_coqtop
 
         async def tracking_ensure(ss):
             nonlocal ensure_called
             ensure_called = True
-            # Verify the file_path is available for import extraction
+            # Verify both file_path and proof_name are available
             assert ss.file_path == "/file.v"
+            assert ss.proof_name == "proof1"
             # Set up a fake proc so we can proceed
             fake_proc = MagicMock()
             fake_proc.stdin = MagicMock()

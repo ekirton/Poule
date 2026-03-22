@@ -68,6 +68,40 @@ def _extract_imports(file_path: str) -> str:
     return "\n".join(m.group(0) for m in _IMPORT_RE.finditer(text))
 
 
+# Matches lines that start a named proof obligation.
+# Use [ \t]* (not \s*) to avoid crossing line boundaries with re.MULTILINE.
+_PROOF_STARTER_RE = re.compile(
+    r"^[ \t]*(?:Lemma|Theorem|Proposition|Corollary|Example|Fact|Remark|"
+    r"Definition|Fixpoint|CoFixpoint|Program[ \t]+\w+)[ \t]+",
+    re.MULTILINE,
+)
+
+
+def _extract_file_prelude(file_path: str, proof_name: str) -> str:
+    """Extract all vernacular from a .v file up to (but not including) the proof target.
+
+    If *proof_name* is empty, falls back to extracting only imports.
+    If *proof_name* is not found in the file, returns the entire file content
+    (safe fallback — more context is better than less).
+    """
+    if not proof_name:
+        return _extract_imports(file_path)
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except (OSError, FileNotFoundError):
+        return ""
+    # Find the line that declares the proof target.
+    for m in _PROOF_STARTER_RE.finditer(text):
+        line = text[m.start() : text.index("\n", m.start()) if "\n" in text[m.start():] else len(text)]
+        # Check if the proof name appears as the next token after the keyword.
+        tokens = line.split()
+        if len(tokens) >= 2 and tokens[1].rstrip(":") == proof_name:
+            return text[: m.start()].rstrip()
+    # proof_name not found — return everything
+    return text.rstrip()
+
+
 def _normalize_session_id(session_id):
     """Extract the string session ID if a tuple (id, state) was passed."""
     if isinstance(session_id, tuple):
@@ -600,8 +634,8 @@ class SessionManager:
         For proof sessions backed by coq-lsp, coq-lsp cannot capture
         the output of Print/Check/About commands (it only exposes
         diagnostics, not query results).  We spawn a coqtop subprocess
-        on first use, loading the file's imports so queries execute in
-        the correct context.
+        on first use, loading the file's vernacular content up to the
+        proof target so queries can see same-file definitions.
         """
         if ss.coqtop_proc is not None:
             return ss.coqtop_proc
@@ -619,9 +653,9 @@ class SessionManager:
         await proc.stdin.drain()  # type: ignore[union-attr]
         await self._read_until_sentinel(proc)
 
-        # Load the file's imports so queries have the right context.
+        # Load the file's context so queries can see same-file definitions.
         if ss.file_path:
-            prelude = _extract_imports(ss.file_path)
+            prelude = _extract_file_prelude(ss.file_path, ss.proof_name)
             if prelude:
                 proc.stdin.write((prelude + "\n").encode("utf-8"))  # type: ignore[union-attr]
                 proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]

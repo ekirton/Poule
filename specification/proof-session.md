@@ -242,7 +242,7 @@ The session's CoqBackend (coq-lsp) communicates via the LSP protocol, which does
 The session manager shall lazily spawn a coqtop subprocess on the first `submit_command` call for a given session. The subprocess:
 
 1. Is spawned with stdout and stderr merged into a single stream.
-2. Loads the session's file imports (the `Require`/`Import` commands from the `.v` file's preamble) so that the query context matches the session's environment.
+2. Loads the session's file context — all vernacular commands from the `.v` file that precede the proof target (imports, definitions, notations, section variables, prior lemmas with their proofs, etc.) — so that the query context matches the session's environment. If the session has no proof target (i.e., `proof_name` is empty), loads only the file's `Require`/`Import` commands.
 3. Persists for the lifetime of the session — subsequent `submit_command` calls reuse the same subprocess.
 4. Is terminated when the session is closed, times out, or the CoqBackend crashes.
 
@@ -257,7 +257,11 @@ The coqtop subprocess is independent of the CoqBackend process. Commands execute
 
 > **Given** a session that has never called `submit_command`
 > **When** `submit_command(session_id, "Check nat.")` is called for the first time
-> **Then** a coqtop subprocess is spawned, the file's imports are loaded, the command is executed, and the output is returned
+> **Then** a coqtop subprocess is spawned, the file's context (all vernacular commands preceding the proof target) is loaded, the command is executed, and the output is returned
+
+> **Given** a session on `add_comm` in a file containing `Lemma my_lemma : ... Proof. ... Qed.` before `add_comm`
+> **When** `submit_command(session_id, "Check my_lemma.")` is called
+> **Then** the output contains the type of `my_lemma`, because the file content preceding `add_comm` was loaded into the coqtop subprocess
 
 > **Given** a session with an active coqtop subprocess
 > **When** `submit_command(session_id, "Print nat.")` is called

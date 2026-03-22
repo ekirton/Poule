@@ -239,6 +239,133 @@ class TestExtractImports:
 
 
 # ---------------------------------------------------------------------------
+# 2b. _extract_file_prelude
+# ---------------------------------------------------------------------------
+
+class TestExtractFilePrelude:
+    """_extract_file_prelude extracts all vernacular up to the proof target.
+
+    Spec §4.4.1 step 2: The subprocess loads the session's file context —
+    all vernacular commands from the .v file that precede the proof target.
+    """
+
+    def test_extracts_everything_before_proof_target(self, tmp_path):
+        from Poule.session.manager import _extract_file_prelude
+
+        v_file = tmp_path / "test.v"
+        v_file.write_text(
+            "From Coq Require Import PeanoNat.\n"
+            "\n"
+            "Lemma helper : forall n, n + 0 = n.\n"
+            "Proof. intros n. lia. Qed.\n"
+            "\n"
+            "Definition double (n : nat) := n + n.\n"
+            "\n"
+            "Lemma target : forall n, n = n.\n"
+            "Proof.\n"
+            "  reflexivity.\n"
+            "Qed.\n"
+        )
+
+        result = _extract_file_prelude(str(v_file), "target")
+
+        assert "From Coq Require Import PeanoNat." in result
+        assert "Lemma helper" in result
+        assert "Definition double" in result
+        # The proof target line itself should NOT be included
+        assert "Lemma target" not in result
+
+    def test_includes_prior_proofs(self, tmp_path):
+        from Poule.session.manager import _extract_file_prelude
+
+        v_file = tmp_path / "test.v"
+        v_file.write_text(
+            "Lemma first : True.\n"
+            "Proof. exact I. Qed.\n"
+            "\n"
+            "Lemma second : True.\n"
+            "Proof. exact I. Qed.\n"
+        )
+
+        result = _extract_file_prelude(str(v_file), "second")
+
+        assert "Lemma first" in result
+        assert "Proof. exact I. Qed." in result
+        assert "Lemma second" not in result
+
+    def test_no_proof_name_returns_imports_only(self, tmp_path):
+        from Poule.session.manager import _extract_file_prelude
+
+        v_file = tmp_path / "test.v"
+        v_file.write_text(
+            "From Coq Require Import PeanoNat.\n"
+            "Definition foo := 1.\n"
+            "Lemma bar : True. Proof. exact I. Qed.\n"
+        )
+
+        result = _extract_file_prelude(str(v_file), "")
+
+        assert "From Coq Require Import PeanoNat." in result
+        assert "Definition foo" not in result
+
+    def test_proof_name_not_found_returns_all_content(self, tmp_path):
+        from Poule.session.manager import _extract_file_prelude
+
+        v_file = tmp_path / "test.v"
+        v_file.write_text(
+            "From Coq Require Import PeanoNat.\n"
+            "Definition foo := 1.\n"
+        )
+
+        result = _extract_file_prelude(str(v_file), "nonexistent")
+
+        # If proof name is not found, return everything (safe fallback)
+        assert "From Coq Require Import PeanoNat." in result
+        assert "Definition foo" in result
+
+    def test_file_not_found_returns_empty(self):
+        from Poule.session.manager import _extract_file_prelude
+
+        result = _extract_file_prelude("/nonexistent/path.v", "anything")
+
+        assert result == ""
+
+    def test_handles_theorem_keyword(self, tmp_path):
+        from Poule.session.manager import _extract_file_prelude
+
+        v_file = tmp_path / "test.v"
+        v_file.write_text(
+            "Definition x := 1.\n"
+            "Theorem my_thm : x = 1.\n"
+            "Proof. reflexivity. Qed.\n"
+        )
+
+        result = _extract_file_prelude(str(v_file), "my_thm")
+
+        assert "Definition x" in result
+        assert "Theorem my_thm" not in result
+
+    def test_handles_various_proof_starters(self, tmp_path):
+        """All proof-starting keywords: Lemma, Theorem, Proposition, Corollary,
+        Example, Fact, Remark, Definition, Fixpoint, CoFixpoint."""
+        from Poule.session.manager import _extract_file_prelude
+
+        for keyword in ["Lemma", "Theorem", "Proposition", "Corollary",
+                         "Example", "Fact", "Remark"]:
+            v_file = tmp_path / f"test_{keyword}.v"
+            v_file.write_text(
+                "Definition setup := 42.\n"
+                f"{keyword} target : True.\n"
+                "Proof. exact I. Qed.\n"
+            )
+
+            result = _extract_file_prelude(str(v_file), "target")
+
+            assert "Definition setup" in result, f"Failed for keyword {keyword}"
+            assert f"{keyword} target" not in result, f"Failed for keyword {keyword}"
+
+
+# ---------------------------------------------------------------------------
 # 3. SessionManager.send_command routes through coqtop
 # ---------------------------------------------------------------------------
 
