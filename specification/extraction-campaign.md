@@ -95,10 +95,10 @@ When a scope filter is provided, the system shall apply it after theorem enumera
 
 ### 4.2 Per-Proof Extraction
 
-#### extract_single_proof(project_id, source_file, theorem_name)
+#### extract_single_proof(project_id, source_file, theorem_name, project_path)
 
-- REQUIRES: `source_file` is a valid .v file path. `theorem_name` is a fully qualified proof name.
-- ENSURES: Creates a proof session, replays the full proof, extracts the proof trace and premise annotations, assembles an ExtractionRecord, closes the session, and returns the record. The session is closed in a finally block regardless of success or failure.
+- REQUIRES: `source_file` is a relative path (relative to project root) to a .v file. `project_path` is the absolute path to the project root directory. `theorem_name` is a fully qualified proof name. The orchestrator resolves `project_path / source_file` to an absolute path before passing it to `create_session`.
+- ENSURES: Creates a proof session using the resolved absolute file path, replays the full proof, extracts the proof trace and premise annotations, assembles an ExtractionRecord (storing the relative `source_file`), closes the session, and returns the record. The session is closed in a finally block regardless of success or failure.
 - On session creation failure: returns ExtractionError with `error_kind` = `load_failure` or `tactic_failure`.
 - On tactic failure during replay: returns ExtractionError with `error_kind` = `tactic_failure`.
 - On backend crash: returns ExtractionError with `error_kind` = `backend_crash`.

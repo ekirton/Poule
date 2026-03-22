@@ -343,6 +343,7 @@ class TestExtractSingleProofSuccess:
 
         result = asyncio.run(extract_single_proof(
             sm, "coq-stdlib", "theories/Arith/PeanoNat.v", "Nat.add_comm",
+            project_path="/path/to/stdlib",
         ))
 
         assert isinstance(result, ExtractionRecord)
@@ -359,12 +360,45 @@ class TestExtractSingleProofSuccess:
 
         asyncio.run(extract_single_proof(
             sm, "proj", "file.v", "thm",
+            project_path="/path/to/proj",
         ))
 
         sm.create_session.assert_called_once()
         sm.extract_trace.assert_called_once()
         sm.get_premises.assert_called_once()
         sm.close_session.assert_called_once()
+
+    def test_create_session_receives_absolute_path(self):
+        """create_session must receive an absolute path resolved from
+        project_path + source_file, not the relative source_file (§4.2)."""
+        from Poule.extraction.campaign import extract_single_proof
+
+        sm = _make_mock_session_manager()
+
+        asyncio.run(extract_single_proof(
+            sm, "coq-stdlib", "theories/Arith/PeanoNat.v", "Nat.add_comm",
+            project_path="/data/stdlib",
+        ))
+
+        # The first argument to create_session must be the absolute path
+        args = sm.create_session.call_args[0]
+        assert args[0] == "/data/stdlib/theories/Arith/PeanoNat.v"
+
+    def test_extraction_record_stores_relative_source_file(self):
+        """ExtractionRecord stores the relative source_file, not the
+        absolute path used for create_session (§4.2, line 137)."""
+        from Poule.extraction.campaign import extract_single_proof
+        from Poule.extraction.types import ExtractionRecord
+
+        sm = _make_mock_session_manager()
+
+        result = asyncio.run(extract_single_proof(
+            sm, "coq-stdlib", "theories/Arith/PeanoNat.v", "Nat.add_comm",
+            project_path="/data/stdlib",
+        ))
+
+        assert isinstance(result, ExtractionRecord)
+        assert result.source_file == "theories/Arith/PeanoNat.v"
 
 
 class TestExtractSingleProofFailureModes:
@@ -382,7 +416,8 @@ class TestExtractSingleProofFailureModes:
         )
 
         result = asyncio.run(extract_single_proof(
-            sm, "proj", "file.v", "slow_thm", timeout_seconds=1,
+            sm, "proj", "file.v", "slow_thm",
+            project_path="/path/to/proj", timeout_seconds=1,
         ))
 
         assert isinstance(result, ExtractionError)
@@ -404,6 +439,7 @@ class TestExtractSingleProofFailureModes:
 
         result = asyncio.run(extract_single_proof(
             sm, "proj", "file.v", "crash_thm",
+            project_path="/path/to/proj",
         ))
 
         assert isinstance(result, ExtractionError)
@@ -424,6 +460,7 @@ class TestExtractSingleProofFailureModes:
 
         result = asyncio.run(extract_single_proof(
             sm, "proj", "file.v", "bad_thm",
+            project_path="/path/to/proj",
         ))
 
         assert isinstance(result, ExtractionError)
@@ -444,6 +481,7 @@ class TestExtractSingleProofFailureModes:
 
         result = asyncio.run(extract_single_proof(
             sm, "proj", "missing.v", "thm",
+            project_path="/path/to/proj",
         ))
 
         assert isinstance(result, ExtractionError)
@@ -463,6 +501,7 @@ class TestExtractSingleProofFailureModes:
 
         result = asyncio.run(extract_single_proof(
             sm, "proj", "file.v", "thm",
+            project_path="/path/to/proj",
         ))
 
         assert isinstance(result, ExtractionError)
@@ -479,7 +518,9 @@ class TestExtractSingleProofSessionCleanup:
         # Mock SessionManager — contract test: test_proof_session.py
         sm = _make_mock_session_manager()
 
-        asyncio.run(extract_single_proof(sm, "proj", "file.v", "thm"))
+        asyncio.run(extract_single_proof(
+            sm, "proj", "file.v", "thm", project_path="/path/to/proj",
+        ))
 
         sm.close_session.assert_called_once()
 
@@ -493,7 +534,9 @@ class TestExtractSingleProofSessionCleanup:
             side_effect=RuntimeError("kaboom"),
         )
 
-        asyncio.run(extract_single_proof(sm, "proj", "file.v", "thm"))
+        asyncio.run(extract_single_proof(
+            sm, "proj", "file.v", "thm", project_path="/path/to/proj",
+        ))
 
         sm.close_session.assert_called_once()
 
@@ -507,7 +550,8 @@ class TestExtractSingleProofSessionCleanup:
         )
 
         asyncio.run(extract_single_proof(
-            sm, "proj", "file.v", "thm", timeout_seconds=1,
+            sm, "proj", "file.v", "thm",
+            project_path="/path/to/proj", timeout_seconds=1,
         ))
 
         sm.close_session.assert_called_once()
@@ -529,7 +573,8 @@ class TestExtractSingleProofTimeout:
         sm.extract_trace = AsyncMock(side_effect=slow_trace)
 
         result = asyncio.run(extract_single_proof(
-            sm, "proj", "file.v", "thm", timeout_seconds=0.1,
+            sm, "proj", "file.v", "thm",
+            project_path="/path/to/proj", timeout_seconds=0.1,
         ))
 
         assert isinstance(result, ExtractionError)

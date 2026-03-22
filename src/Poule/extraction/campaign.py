@@ -164,6 +164,7 @@ async def extract_single_proof(
     project_id: str,
     source_file: str,
     theorem_name: str,
+    project_path: str = "",
     timeout_seconds: Optional[float] = None,
 ) -> Union[ExtractionRecord, ExtractionError]:
     """Extract a single proof trace, returning a record or error.
@@ -172,7 +173,7 @@ async def extract_single_proof(
     """
     session_id: Optional[str] = None
     try:
-        coro = _do_extraction(session_manager, project_id, source_file, theorem_name)
+        coro = _do_extraction(session_manager, project_id, source_file, theorem_name, project_path)
         if timeout_seconds is not None:
             result = await asyncio.wait_for(coro, timeout=timeout_seconds)
         else:
@@ -218,12 +219,15 @@ async def _do_extraction(
     project_id: str,
     source_file: str,
     theorem_name: str,
+    project_path: str = "",
 ) -> ExtractionRecord:
     """Core extraction logic with guaranteed session cleanup."""
     session_id = None
     try:
+        # Resolve to absolute path for the backend (§4.2, §10).
+        abs_file = str(Path(project_path) / source_file) if project_path else source_file
         session_id, _initial_state = await session_manager.create_session(
-            source_file, theorem_name,
+            abs_file, theorem_name,
         )
         trace = await session_manager.extract_trace(session_id)
         premise_annotations = await session_manager.get_premises(session_id)
@@ -381,6 +385,9 @@ async def run_campaign(
     results: list[dict] = []
     results.append(_record_to_dict(metadata))
 
+    # Build project_id -> project_path mapping for path resolution.
+    project_path_map = {p.project_id: p.project_path for p in plan.projects}
+
     # Extract each target.
     interrupted = False
     for project_id, source_file, theorem_name in plan.targets:
@@ -390,6 +397,7 @@ async def run_campaign(
                 project_id,
                 source_file,
                 theorem_name,
+                project_path=project_path_map.get(project_id, ""),
                 timeout_seconds=all_kwargs.get("timeout_seconds"),
             )
         except KeyboardInterrupt:
