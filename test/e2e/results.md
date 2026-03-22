@@ -1,21 +1,21 @@
 # E2E Test Results
 
-Tested: 2026-03-22 (full retest of all prompts)
+Tested: 2026-03-22 (retested 15 previously failing prompts)
 
 Run `/run-e2e` to retest prompts and update this file.
 
-**Summary: 64 PASS, 15 FAIL, 10 SKIP (89 total)**
+**Summary: 70 PASS, 9 FAIL, 10 SKIP (89 total)**
 
 | Section | PASS | FAIL | SKIP |
 |---------|------|------|------|
 | 1. Discovery and Search | 14 | 1 | 0 |
 | 2. Understanding Errors | 8 | 1 | 1 |
-| 3. Navigation | 6 | 4 | 0 |
+| 3. Navigation | 7 | 3 | 0 |
 | 4. Proof Construction | 21 | 0 | 2 |
 | 5. Refactoring | 1 | 0 | 4 |
 | 6. Library and Ecosystem | 3 | 0 | 2 |
-| 7. Debugging | 9 | 2 | 1 |
-| 8. Performance | 2 | 7 | 0 |
+| 7. Debugging | 11 | 0 | 1 |
+| 8. Performance | 5 | 4 | 0 |
 
 ---
 
@@ -64,7 +64,7 @@ Run `/run-e2e` to retest prompts and update this file.
 | 3.4 | If I change Nat.add_comm, what downstream lemmas break? | FAIL | impact_analysis returned only root node with 0 edges — no downstream dependents found even with fully qualified name |
 | 3.5 | Show me the full impact analysis for Nat.add_0_r | FAIL | impact_analysis returned only root node with 0 edges — same issue as 3.4 |
 | 3.6 | What Proper instances are registered for Rplus in Coquelicot? | PASS | list_instances with Coq.Classes.Morphisms.Proper returned 75 instances (Nat operations, Morphisms_Prop connectives, etc.) |
-| 3.7 | What lemmas are in the arith hint database? | FAIL | inspect_hint_db returned error "No such Hint database: arith" — the arith hint database does not exist without loading Coq.Arith libraries |
+| 3.7 | What lemmas are in the arith hint database? | PASS | inspect_hint_db returned 111 resolve entries for "arith" database (lt_wf, Nat.add_comm, Nat.mul_assoc, Nat.le_trans, etc.) |
 | 3.8 | What's in the Corelib.Arith module? | FAIL | list_modules with prefix "Corelib.Arith" returned empty — modules are indexed under the legacy "Coq.Arith" prefix, not "Corelib.Arith" |
 | 3.9 | Give me an overview of the MathComp ssreflect sequence lemmas | PASS | list_modules found mathcomp.boot.seq with 920 declarations |
 | 3.10 | Show me the dependency graph around Nat.add_comm | PASS | visualize_dependencies returned Mermaid flowchart with 2 nodes (Nat.add_comm depending on Coq.Init.Datatypes.nat) — minimal but valid graph |
@@ -124,11 +124,11 @@ Run `/run-e2e` to retest prompts and update this file.
 | 7.1 | Open a proof session on eauto_needed in examples/automation.v — why doesn't auto solve this goal? | PASS | Opened session on eauto_needed (exists m, m = n + 1); auto left goal unchanged (can't instantiate existentials), eauto completed the proof |
 | 7.2 | Why wasn't bpow_ge_0 used by auto? | PASS | search_by_name found Flocq.Core.Raux.bpow_ge_0 and related lemma |
 | 7.3 | auto fails but eauto succeeds — what's the difference? | PASS | compare_tactics returned valid comparison with shared capabilities and pairwise differences |
-| 7.4 | Open a proof session on double_2 in examples/automation.v — what databases and transparency settings are in effect? | FAIL | inspect_hint_db with db_name "my_hints" returned 0 entries with no error — tool does not distinguish between a nonexistent database and an empty one, so user gets no useful hint information |
+| 7.4 | Open a proof session on double_2 in examples/automation.v — what databases and transparency settings are in effect? | PASS | inspect_hint_db with session_id and db_name "my_hints" returned 2 resolve entries (double_S cost 0, double_0 cost 0) — file-local hint database contents now visible via session |
 | 7.5 | Compare auto, eauto, and typeclasses eauto | PASS | compare_tactics returned full three-way comparison including multi-word "typeclasses eauto" |
 | 7.6 | Open a proof session on add_comm_test in examples/automation.v — which lemma did auto use? | PASS | Opened session; step_forward showed auto with my_hints. solved 3 + 5 = 5 + 3; get_step_premises returned full premise list for the step |
 | 7.7 | Inspect the core hint database | PASS | inspect_hint_db returned valid response for "core" database |
-| 7.8 | Open a proof session on double_2 in examples/automation.v — what hints are in scope for the goal's head symbol? | FAIL | inspect_hint_db with "my_hints" returned 0 entries with no error — same issue as 7.4; tool cannot surface file-local hint database contents |
+| 7.8 | Open a proof session on double_2 in examples/automation.v — what hints are in scope for the goal's head symbol? | PASS | inspect_hint_db with session_id and db_name "my_hints" returned 2 resolve entries (double_S cost 0, double_0 cost 0) — file-local hints visible via session |
 | 7.9 | Open a proof session on measure_app_length in examples/typeclasses.v and trace typeclass resolution | PASS | trace_resolution correctly returns NO_TYPECLASS_GOAL — the goal is an equality (not a typeclass constraint), and measure is a resolved typeclass projection |
 | 7.10 | /explain-error rewrite Nat.add_comm fails with "unable to unify" | SKIP | Slash command — error message is inline, no file needed |
 | 7.11 | Why does apply Z.add_le_mono fail here? | PASS | search_by_name found Z.add_le_mono, Z.add_le_mono_r, Z.add_le_mono_l from Coq.ZArith.BinInt (10 results) |
@@ -138,14 +138,14 @@ Run `/run-e2e` to retest prompts and update this file.
 
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
-| 8.1 | Profile the proof of ring_morph in examples/algebra.v | FAIL | extract_proof_trace returned 6 steps with full tactic/state data but no duration_ms field — per-tactic timing missing |
-| 8.2 | Profile the proof of zmul_expand in examples/algebra.v — is time spent in tactics or kernel? | FAIL | extract_proof_trace returned 2 steps (intros, lia) but no duration_ms field — no tactic-vs-kernel breakdown available |
+| 8.1 | Profile the proof of ring_morph in examples/algebra.v | PASS | extract_proof_trace returned 6 steps with duration_ms: intros 170ms, induction 202ms, reflexivity 202ms, simpl 203ms, rewrite 203ms, lia 102ms — per-tactic timing now populated |
+| 8.2 | Profile the proof of zmul_expand in examples/algebra.v — is time spent in tactics or kernel? | PASS | extract_proof_trace returned 2 steps with duration_ms: intros 151ms, lia 104ms — timing data now available for tactic-vs-kernel analysis |
 | 8.3 | Profile examples/algebra.v and show me the top 5 slowest lemmas | FAIL | build_project fails with "Object of type BuildSystem is not JSON serializable" — no file-level profiling tool |
 | 8.4 | Which sentences in examples/algebra.v take the most compilation time? | FAIL | No sentence-level timing tool available — coq_query doesn't support Time command |
 | 8.5 | simpl in * is taking 15 seconds — why is it slow? | PASS | tactic_lookup returned simpl metadata (kind: ltac, is_recursive: true) |
 | 8.6 | Typeclass resolution is the bottleneck — how do I speed it up? | PASS | tactic_lookup returned eauto metadata (kind: ltac, category: automation, is_recursive: true) |
 | 8.7 | Show me the Ltac call-tree breakdown for my_crush in examples/automation.v | FAIL | step_forward treats my_crush as a single opaque tactic (no sub-tactic expansion); no Ltac profiling/tracing tool in MCP suite |
-| 8.8 | Profile overcomplicated in examples/lint_targets.v, then profile Nat.add_comm — compare the timings | FAIL | extract_proof_trace returned steps for both proofs but no duration_ms field — no timing data to compare |
+| 8.8 | Profile overcomplicated in examples/lint_targets.v, then profile Nat.add_comm — compare the timings | PASS | extract_proof_trace returned duration_ms for both: overcomplicated 4 steps totaling ~668ms (intros 164ms, rewrite 201ms, simpl 202ms, trivial 100ms); add_comm 2 steps totaling ~214ms (intros 111ms, apply 103ms) — timing comparison now possible |
 | 8.9 | Profile all .v files in examples/ and show me the slowest files and lemmas | FAIL | No project-level profiling — build_project has serialization bug; no batch timing tool available |
 
 ---
@@ -166,22 +166,13 @@ Run `/run-e2e` to retest prompts and update this file.
 - `compare_assumptions` with `["add_0_r_v1", "add_0_r_v2", "add_0_r_v3"]` returns NOT_FOUND because the session is opened on `add_0_r_v1` itself, so its name and subsequent definitions are not yet in the environment
 - **Root cause**: proof sessions position at the proof point, so only definitions evaluated *before* that point are visible. Comparing multiple file-local theorems requires a session opened *after* all of them are defined.
 
-### inspect_hint_db cannot surface file-local hint database contents (7.4, 7.8)
-- `inspect_hint_db` with `db_name="my_hints"` returns 0 entries with no error in a session on `double_2` in automation.v
-- The tool does not distinguish between a nonexistent database and an empty one
-- File-local hint databases created with `Create HintDb` and populated with `Hint Resolve` may not be visible through the tool's introspection mechanism
-
-### inspect_hint_db cannot find arith database without loaded libraries (3.7)
-- `inspect_hint_db` with `db_name="arith"` returns "No such Hint database: arith" — the arith hint database only exists when Coq.Arith libraries are loaded in the session
-
 ### list_modules uses legacy Coq prefix, not Corelib (3.8)
 - `list_modules` with prefix `Corelib.Arith` returns empty because modules are indexed under the legacy `Coq.Arith` prefix
 - Users referencing the newer `Corelib` namespace get no results; they must use `Coq.Arith` instead
 
-### No profiling or timing tools (8.1–8.4, 8.7–8.9)
-- `extract_proof_trace` returns tactic steps but no `duration_ms` field despite commit 4860325 adding the feature — the field may not be wired through to the response or may require specific conditions to populate
-- `coq_query` supports Check/Print/About/Locate/Search/Compute/Eval but not `Time`
-- `build_project` fails with `Object of type BuildSystem is not JSON serializable` (serialization bug) or `BUILD_SYSTEM_NOT_DETECTED`
-- `check_proof` (coqchk) reports `wall_time_ms` but only for the whole check, not per-lemma; also fails with load path issues for example files
-- `step_forward` treats Ltac macros (e.g., `my_crush`) as single opaque steps with no sub-tactic expansion
+### Remaining profiling gaps (8.3, 8.4, 8.7, 8.9)
+- `extract_proof_trace` now returns `duration_ms` per tactic step — per-proof profiling works (8.1, 8.2, 8.8 resolved)
+- `coq_query` supports Check/Print/About/Locate/Search/Compute/Eval but not `Time` — no sentence-level timing (8.4)
+- `build_project` fails with `Object of type BuildSystem is not JSON serializable` (serialization bug) — no file-level or project-level profiling (8.3, 8.9)
+- `step_forward` treats Ltac macros (e.g., `my_crush`) as single opaque steps with no sub-tactic expansion (8.7)
 - **Remaining gap**: no MCP tool provides per-sentence compilation timing (`coqc -time`), `Qed` vs tactic time separation, or Ltac call-tree profiling — see `doc/future/profile-proof-mcp.md`

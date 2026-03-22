@@ -139,6 +139,11 @@ What is the body of MathComp.ssrnat.leq?
 What Proper instances are registered for Rplus in Coquelicot?
 ```
 
+**Inspect hint databases:**
+```
+What lemmas are in the arith hint database?
+```
+
 **Browse module contents:**
 ```
 Give me an overview of the MathComp ssreflect sequence lemmas
@@ -332,6 +337,12 @@ Open a proof session on measure_app_length in examples/typeclasses.v and trace t
 ```
 Inspect the core hint database to see if my lemma is registered
 ```
+```
+Open a proof session on double_2 in examples/automation.v — what databases and transparency settings are in effect for auto?
+```
+```
+Open a proof session on double_2 in examples/automation.v — what hints are in scope for the goal's head symbol?
+```
 
 **Diagnose tactic failures:**
 ```
@@ -351,6 +362,19 @@ Compare simpl vs cbn vs lazy — why does simpl unfold too much here?
 ## 8. Performance and Profiling
 
 Identify and fix proof performance bottlenecks without manually instrumenting code.
+
+**Profile a specific proof:**
+```
+Profile the proof of ring_morph in examples/algebra.v — which tactic is the bottleneck?
+```
+```
+Profile the proof of zmul_expand in examples/algebra.v — is the time spent in tactics or kernel re-checking?
+```
+
+**Compare timing before and after:**
+```
+Profile overcomplicated in examples/lint_targets.v, then profile Nat.add_comm — compare the timings. Did the verbose version regress?
+```
 
 **Get optimization suggestions:**
 ```
