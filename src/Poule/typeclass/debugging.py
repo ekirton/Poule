@@ -337,6 +337,24 @@ async def trace_resolution(
             raw_output=debug_output,
         )
 
+    # If parser created goal nodes but no instances were actually attempted,
+    # this is a non-typeclass goal that the engine examined but found no
+    # candidates for (e.g., goal head is `=` with typeclass projections
+    # already resolved during elaboration).
+    if "trying" not in debug_output:
+        # Use goal text from parsed nodes as fallback when observe_proof_state
+        # didn't capture it.
+        effective_goal = goal_text
+        if not effective_goal:
+            for node in root_nodes:
+                if node.goal:
+                    effective_goal = node.goal
+                    break
+        raise TypeclassError(
+            "NO_TYPECLASS_GOAL",
+            _no_typeclass_goal_message(effective_goal),
+        )
+
     # Determine success and failure mode
     succeeded = any(_node_succeeded(n) for n in root_nodes)
     failure_mode = None
