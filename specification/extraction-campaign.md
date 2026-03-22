@@ -30,19 +30,24 @@ Define the campaign orchestrator that enumerates projects and theorems, drives p
 
 ### 4.1 Campaign Planning
 
-#### build_campaign_plan(project_dirs, scope_filter)
+#### build_campaign_plan(project_dirs, index_db_path, scope_filter)
 
-- REQUIRES: `project_dirs` is a non-empty list of directory paths. Each directory exists on disk. `scope_filter` is optional (null means extract all).
-- ENSURES: Returns a CampaignPlan containing: a list of ProjectMetadata (one per project), and an ordered list of ExtractionTarget triples `(project_id, source_file, theorem_name)`. The ordering is deterministic: projects in `project_dirs` order, files in lexicographic path order within each project, theorems in declaration order within each file.
+- REQUIRES: `project_dirs` is a non-empty list of directory paths. Each directory exists on disk. `index_db_path` is a path to a valid SQLite index database with schema version 1. `scope_filter` is optional (null means extract all).
+- ENSURES: Returns a CampaignPlan containing: a list of ProjectMetadata (one per project), and an ordered list of ExtractionTarget tuples `(project_id, source_file, theorem_name, decl_kind)`. Theorem names are fully qualified (from the index). Declaration kinds are one of: `lemma`, `theorem`, `instance`, `definition`. The ordering is deterministic: projects in `project_dirs` order, files in lexicographic path order within each project, declarations in `(module, name)` order within each file.
 - On directory not found: raises `DIRECTORY_NOT_FOUND` error before any extraction begins.
+- On index not found or invalid: raises `INDEX_NOT_FOUND` error before any extraction begins.
 
-> **Given** two project directories `/stdlib` and `/mathcomp`
-> **When** `build_campaign_plan(["/stdlib", "/mathcomp"], null)` is called
-> **Then** the plan contains projects in order [stdlib, mathcomp], files sorted within each, theorems in declaration order
+> **Given** two project directories `/stdlib` and `/mathcomp` and a valid index DB
+> **When** `build_campaign_plan(["/stdlib", "/mathcomp"], "index.db", null)` is called
+> **Then** the plan contains projects in order [stdlib, mathcomp], files sorted within each, declarations ordered by (module, name)
 
 > **Given** a project directory that does not exist
-> **When** `build_campaign_plan(["/nonexistent"])` is called
+> **When** `build_campaign_plan(["/nonexistent"], "index.db")` is called
 > **Then** a `DIRECTORY_NOT_FOUND` error is raised
+
+> **Given** an index_db_path that does not exist
+> **When** `build_campaign_plan(["/stdlib"], "/missing/index.db")` is called
+> **Then** an `INDEX_NOT_FOUND` error is raised
 
 #### Project metadata detection
 
@@ -62,21 +67,35 @@ For each project directory, the system shall detect:
 > **When** project IDs are derived
 > **Then** the first is `theories`, the second is `theories-2`
 
-#### Theorem enumeration
+#### Declaration enumeration
 
-For each .v file in a project, the system shall enumerate provable theorems by querying the Coq backend.
+The system shall enumerate provable declarations by querying the SQLite search index for declarations with kind in `{lemma, theorem, instance, definition}`.
 
-- REQUIRES: The .v file is loadable by the Coq backend.
-- ENSURES: Returns theorems in declaration order within the file. Each theorem has a fully qualified name.
-- On file load failure: all theorems in this file are marked as `load_failure` errors. Enumeration continues with the next file.
+- REQUIRES: `index_db_path` points to a valid index database. Each declaration in the index has a fully qualified `name`, `module`, and `kind`.
+- ENSURES: Returns declarations ordered by `(module, name)` within each source file. Each declaration has a fully qualified name and a `decl_kind`. Source file paths are derived from module paths using `module_to_source_file()`.
+- The index is the sole enumeration source. No regex or file-scanning heuristics are used.
 
-> **Given** a .v file containing theorems `A`, `B`, `C` in declaration order
-> **When** theorems are enumerated
-> **Then** they are returned in order [A, B, C]
+> **Given** an index containing declarations `Coq.Arith.PeanoNat.Nat.add_comm` (lemma) and `Coq.Arith.PeanoNat.Nat.add_0_r` (lemma)
+> **When** declarations are enumerated
+> **Then** both are returned with source_file `Arith/PeanoNat.v` and their fully qualified names
 
-> **Given** a .v file that fails to load (syntax error, missing dependency)
-> **When** theorem enumeration is attempted
-> **Then** a `load_failure` error is recorded for the file, and enumeration continues with the next file
+> **Given** an index containing an `Instance` declaration `Coq.Classes.Morphisms.eq_Reflexive`
+> **When** declarations are enumerated
+> **Then** it is included with `decl_kind = "instance"`
+
+#### module_to_source_file(module, project_path, module_prefix)
+
+- REQUIRES: `module` is a dot-separated module path from the index. `module_prefix` is the library's known module prefix (e.g., `Coq.`, `mathcomp.`).
+- ENSURES: Returns a relative file path by stripping the prefix, replacing dots with `/`, and appending `.v`. For example, `Coq.Reals.Ranalysis1` with prefix `Coq.` yields `Reals/Ranalysis1.v`.
+- The utility shall handle `Corelib.` as an alias for `Coq.` (Rocq 9.x compatibility).
+
+> **Given** module `Coq.Reals.Ranalysis1` and prefix `Coq.`
+> **When** `module_to_source_file` is called
+> **Then** the result is `Reals/Ranalysis1.v`
+
+> **Given** module `mathcomp.algebra.ring` and prefix `mathcomp.`
+> **When** `module_to_source_file` is called
+> **Then** the result is `algebra/ring.v`
 
 #### Scope filtering (P1)
 
@@ -99,7 +118,8 @@ When a scope filter is provided, the system shall apply it after theorem enumera
 
 - REQUIRES: `source_file` is a relative path (relative to project root) to a .v file. `project_path` is the absolute path to the project root directory. `theorem_name` is a fully qualified proof name. The orchestrator resolves `project_path / source_file` to an absolute path before passing it to `create_session`.
 - ENSURES: Creates a proof session using the resolved absolute file path, replays the full proof, extracts the proof trace and premise annotations, assembles an ExtractionRecord (storing the relative `source_file`), closes the session, and returns the record. The session is closed in a finally block regardless of success or failure.
-- On session creation failure: returns ExtractionError with `error_kind` = `load_failure` or `tactic_failure`.
+- On session creation failure with `PROOF_NOT_FOUND`: returns ExtractionError with `error_kind` = `no_proof_body`. This is expected for definitions without proof bodies.
+- On session creation failure (other): returns ExtractionError with `error_kind` = `load_failure` or `tactic_failure`.
 - On tactic failure during replay: returns ExtractionError with `error_kind` = `tactic_failure`.
 - On backend crash: returns ExtractionError with `error_kind` = `backend_crash`.
 - On timeout: returns ExtractionError with `error_kind` = `timeout`.
@@ -186,12 +206,13 @@ The system shall accumulate extraction counters during the campaign:
 
 | Counter | Definition |
 |---------|-----------|
-| `theorems_found` | Total theorems enumerated (before scope filtering) |
-| `extracted` | Theorems that produced an ExtractionRecord |
-| `failed` | Theorems that produced an ExtractionError |
-| `skipped` | Theorems excluded by scope filter (P1); 0 when no filter is applied |
+| `theorems_found` | Total declarations enumerated from the index (before scope filtering) |
+| `extracted` | Declarations that produced an ExtractionRecord |
+| `failed` | Declarations that produced an ExtractionError (excluding `no_proof_body`) |
+| `no_proof_body` | Declarations that produced an ExtractionError with `error_kind = "no_proof_body"` (expected, not failures) |
+| `skipped` | Declarations excluded by scope filter (P1); 0 when no filter is applied |
 
-MAINTAINS: `extracted + failed + skipped == theorems_found` for each file, project, and the campaign as a whole.
+MAINTAINS: `extracted + failed + no_proof_body + skipped == theorems_found` for each file, project, and the campaign as a whole.
 
 The ExtractionSummary shall include per-project and per-file breakdowns of these counters.
 
@@ -205,12 +226,13 @@ The ExtractionSummary shall include per-project and per-file breakdowns of these
 
 | Operation | Input | Output | Error codes |
 |-----------|-------|--------|-------------|
-| `run_campaign(project_dirs, output_path, options)` | List of directory paths + output path + options | ExtractionSummary | `DIRECTORY_NOT_FOUND` |
+| `run_campaign(project_dirs, output_path, options)` | List of directory paths + output path + options | ExtractionSummary | `DIRECTORY_NOT_FOUND`, `INDEX_NOT_FOUND` |
 
 Options:
 
 | Option | Type | Default | Purpose |
 |--------|------|---------|---------|
+| `index_db_path` | file path | (required) | Path to SQLite search index for declaration enumeration |
 | `scope_filter` | ScopeFilter or null | null | Name pattern or module filter (P1) |
 | `include_diffs` | boolean | false | Include proof state diffs in output (P1) |
 | `timeout_seconds` | positive integer | 60 | Per-proof extraction timeout |
@@ -253,6 +275,7 @@ The campaign does not support pause/resume within `run_campaign`. Resumption is 
 | Error code | Category | Condition |
 |-----------|----------|-----------|
 | `DIRECTORY_NOT_FOUND` | Input error | A project directory in `project_dirs` does not exist |
+| `INDEX_NOT_FOUND` | Input error | `index_db_path` does not exist or is not a valid index |
 | `EXTRACTION_TIMEOUT` | Dependency error | Per-proof time limit exceeded |
 
 Per-proof errors (tactic failure, backend crash, load failure) are not raised â€” they are captured as ExtractionError records in the output stream.
@@ -279,14 +302,15 @@ Per-proof errors (tactic failure, backend crash, load failure) are not raised â€
 ### Minimal campaign
 
 ```
-plan = build_campaign_plan(["/path/to/stdlib"], null)
+plan = build_campaign_plan(["/path/to/stdlib"], "/data/index.db", null)
 # plan.projects = [ProjectMetadata(project_id="stdlib", coq_version="9.1.1", ...)]
-# plan.targets = [("stdlib", "theories/Init/Logic.v", "eq_refl"), ...]
+# plan.targets = [("stdlib", "Init/Logic.v", "Coq.Init.Logic.eq_refl", "lemma"), ...]
 
-summary = run_campaign(["/path/to/stdlib"], "/output/stdlib.jsonl", default_options)
+summary = run_campaign(["/path/to/stdlib"], "/output/stdlib.jsonl", {index_db_path: "/data/index.db"})
 # summary.total_extracted = 4500
 # summary.total_failed = 50
-# Output file: CampaignMetadata + 4500 ExtractionRecords + 50 ExtractionErrors + ExtractionSummary
+# summary.total_no_proof_body = 1200
+# Output file: CampaignMetadata + 4500 ExtractionRecords + 1250 ExtractionErrors + ExtractionSummary
 ```
 
 ### Multi-project campaign

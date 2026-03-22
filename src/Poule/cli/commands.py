@@ -418,6 +418,8 @@ def _handle_session_error(exc: SessionError) -> None:
 @cli.command("extract")
 @click.argument("project_dirs", nargs=-1, required=True)
 @click.option("--output", required=True, type=click.Path(), help="Path for JSON Lines output file.")
+@click.option("--index-db", required=True, type=click.Path(exists=True), help="Path to SQLite search index for declaration enumeration.")
+@click.option("--module-prefix", default=None, help="Module prefix for mapping modules to files (e.g. 'Coq.'). Auto-detected if omitted.")
 @click.option("--name-pattern", default=None, help="Only extract proofs matching this name pattern (P1).")
 @click.option("--modules", default=None, help="Comma-separated module prefixes (P1).")
 @click.option("--incremental", is_flag=True, default=False, help="Re-extract only changed files (P1).")
@@ -427,6 +429,8 @@ def _handle_session_error(exc: SessionError) -> None:
 def cmd_extract(
     project_dirs: tuple[str, ...],
     output: str,
+    index_db: str,
+    module_prefix: str | None,
     name_pattern: str | None,
     modules: str | None,
     incremental: bool,
@@ -454,7 +458,10 @@ def cmd_extract(
     kwargs = {
         "session_manager": SessionManager(),
         "timeout_seconds": timeout,
+        "index_db_path": index_db,
     }
+    if module_prefix is not None:
+        kwargs["module_prefix"] = module_prefix
     if scope_filter is not None:
         kwargs["scope_filter"] = scope_filter
     if include_diffs:
@@ -468,6 +475,7 @@ def cmd_extract(
     click.echo(f"  Theorems found:    {summary.total_theorems_found}", err=True)
     click.echo(f"  Extracted:         {summary.total_extracted}", err=True)
     click.echo(f"  Failed:            {summary.total_failed}", err=True)
+    click.echo(f"  No proof body:     {summary.total_no_proof_body}", err=True)
     click.echo(f"  Skipped:           {summary.total_skipped}", err=True)
     click.echo(f"  Output: {output}", err=True)
 

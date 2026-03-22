@@ -93,7 +93,7 @@ A structured error record emitted when a single proof fails to extract. Appears 
 | `theorem_name` | qualified name | Required; fully qualified name of the proof that failed |
 | `source_file` | text | Required; path relative to project root |
 | `project_id` | text | Required; identifier for the source project |
-| `error_kind` | text | Required; one of: `timeout`, `backend_crash`, `tactic_failure`, `load_failure`, `unknown` |
+| `error_kind` | text | Required; one of: `timeout`, `backend_crash`, `tactic_failure`, `load_failure`, `no_proof_body`, `unknown` |
 | `error_message` | text | Required; human-readable description of the failure |
 
 ### Relationships
@@ -144,6 +144,7 @@ Summary statistics for a completed extraction campaign. Emitted as the last reco
 | `total_theorems_found` | non-negative integer | Required |
 | `total_extracted` | non-negative integer | Required |
 | `total_failed` | non-negative integer | Required |
+| `total_no_proof_body` | non-negative integer | Required; declarations without proof bodies (expected, not failures) |
 | `total_skipped` | non-negative integer | Required |
 | `per_project` | list of ProjectSummary | Required |
 
@@ -159,6 +160,7 @@ Per-project extraction statistics.
 | `theorems_found` | non-negative integer | Required |
 | `extracted` | non-negative integer | Required |
 | `failed` | non-negative integer | Required |
+| `no_proof_body` | non-negative integer | Required; declarations without proof bodies |
 | `skipped` | non-negative integer | Required |
 | `per_file` | list of FileSummary | Required |
 
@@ -174,6 +176,7 @@ Per-file extraction statistics within a project.
 | `theorems_found` | non-negative integer | Required |
 | `extracted` | non-negative integer | Required |
 | `failed` | non-negative integer | Required |
+| `no_proof_body` | non-negative integer | Required; declarations without proof bodies |
 | `skipped` | non-negative integer | Required |
 
 ---

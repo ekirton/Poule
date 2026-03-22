@@ -193,8 +193,17 @@ for lib in "${LIB_ARRAY[@]}"; do
         fi
     fi
 
+    INDEX_DB="${OUTPUT_DIR}/index.db"
+    if [[ ! -f "$INDEX_DB" ]]; then
+        echo "ERROR: Index database not found at ${INDEX_DB}" >&2
+        echo "Build the index first before running extraction." >&2
+        RESULTS[$lib]="FAILED (no index)"
+        FAILED=1
+        continue
+    fi
+
     echo "Extracting proof traces for ${lib}..." >&2
-    if poule extract "$lib_path" --output "$output_file" --timeout "$TIMEOUT"; then
+    if poule extract "$lib_path" --output "$output_file" --timeout "$TIMEOUT" --index-db "$INDEX_DB"; then
         RESULTS[$lib]="extracted"
         EXTRACTED=$((EXTRACTED + 1))
     else

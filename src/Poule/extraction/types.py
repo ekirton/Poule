@@ -16,6 +16,7 @@ class ErrorKind(Enum):
     BACKEND_CRASH = "backend_crash"
     TACTIC_FAILURE = "tactic_failure"
     LOAD_FAILURE = "load_failure"
+    NO_PROOF_BODY = "no_proof_body"
     UNKNOWN = "unknown"
 
 
@@ -141,7 +142,8 @@ class FileSummary:
     theorems_found: int
     extracted: int
     failed: int
-    skipped: int
+    no_proof_body: int = 0
+    skipped: int = 0
 
 
 @dataclass(frozen=True)
@@ -150,7 +152,8 @@ class ProjectSummary:
     theorems_found: int
     extracted: int
     failed: int
-    skipped: int
+    no_proof_body: int = 0
+    skipped: int = 0
     per_file: list[FileSummary] = field(default_factory=list)
 
 
@@ -161,7 +164,8 @@ class ExtractionSummary:
     total_theorems_found: int
     total_extracted: int
     total_failed: int
-    total_skipped: int
+    total_no_proof_body: int = 0
+    total_skipped: int = 0
     per_project: list[ProjectSummary] = field(default_factory=list)
 
 

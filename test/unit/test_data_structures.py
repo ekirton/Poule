@@ -1465,11 +1465,11 @@ def _import_error_kind():
 
 
 class TestErrorKindEnum:
-    """ErrorKind enum — exactly 5 members with underscore-separated lowercase values."""
+    """ErrorKind enum — exactly 6 members with underscore-separated lowercase values."""
 
-    def test_has_exactly_five_members(self):
+    def test_has_exactly_six_members(self):
         ErrorKind = _import_error_kind()
-        assert len(ErrorKind) == 5
+        assert len(ErrorKind) == 6
 
     @pytest.mark.parametrize(
         "member_name,expected_value",
@@ -1478,6 +1478,7 @@ class TestErrorKindEnum:
             ("BACKEND_CRASH", "backend_crash"),
             ("TACTIC_FAILURE", "tactic_failure"),
             ("LOAD_FAILURE", "load_failure"),
+            ("NO_PROOF_BODY", "no_proof_body"),
             ("UNKNOWN", "unknown"),
         ],
     )
