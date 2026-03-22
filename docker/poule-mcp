@@ -22,11 +22,14 @@ _is_running() {
 }
 
 _wait_ready() {
-    for i in $(seq 1 50); do
-        if bash -c "echo >/dev/tcp/$HOST/$PORT" 2>/dev/null; then
+    # Server startup includes uv package resolution + index loading (~15s).
+    # Poll the log file for the uvicorn "startup complete" line.
+    local deadline=$((SECONDS + 30))
+    while [ $SECONDS -lt $deadline ]; do
+        if grep -q "Application startup complete" "$LOGFILE" 2>/dev/null; then
             return 0
         fi
-        sleep 0.1
+        sleep 0.5
     done
     return 1
 }
@@ -38,6 +41,7 @@ case "${1:-}" in
             exit 0
         fi
         echo "Starting Poule MCP server on $HOST:$PORT..."
+        : > "$LOGFILE"
         nohup uv run --project /poule python -m Poule.server \
             --db "$DB" --transport streamable-http --host "$HOST" --port "$PORT" \
             --diagram-dir "$DIAGRAM_DIR" \
@@ -46,7 +50,7 @@ case "${1:-}" in
         if _wait_ready; then
             echo "Poule MCP server ready"
         else
-            echo "Warning: server did not become ready within 5s"
+            echo "Warning: server did not become ready within 30s"
             echo "Check logs: poule-mcp logs"
         fi
         ;;
