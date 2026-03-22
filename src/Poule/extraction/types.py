@@ -99,6 +99,21 @@ class ExtractionRecord:
 
 
 @dataclass(frozen=True)
+class PartialExtractionRecord:
+    schema_version: int
+    record_type: str
+    theorem_name: str
+    source_file: str
+    project_id: str
+    total_steps: int
+    completed_steps: int
+    failure_at_step: int
+    failure_kind: str
+    failure_message: str
+    steps: list[ExtractionStep] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class ExtractionError:
     schema_version: int
     record_type: str
@@ -143,6 +158,7 @@ class FileSummary:
     extracted: int
     failed: int
     no_proof_body: int = 0
+    partial: int = 0
     skipped: int = 0
 
 
@@ -153,6 +169,7 @@ class ProjectSummary:
     extracted: int
     failed: int
     no_proof_body: int = 0
+    partial: int = 0
     skipped: int = 0
     per_file: list[FileSummary] = field(default_factory=list)
 
@@ -165,6 +182,7 @@ class ExtractionSummary:
     total_extracted: int
     total_failed: int
     total_no_proof_body: int = 0
+    total_partial: int = 0
     total_skipped: int = 0
     per_project: list[ProjectSummary] = field(default_factory=list)
 

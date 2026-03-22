@@ -120,8 +120,9 @@ When a scope filter is provided, the system shall apply it after theorem enumera
 - ENSURES: Creates a proof session using the resolved absolute file path, replays the full proof, extracts the proof trace and premise annotations, assembles an ExtractionRecord (storing the relative `source_file`), closes the session, and returns the record. The session is closed in a finally block regardless of success or failure.
 - On session creation failure with `PROOF_NOT_FOUND`: returns ExtractionError with `error_kind` = `no_proof_body`. This is expected for definitions without proof bodies.
 - On session creation failure (other): returns ExtractionError with `error_kind` = `load_failure` or `tactic_failure`.
-- On tactic failure during replay: returns ExtractionError with `error_kind` = `tactic_failure`.
-- On backend crash: returns ExtractionError with `error_kind` = `backend_crash`.
+- On tactic failure during replay at step k > 1: `extract_trace` returns a partial ProofTrace. The orchestrator assembles a PartialExtractionRecord from the completed steps (0..k-1). This is counted as `partial` in the summary, not `failed`.
+- On tactic failure at step 1 (no completed tactic steps): returns ExtractionError with `error_kind` = `tactic_failure`. A partial trace with only the initial state produces zero training pairs and is not worth recording as a partial extraction.
+- On backend crash during replay at step k > 1: same as tactic failure — assembles a PartialExtractionRecord from steps 0..k-1 if premise data is available. If the backend crash prevents premise extraction entirely, returns ExtractionError with `error_kind` = `backend_crash`.
 - On timeout: returns ExtractionError with `error_kind` = `timeout`.
 - On any other unexpected error: returns ExtractionError with `error_kind` = `unknown`.
 
@@ -129,13 +130,17 @@ When a scope filter is provided, the system shall apply it after theorem enumera
 > **When** `extract_single_proof("coq-stdlib", "theories/Arith/PeanoNat.v", "Nat.add_comm")` is called
 > **Then** an ExtractionRecord is returned with `total_steps = 5`, 6 ExtractionSteps, and per-step premise annotations
 
-> **Given** a proof where tactic 3 of 5 fails during replay
+> **Given** a proof where tactic 5 of 12 fails during replay
+> **When** `extract_single_proof(...)` is called
+> **Then** a PartialExtractionRecord is returned with `completed_steps = 4`, `failure_at_step = 5`, 5 ExtractionSteps (steps 0-4), and the session is closed
+
+> **Given** a proof where tactic 1 of 5 fails during replay (first tactic)
 > **When** `extract_single_proof(...)` is called
 > **Then** an ExtractionError is returned with `error_kind = "tactic_failure"`, and the session is closed
 
-> **Given** a proof where the Coq backend crashes mid-replay
+> **Given** a proof where the Coq backend crashes mid-replay at step 3
 > **When** `extract_single_proof(...)` is called
-> **Then** an ExtractionError is returned with `error_kind = "backend_crash"`
+> **Then** a PartialExtractionRecord is returned with steps 0-2 if premises were obtainable, or an ExtractionError with `error_kind = "backend_crash"` if premises could not be extracted
 
 #### Per-proof timeout
 
@@ -207,12 +212,13 @@ The system shall accumulate extraction counters during the campaign:
 | Counter | Definition |
 |---------|-----------|
 | `theorems_found` | Total declarations enumerated from the index (before scope filtering) |
-| `extracted` | Declarations that produced an ExtractionRecord |
+| `extracted` | Declarations that produced an ExtractionRecord (complete traces) |
+| `partial` | Declarations that produced a PartialExtractionRecord (incomplete traces with recoverable training data) |
 | `failed` | Declarations that produced an ExtractionError (excluding `no_proof_body`) |
 | `no_proof_body` | Declarations that produced an ExtractionError with `error_kind = "no_proof_body"` (expected, not failures) |
 | `skipped` | Declarations excluded by scope filter (P1); 0 when no filter is applied |
 
-MAINTAINS: `extracted + failed + no_proof_body + skipped == theorems_found` for each file, project, and the campaign as a whole.
+MAINTAINS: `extracted + partial + failed + no_proof_body + skipped == theorems_found` for each file, project, and the campaign as a whole.
 
 The ExtractionSummary shall include per-project and per-file breakdowns of these counters.
 

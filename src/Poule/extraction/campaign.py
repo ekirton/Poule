@@ -21,6 +21,7 @@ from Poule.extraction.types import (
     ExtractionStep,
     ExtractionSummary,
     FileSummary,
+    PartialExtractionRecord,
     ProjectMetadata,
     ProjectSummary,
 )
@@ -324,7 +325,7 @@ async def _do_extraction(
     source_file: str,
     theorem_name: str,
     project_path: str = "",
-) -> ExtractionRecord:
+) -> Union[ExtractionRecord, PartialExtractionRecord]:
     """Core extraction logic with guaranteed session cleanup."""
     session_id = None
     try:
@@ -403,6 +404,29 @@ async def _do_extraction(
                 premises=ext_premises,
                 diff=None,
             ))
+
+        # Check if this is a partial trace
+        is_partial = getattr(trace, "partial", False) is True
+        if is_partial:
+            failure_step = getattr(trace, "failure_step", None)
+            failure_msg = getattr(trace, "failure_message", "")
+            completed_steps = len(steps) - 1  # subtract step 0
+            # Failure at step 1 (only initial state) → not worth recording
+            if completed_steps < 1:
+                raise SessionError(TACTIC_ERROR, failure_msg or "First tactic failed")
+            return PartialExtractionRecord(
+                schema_version=1,
+                record_type="partial_proof_trace",
+                theorem_name=theorem_name,
+                source_file=source_file,
+                project_id=project_id,
+                total_steps=total_steps,
+                completed_steps=completed_steps,
+                failure_at_step=failure_step if failure_step is not None else completed_steps + 1,
+                failure_kind="tactic_failure",
+                failure_message=failure_msg,
+                steps=steps,
+            )
 
         return ExtractionRecord(
             schema_version=1,

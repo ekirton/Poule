@@ -79,6 +79,8 @@ The returned `ProofState` shall have:
 - REQUIRES: `position_at_proof` has been called successfully.
 - ENSURES: A `list[str]` containing the tactic strings from the proof's existing script, in order. Empty list if the proof has no script (e.g., opened interactively without a body).
 - Each string is a single tactic command as it appears in the source, including the trailing period (e.g., `"intros n m."`).
+- Tactic boundaries shall be derived from the coq-lsp document model (`coq/getDocument` sentence ranges) when available. The backend queries `coq/getDocument` for the loaded file, identifies spans within the proof body (between the `Proof.` keyword and the `Qed`/`Defined`/`Admitted` terminator), and extracts the source text for each sentence span. This produces exact tactic boundaries as parsed by coq-lsp's Fleche engine — handling bullets (`-`, `+`, `*`), braces (`{`, `}`), comments containing periods, numeric literals, ssreflect tactic chains, and all other Coq syntax that a regex-based splitter cannot reliably handle.
+- When `coq/getDocument` is unavailable or returns no spans (e.g., a non-Fleche backend), the backend shall fall back to regex-based sentence splitting as a degraded mode.
 
 > **Given** a proof with body `intros n m. ring.`
 > **When** `original_script` is accessed after `position_at_proof`
@@ -87,6 +89,24 @@ The returned `ProofState` shall have:
 > **Given** a proof with no existing body (just `Proof.` with no tactics)
 > **When** `original_script` is accessed
 > **Then** it returns `[]`
+
+> **Given** a proof with body `intros n. - simpl. ring. - reflexivity.` (using bullet markers)
+> **When** `original_script` is accessed after `position_at_proof`
+> **Then** each bullet marker and its tactic are correctly split as separate sentences, matching coq-lsp's sentence segmentation
+
+#### original_states (attribute)
+
+- REQUIRES: `position_at_proof` has been called successfully.
+- ENSURES: A `list` of backend state tokens, one per successfully replayed step of the original script (index 0 = initial state before any tactic, index k = state after tactic k). During `position_at_proof`, the backend replays the original script via `petanque/run` to build this state history. If a tactic fails at step k, the list contains states 0..k-1 (the successfully replayed prefix). These state tokens are valid for subsequent calls to `petanque/goals` and `petanque/premises` without requiring a second replay.
+- The session manager may use `original_states` to extract proof states and premises without invoking `execute_tactic`, avoiding redundant replay of the original proof script.
+
+> **Given** a proof with 5 tactics that all replay successfully
+> **When** `original_states` is accessed after `position_at_proof`
+> **Then** it contains 6 state tokens (initial + one per tactic)
+
+> **Given** a proof with 5 tactics where tactic 3 fails during replay
+> **When** `original_states` is accessed after `position_at_proof`
+> **Then** it contains 3 state tokens (initial + states after tactics 1 and 2)
 
 #### execute_tactic(tactic)
 
