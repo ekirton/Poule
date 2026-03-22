@@ -35,9 +35,58 @@ Read each layer's documents to find the highest layer that needs correction. Onl
 6. If the feature doc appears wrong, read the PRD (in `doc/requirements/`). Ask:
    - Is the requirement clearly stated?
 
-## Phase 3: Report and decide
+## Phase 3: Decide and act
 
-7. Present findings:
+7. Determine the highest affected layer from the triage. Do NOT present a report table yet — act first, report at the end.
+
+   **If the fix requires changes to `doc/` layers** (requirements, features, or architecture):
+   - These require human approval. Present the triage table (same format as step 29), then present 2-3 options with critical analysis and a recommendation. Wait for the user to decide before proceeding. Stop here.
+
+   **If the fix starts at `specification/` or below** (all doc/ layers are OK):
+   - This is within autonomous scope. Do not wait for user approval. Proceed directly to Phase 4.
+
+## Phase 4: Fix the specification (if needed)
+
+Skip this phase if the specification is correct (the bug is purely an implementation deviation). Go directly to Phase 5.
+
+8. Run: `echo "specification" > .claude/sdd-layer`
+9. Read the parent architecture document.
+10. Fix the specification gap or error in `specification/`.
+11. If a problem is identified with the architecture while fixing the spec, write a detailed description to `doc/architecture/feedback/` and **stop**. Notify the user — architecture changes require human approval.
+12. Record the blast radius — write changed spec filenames to `.claude/sdd-blast-radius`:
+    `echo "specification/channels.md specification/storage.md" > .claude/sdd-blast-radius`
+
+## Phase 5: Tests and implementation (TDD)
+
+Write failing tests first, then implement until tests pass. Track feedback cycles (any return to an earlier step from a feedback resolution counts as one cycle).
+
+13. Read the blast radius from `.claude/sdd-blast-radius` if it exists.
+14. Run: `echo "tests" > .claude/sdd-layer`
+15. Write or update tests that reproduce the bug or cover the spec change within the blast radius.
+16. Do **not** change specifications. If a spec problem is found, go to step 21.
+17. Run `python -m pytest test/ -x -q`. New tests covering the change should fail. Existing tests may pass or fail.
+18. Run: `echo "implementation" > .claude/sdd-layer`
+19. Write the implementation to make tests pass. Do **not** change tests or specifications.
+20. Run `python -m pytest test/ -x -q` after each significant change. When all tests pass, proceed to Phase 6.
+21. **If a spec problem is found** (during tests or implementation):
+    - Run: `echo "specification" > .claude/sdd-layer`
+    - Fix the specification. Delete the feedback file.
+    - Increment feedback cycle count. Return to step 14.
+22. **If a test problem is found** (during implementation):
+    - Run: `echo "tests" > .claude/sdd-layer`
+    - Fix the test. Delete the feedback file.
+    - Increment feedback cycle count. Return to step 18.
+23. **If an architecture problem is found:**
+    - Write to `doc/architecture/feedback/`, notify the user, and **stop**.
+24. **After 3 feedback cycles**, stop and present the situation to the user: summarize what was attempted, what keeps failing, and ask for direction.
+
+## Phase 6: Completion
+
+25. Run: `echo "free" > .claude/sdd-layer`
+26. Remove `.claude/sdd-blast-radius` if it exists.
+27. Check off completed tasks in `tasks/` (update `- [ ]` to `- [x]`).
+28. If any feedback files still exist, notify the user and **stop**.
+29. Present the triage table:
 
 **Root cause:** <2-3 sentence summary with specific file:line references>
 
@@ -50,14 +99,5 @@ Read each layer's documents to find the highest layer that needs correction. Onl
 | Tests | test/X.py | OK / GAP / ERROR | brief note |
 | Implementation | src/poule/X.py | OK / GAP / ERROR | brief note |
 
-## Phase 4: Act on the result
-
-8. Determine the highest affected layer:
-
-   **If the fix starts at `specification/` or below** (all doc/ layers are OK):
-   - This is within autonomous scope. Determine the starting layer and invoke `/sdd` to execute the fix. Do not wait for user approval.
-   - **TDD rule:** When the fix is purely an implementation bug (spec is correct, implementation diverges), start at `tests` — not `implementation`. Write a failing test that reproduces the bug first, then fix the implementation until it passes. Invoke `/sdd tests "<fix description>"`.
-   - When the spec itself has a gap, start at `specification`. The `/sdd` pipeline will then flow through tests before implementation.
-
-   **If the fix requires changes to `doc/` layers** (requirements, features, or architecture):
-   - These require human approval. Present 2-3 options with critical analysis and a recommendation. Wait for the user to decide before proceeding.
+30. Report what was done and which files were changed.
+31. Do **not** make a PR — the user decides when the branch is ready.
