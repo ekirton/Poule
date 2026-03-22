@@ -1495,3 +1495,231 @@ class TestCompareTactics:
                 ctx, "compare_tactics", {"names": ["omega", "lia"]}
             )
         assert result.get("isError") is not True
+
+
+# ---------------------------------------------------------------------------
+# TestDotFilePathParameter — Spec §4.1 MCP Tool dot_file_path Parameter
+# ---------------------------------------------------------------------------
+
+class TestDotFilePathParameter:
+    """Spec §4.1: All graph-dependent MCP tools accept optional dot_file_path."""
+
+    def test_impact_analysis_schema_includes_dot_file_path(self):
+        """impact_analysis tool schema includes dot_file_path string parameter."""
+        defs = _import_tool_definitions()
+        tool = next(t for t in defs if t.name == "impact_analysis")
+        assert "dot_file_path" in tool.inputSchema["properties"]
+        assert tool.inputSchema["properties"]["dot_file_path"]["type"] == "string"
+
+    def test_transitive_closure_schema_includes_dot_file_path(self):
+        """transitive_closure tool schema includes dot_file_path string parameter."""
+        defs = _import_tool_definitions()
+        tool = next(t for t in defs if t.name == "transitive_closure")
+        assert "dot_file_path" in tool.inputSchema["properties"]
+        assert tool.inputSchema["properties"]["dot_file_path"]["type"] == "string"
+
+    def test_detect_cycles_schema_includes_dot_file_path(self):
+        """detect_cycles tool schema includes dot_file_path string parameter."""
+        defs = _import_tool_definitions()
+        tool = next(t for t in defs if t.name == "detect_cycles")
+        assert "dot_file_path" in tool.inputSchema["properties"]
+        assert tool.inputSchema["properties"]["dot_file_path"]["type"] == "string"
+
+    def test_module_summary_schema_includes_dot_file_path(self):
+        """module_summary tool schema includes dot_file_path string parameter."""
+        defs = _import_tool_definitions()
+        tool = next(t for t in defs if t.name == "module_summary")
+        assert "dot_file_path" in tool.inputSchema["properties"]
+        assert tool.inputSchema["properties"]["dot_file_path"]["type"] == "string"
+
+    def test_dot_file_path_not_required(self):
+        """dot_file_path is optional (not in required list) for all 4 tools."""
+        defs = _import_tool_definitions()
+        for tool_name in ("impact_analysis", "transitive_closure", "detect_cycles", "module_summary"):
+            tool = next(t for t in defs if t.name == tool_name)
+            required = tool.inputSchema.get("required", [])
+            assert "dot_file_path" not in required, f"{tool_name} should not require dot_file_path"
+
+    def test_impact_analysis_with_dot_file_path(self, ctx):
+        """When dot_file_path is provided, handler builds graph from DOT file."""
+        import tempfile, textwrap
+        from dataclasses import dataclass
+
+        @dataclass
+        class _FakeImpact:
+            root: str
+            impacted_nodes: set
+            edges: set
+            depth_map: dict
+            total_depth: int
+
+        dot_content = textwrap.dedent('''\
+            digraph {
+                "A" -> "B"
+                "B" -> "C"
+            }
+        ''')
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".dot", delete=False) as f:
+            f.write(dot_content)
+            dot_path = f.name
+
+        fake_result = _FakeImpact(
+            root="C", impacted_nodes={"C", "B", "A"},
+            edges={("B", "C"), ("A", "B")}, depth_map={0: {"C"}, 1: {"B"}, 2: {"A"}},
+            total_depth=2,
+        )
+        with patch(
+            "Poule.analysis.impact.impact_analysis",
+            return_value=fake_result,
+        ) as mock_ia:
+            result = _dispatch_and_await(
+                ctx, "impact_analysis",
+                {"name": "C", "dot_file_path": dot_path},
+            )
+        assert result.get("isError") is not True
+        # Verify build_graph was called with dot_file_path
+        ctx.pipeline.build_graph.assert_called_with(dot_file_path=dot_path)
+
+    def test_impact_analysis_without_dot_file_uses_storage(self, ctx):
+        """When dot_file_path is omitted, handler uses storage (default)."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class _FakeImpact:
+            root: str
+            impacted_nodes: set
+            edges: set
+            depth_map: dict
+            total_depth: int
+
+        fake_result = _FakeImpact(
+            root="X", impacted_nodes={"X"}, edges=set(),
+            depth_map={0: {"X"}}, total_depth=0,
+        )
+        with patch(
+            "Poule.analysis.impact.impact_analysis",
+            return_value=fake_result,
+        ):
+            result = _dispatch_and_await(
+                ctx, "impact_analysis", {"name": "X"},
+            )
+        assert result.get("isError") is not True
+        # Verify build_graph was called without dot_file_path
+        ctx.pipeline.build_graph.assert_called_with()
+
+    def test_dot_file_not_found_returns_error(self, ctx):
+        """When dot_file_path points to nonexistent file, FILE_NOT_FOUND error."""
+        from Poule.analysis.errors import AnalysisError
+        ctx.pipeline.build_graph = MagicMock(
+            side_effect=AnalysisError("FILE_NOT_FOUND", "DOT file not found: /no/such.dot")
+        )
+        result = _dispatch_and_await(
+            ctx, "impact_analysis",
+            {"name": "X", "dot_file_path": "/no/such.dot"},
+        )
+        assert result.get("isError") is True
+        parsed = _parse_response(result)
+        assert parsed["error"]["code"] == "FILE_NOT_FOUND"
+
+
+# ---------------------------------------------------------------------------
+# TestSparseResultHint — Spec §4.5 Sparse-Result Hint
+# ---------------------------------------------------------------------------
+
+class TestSparseResultHint:
+    """Spec §4.5: When impact_analysis returns only root from storage, include hint."""
+
+    def test_hint_present_when_root_only_from_storage(self, ctx):
+        """When impact set contains only root and source is storage, response has hint."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class _FakeImpact:
+            root: str
+            impacted_nodes: set
+            edges: set
+            depth_map: dict
+            total_depth: int
+
+        fake_result = _FakeImpact(
+            root="Nat.add_comm", impacted_nodes={"Nat.add_comm"},
+            edges=set(), depth_map={0: {"Nat.add_comm"}}, total_depth=0,
+        )
+        with patch(
+            "Poule.analysis.impact.impact_analysis",
+            return_value=fake_result,
+        ):
+            result = _dispatch_and_await(
+                ctx, "impact_analysis", {"name": "Nat.add_comm"},
+            )
+        assert result.get("isError") is not True
+        parsed = _parse_response(result)
+        assert "hint" in parsed
+        assert "dot_file_path" in parsed["hint"]
+
+    def test_no_hint_when_impact_has_dependents(self, ctx):
+        """When impact set has dependents, no hint is included."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class _FakeImpact:
+            root: str
+            impacted_nodes: set
+            edges: set
+            depth_map: dict
+            total_depth: int
+
+        fake_result = _FakeImpact(
+            root="nat", impacted_nodes={"nat", "add_comm", "add_assoc"},
+            edges={("add_comm", "nat"), ("add_assoc", "nat")},
+            depth_map={0: {"nat"}, 1: {"add_comm", "add_assoc"}},
+            total_depth=1,
+        )
+        with patch(
+            "Poule.analysis.impact.impact_analysis",
+            return_value=fake_result,
+        ):
+            result = _dispatch_and_await(
+                ctx, "impact_analysis", {"name": "nat"},
+            )
+        assert result.get("isError") is not True
+        parsed = _parse_response(result)
+        assert "hint" not in parsed
+
+    def test_no_hint_when_dot_file_used(self, ctx):
+        """When graph is from DOT file, no hint even if result has root only."""
+        import tempfile, textwrap
+        from dataclasses import dataclass
+
+        @dataclass
+        class _FakeImpact:
+            root: str
+            impacted_nodes: set
+            edges: set
+            depth_map: dict
+            total_depth: int
+
+        dot_content = textwrap.dedent('''\
+            digraph {
+                "X" -> "Y"
+            }
+        ''')
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".dot", delete=False) as f:
+            f.write(dot_content)
+            dot_path = f.name
+
+        fake_result = _FakeImpact(
+            root="X", impacted_nodes={"X"}, edges=set(),
+            depth_map={0: {"X"}}, total_depth=0,
+        )
+        with patch(
+            "Poule.analysis.impact.impact_analysis",
+            return_value=fake_result,
+        ):
+            result = _dispatch_and_await(
+                ctx, "impact_analysis",
+                {"name": "X", "dot_file_path": dot_path},
+            )
+        assert result.get("isError") is not True
+        parsed = _parse_response(result)
+        assert "hint" not in parsed

@@ -66,6 +66,24 @@ Define the deep dependency analysis engine that constructs an in-memory dependen
 
 When both an index database and a DOT file path are available, the caller selects the source explicitly. When only one source is available, that source is used. When neither source is available, the engine returns an `INDEX_MISSING` error.
 
+#### MCP Tool `dot_file_path` Parameter
+
+All graph-dependent MCP tools (`transitive_closure`, `impact_analysis`, `detect_cycles`, `module_summary`) shall accept an optional `dot_file_path` string parameter. When provided, the engine shall build the graph from the DOT file instead of Storage. When omitted and an index database is loaded, the engine shall use Storage (default behavior). When omitted and no index database is loaded, the engine shall return an `INDEX_MISSING` error.
+
+The `dot_file_path` parameter shall be validated before graph construction:
+- If the path does not exist, return a `FILE_NOT_FOUND` error.
+- If the file cannot be parsed, return a `PARSE_ERROR` error.
+
+The graph cache shall key DOT-sourced graphs by file path, separate from the Storage-sourced cache.
+
+> **Given** an MCP `impact_analysis` call with `dot_file_path = "/project/deps.dot"` and the file exists
+> **When** the tool executes
+> **Then** the graph is built from the DOT file and impact analysis proceeds over that graph
+
+> **Given** an MCP `impact_analysis` call with no `dot_file_path` and an index database is loaded
+> **When** the tool executes
+> **Then** the graph is built from Storage (existing default behavior)
+
 ### 4.2 Graph Cache
 
 The engine shall cache the in-memory `DependencyGraph` per project, keyed by the source identifier (index database path or DOT file path).
@@ -134,6 +152,10 @@ Scope filters restrict which nodes are followed during BFS traversal. Multiple f
 - MAINTAINS: The graph is not modified.
 
 When `root` exists in the graph but has no reverse edges, the engine shall return an `ImpactSet` with `impacted_nodes = {root}` and `total_depth = 0`.
+
+#### Sparse-Result Hint
+
+When the graph was built from Storage and the returned `ImpactSet` contains only the root (no dependents), the MCP handler shall include a `hint` field in the response with the message: `"The index contains only type-level and axiom-level dependency edges. Proof-body dependencies (theorem-to-theorem) require importing a dependency graph via import_dependencies or providing a coq-dpdgraph DOT file via the dot_file_path parameter."` This hint is informational — it does not affect the `ImpactSet` data model or the engine's return value.
 
 When `root` is not found in the graph, the engine shall return a `NOT_FOUND` error.
 
@@ -260,7 +282,7 @@ When a transitive closure or impact analysis result exceeds 10,000 nodes, the en
 |----------|-------|
 | Mechanism | Internal function calls (in-process) |
 | Direction | Request-response (synchronous) |
-| Input | Query type (`closure`, `impact`, `cycles`, `module_summary`) + parameters (`root`, `max_depth`, `scope_filter`, `source`) |
+| Input | Query type (`closure`, `impact`, `cycles`, `module_summary`) + parameters (`root`, `max_depth`, `scope_filter`, `dot_file_path`) |
 | Output | `TransitiveClosure`, `ImpactSet`, `CycleReport`, or `ModuleSummary` |
 | Error strategy | All errors returned as structured error values with error code and message; caller formats for MCP |
 | Concurrency | Serialized; one query at a time per graph instance |
