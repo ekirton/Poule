@@ -64,6 +64,25 @@ The `About` response format is version-dependent:
 
 **Fallback:** When `About` returns `"<name> not a defined object."` or no parseable kind information, the backend shall default to `"definition"`.
 
+**About metadata extraction (coq-lsp):** In addition to kind, the backend shall extract two additional fields from each `About` response during the same batch:
+
+- **Opacity**: Parse `"<name> is opaque"` → `"opaque"`, `"<name> is transparent"` → `"transparent"`, absent → `None`. In Rocq 9.x, opaque declarations were proved with `Qed` (tactic proof body); transparent declarations were defined with `:=` or proved with `Defined`.
+- **Declared library**: Parse `"Declared in library <lib>, line <n>"` → `<lib>` (e.g., `"Stdlib.Numbers.NatInt.NZAdd"`), absent → `None`. For re-exported declarations (via `Include` or functor application), this differs from the `.vo` file where the declaration was discovered.
+
+The backend shall return `(kind, opacity, declared_library)` tuples from kind detection. Callers that only need kind may ignore the additional fields.
+
+> **Given** a declaration `Nat.add_comm` in Rocq 9.x where `About` includes `"Nat.add_comm is opaque"` and `"Declared in library Stdlib.Numbers.NatInt.NZAdd, line 59"`,
+> **When** the backend parses the About response,
+> **Then** it returns kind=`"definition"`, opacity=`"opaque"`, declared_library=`"Stdlib.Numbers.NatInt.NZAdd"`.
+
+> **Given** a declaration `Nat.add` in Rocq 9.x where `About` includes `"Nat.add is transparent"` and `"Declared in library Corelib.Init.Nat, line 20"`,
+> **When** the backend parses the About response,
+> **Then** it returns kind=`"definition"`, opacity=`"transparent"`, declared_library=`"Corelib.Init.Nat"`.
+
+> **Given** a declaration in Coq 8.x where `About` does not include opacity or declared-library lines,
+> **When** the backend parses the About response,
+> **Then** it returns opacity=`None`, declared_library=`None`.
+
 > **Given** a declaration `Nat.add` in Rocq 9.x where `About` returns `Expands to: Constant Corelib.Init.Nat.add`,
 > **When** `list_declarations` processes this declaration,
 > **Then** the kind value is `"definition"` (Constant maps to definition via §4.2).
@@ -204,21 +223,29 @@ For each declaration extracted from a `.vo` file:
 7. `pretty_print(name)` → statement
 8. Type expression: derived from the Search output `type_signature` field in `constr_t` when available; falls back to `pretty_print_type(name)` otherwise (nullable)
 
-9. Proof-body detection: For each declaration whose kind ∈ {`lemma`, `theorem`, `definition`, `instance`}, derive the `.v` source path from the `.vo` path (`vo_path.with_suffix('.v')`). If the `.v` file exists, regex-scan for the declaration's short name preceded by a declaration keyword (`Lemma|Theorem|Proposition|Corollary|Fact|Definition|Fixpoint|Instance|...`) AND followed by a `Proof.` keyword before the next declaration keyword. Set `has_proof_body = 1` if both conditions are met, `0` otherwise. If the `.v` file does not exist, set `has_proof_body = 0`. Each `.v` file's text shall be read at most once (cached across all declarations from the same `.vo` file).
+9. Proof-body detection: For each declaration whose kind ∈ {`lemma`, `theorem`, `definition`, `instance`}, determine `has_proof_body` using a two-level strategy:
 
-> **Given** a declaration `Nat.add_comm` of kind `lemma` with `.vo` at `PeanoNat.vo` and `.v` at `PeanoNat.v` containing `Lemma add_comm ... Proof. ... Qed.`
+   **Primary signal — opacity:** If opacity (from About metadata, §4.1.1) is `"opaque"`, set `has_proof_body = 1`. Opaque declarations were proved with `Qed`, which requires a tactic proof body.
+
+   **Fallback — .v source scanning:** If opacity is `"transparent"` or `None`, scan the `.v` source file. Derive the source path from the declared library (from About metadata, §4.1.1) when available, falling back to `vo_path.with_suffix('.v')` when declared_library is `None`. To resolve a declared library name to a `.v` path, apply the same prefix-mapping used for module path derivation in reverse: map the logical library name (e.g., `Stdlib.Arith.PeanoNat`) to its filesystem path under the Coq library root. If the `.v` file exists, regex-scan for the declaration's short name preceded by a declaration keyword (`Lemma|Theorem|Proposition|Corollary|Fact|Definition|Fixpoint|Instance|...`) AND followed by a `Proof` keyword (matching `Proof.`, `Proof using ...`, `Proof with ...`) before the next declaration keyword. Set `has_proof_body = 1` if both conditions are met, `0` otherwise. If the `.v` file does not exist, set `has_proof_body = 0`. Each `.v` file's text shall be read at most once (cached by source path across all declarations).
+
+> **Given** a declaration `Nat.add_comm` with opacity=`"opaque"` (from About)
 > **When** proof-body detection runs
-> **Then** `has_proof_body = 1`
+> **Then** `has_proof_body = 1` (opaque signal; no .v file scan needed)
 
-> **Given** a declaration `Nat.eq` of kind `definition` with `.v` containing `Definition eq := @eq nat.`
+> **Given** a declaration `Nat.add_0_l` brought in via `Include NAddProp` with opacity=`"opaque"` (from About) and declared_library=`"Stdlib.Numbers.NatInt.NZAdd"`
 > **When** proof-body detection runs
-> **Then** `has_proof_body = 0` (no `Proof.` block)
+> **Then** `has_proof_body = 1` (opaque signal; re-export is irrelevant)
 
-> **Given** a declaration `Nat.add_0_l` of kind `lemma` brought in via `Include NAddProp`, where `PeanoNat.v` does not contain a `Lemma add_0_l` block
+> **Given** a declaration `Nat.eq` of kind `definition` with opacity=`"transparent"` and `.v` containing `Definition eq := @eq nat.`
 > **When** proof-body detection runs
-> **Then** `has_proof_body = 0` (declaration name not found in the `.v` file)
+> **Then** `has_proof_body = 0` (transparent; .v scan finds no `Proof` block)
 
-> **Given** a declaration with `.vo` at a path where no corresponding `.v` file exists
+> **Given** a transparent declaration `foo` with declared_library=`"Stdlib.Arith.PeanoNat"` and the corresponding `.v` file contains `Definition foo ... Proof using x. ... Defined.`
+> **When** proof-body detection runs
+> **Then** `has_proof_body = 1` (transparent; .v scan finds `Proof using` block)
+
+> **Given** a declaration with opacity=`None` and `.vo` at a path where no corresponding `.v` file exists
 > **When** proof-body detection runs
 > **Then** `has_proof_body = 0`
 

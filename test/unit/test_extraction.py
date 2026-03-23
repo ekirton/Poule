@@ -1144,10 +1144,10 @@ class TestAboutResponseKindParsing:
         )
         messages = [{"text": about_text, "level": 3}]
 
-        kind = CoqLspBackend._parse_about_kind("pred", messages)
+        result = CoqLspBackend._parse_about_kind("pred", messages)
 
-        assert kind == "definition", (
-            f"Expected 'definition' (Constant preferred over Notation), got {kind!r}"
+        assert result.kind == "definition", (
+            f"Expected 'definition' (Constant preferred over Notation), got {result.kind!r}"
         )
 
     def test_notation_only_when_no_constant_present(self):
@@ -1165,10 +1165,10 @@ class TestAboutResponseKindParsing:
         )
         messages = [{"text": about_text, "level": 3}]
 
-        kind = CoqLspBackend._parse_about_kind("foo", messages)
+        result = CoqLspBackend._parse_about_kind("foo", messages)
 
-        assert kind == "notation", (
-            f"Expected 'notation' when only Notation is present, got {kind!r}"
+        assert result.kind == "notation", (
+            f"Expected 'notation' when only Notation is present, got {result.kind!r}"
         )
 
 
@@ -2168,7 +2168,7 @@ class TestFQNDerivationInListDeclarations:
     def test_short_names_get_module_path_prepended(self):
         """Given Search returns Nat.add_comm, the returned name should be
         Coq.Arith.PeanoNat.Nat.add_comm."""
-        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+        from Poule.extraction.backends.coqlsp_backend import AboutResult, CoqLspBackend
 
         backend = CoqLspBackend()
         # Patch internal methods to avoid needing a real coq-lsp process
@@ -2177,7 +2177,9 @@ class TestFQNDerivationInListDeclarations:
             [],
             [{"text": "Nat.add_comm : forall n m, n + m = m + n", "level": 3}],
         ))
-        backend._batch_get_kinds = Mock(return_value=["lemma"])
+        backend._batch_get_about_metadata = Mock(return_value=[
+            AboutResult("lemma", "opaque", "Stdlib.Numbers.NatInt.NZAdd"),
+        ])
 
         vo_path = Path("/opt/coq/user-contrib/Stdlib/Arith/PeanoNat.vo")
         decls = backend.list_declarations(vo_path)
@@ -2191,7 +2193,7 @@ class TestFQNDerivationInListDeclarations:
     def test_mathcomp_short_names_get_module_path_prepended(self):
         """Given Search returns negb_involutive, the returned name should be
         mathcomp.ssreflect.ssrbool.negb_involutive."""
-        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+        from Poule.extraction.backends.coqlsp_backend import AboutResult, CoqLspBackend
 
         backend = CoqLspBackend()
         backend._ensure_alive = Mock()
@@ -2199,7 +2201,9 @@ class TestFQNDerivationInListDeclarations:
             [],
             [{"text": "negb_involutive : forall b, negb (negb b) = b", "level": 3}],
         ))
-        backend._batch_get_kinds = Mock(return_value=["lemma"])
+        backend._batch_get_about_metadata = Mock(return_value=[
+            AboutResult("lemma", None, None),
+        ])
 
         vo_path = Path("/opt/coq/user-contrib/mathcomp/ssreflect/ssrbool.vo")
         decls = backend.list_declarations(vo_path)
@@ -2802,3 +2806,224 @@ class TestSymbolFreqUsesFQNs:
         freq_dict = writer.insert_symbol_freq.call_args[0][0]
         # The key should be a FQN, not a short name
         assert "Coq.Init.Datatypes.nat" in freq_dict
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Proof-body detection (specification/extraction.md §4.4 step 9)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestDetectProofBodyOpacityPrimary:
+    """Opaque declarations get has_proof_body=1 without .v scanning (§4.4 step 9)."""
+
+    def test_opaque_returns_1_without_v_file(self):
+        """GIVEN opacity='opaque' and no .v file available
+        WHEN detect_proof_body runs
+        THEN has_proof_body=1 (opacity signal is sufficient).
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        result = detect_proof_body(
+            "Coq.Arith.PeanoNat.Nat.add_comm", "definition", None,
+            opacity="opaque",
+        )
+        assert result == 1
+
+    def test_opaque_skips_v_file_scan(self, tmp_path):
+        """GIVEN opacity='opaque' and a .vo path
+        WHEN detect_proof_body runs
+        THEN it returns 1 without reading the .v file.
+
+        The .v file is intentionally absent — opaque short-circuits.
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        vo_path = tmp_path / "Missing.vo"
+        result = detect_proof_body(
+            "Coq.Missing.foo", "definition", vo_path,
+            opacity="opaque",
+        )
+        assert result == 1
+
+    def test_opaque_re_export_returns_1(self):
+        """GIVEN an opaque re-exported declaration (Include'd from another module)
+        WHEN detect_proof_body runs
+        THEN has_proof_body=1 regardless of .v file contents.
+
+        Spec §4.4 step 9: 'If opacity == "opaque": set has_proof_body = 1 (done).'
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        result = detect_proof_body(
+            "Coq.Arith.PeanoNat.Nat.add_0_l", "definition", None,
+            opacity="opaque", declared_library="Stdlib.Numbers.NatInt.NZAdd",
+        )
+        assert result == 1
+
+
+class TestDetectProofBodyTransparentFallback:
+    """Transparent declarations fall through to .v file scanning (§4.4 step 9)."""
+
+    def test_transparent_with_proof_block(self, tmp_path):
+        """GIVEN opacity='transparent' and .v file containing Proof...Defined.
+        WHEN detect_proof_body runs
+        THEN has_proof_body=1 (.v scan detects the proof block).
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        v_file = tmp_path / "Test.v"
+        v_file.write_text("Definition foo : nat. Proof. exact 0. Defined.\n")
+        vo_path = tmp_path / "Test.vo"
+        vo_path.touch()
+
+        result = detect_proof_body(
+            "Test.foo", "definition", vo_path,
+            opacity="transparent",
+        )
+        assert result == 1
+
+    def test_transparent_without_proof_block(self, tmp_path):
+        """GIVEN opacity='transparent' and .v file with := definition
+        WHEN detect_proof_body runs
+        THEN has_proof_body=0.
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        v_file = tmp_path / "Test.v"
+        v_file.write_text("Definition eq := @eq nat.\n")
+        vo_path = tmp_path / "Test.vo"
+        vo_path.touch()
+
+        result = detect_proof_body(
+            "Test.eq", "definition", vo_path,
+            opacity="transparent",
+        )
+        assert result == 0
+
+    def test_none_opacity_falls_through_to_v_scan(self, tmp_path):
+        """GIVEN opacity=None (Coq 8.x) and .v file with proof block
+        WHEN detect_proof_body runs
+        THEN has_proof_body=1 (.v scan as fallback).
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        v_file = tmp_path / "Test.v"
+        v_file.write_text("Lemma bar : True. Proof. exact I. Qed.\n")
+        vo_path = tmp_path / "Test.vo"
+        vo_path.touch()
+
+        result = detect_proof_body(
+            "Test.bar", "definition", vo_path,
+            opacity=None,
+        )
+        assert result == 1
+
+
+class TestDetectProofBodyProofVariants:
+    """Proof keyword regex matches all sentence-opening forms (§4.4 step 9)."""
+
+    def test_proof_using_detected(self, tmp_path):
+        """GIVEN .v file with 'Proof using' block
+        WHEN detect_proof_body runs
+        THEN has_proof_body=1.
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        v_file = tmp_path / "Test.v"
+        v_file.write_text("Lemma foo : True. Proof using. exact I. Qed.\n")
+        vo_path = tmp_path / "Test.vo"
+        vo_path.touch()
+
+        result = detect_proof_body(
+            "Test.foo", "definition", vo_path,
+            opacity="transparent",
+        )
+        assert result == 1
+
+    def test_proof_with_detected(self, tmp_path):
+        """GIVEN .v file with 'Proof with' block
+        WHEN detect_proof_body runs
+        THEN has_proof_body=1.
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        v_file = tmp_path / "Test.v"
+        v_file.write_text("Lemma bar : True. Proof with auto. auto. Qed.\n")
+        vo_path = tmp_path / "Test.vo"
+        vo_path.touch()
+
+        result = detect_proof_body(
+            "Test.bar", "definition", vo_path,
+            opacity="transparent",
+        )
+        assert result == 1
+
+
+class TestDetectProofBodyDeclaredLibrary:
+    """Declared library resolves .v file for re-exported declarations (§4.4 step 9)."""
+
+    def test_declared_library_overrides_vo_path(self, tmp_path):
+        """GIVEN a re-exported declaration with declared_library pointing to a different .v
+        WHEN detect_proof_body runs with opacity='transparent'
+        THEN it reads the .v file for declared_library, not the .vo path.
+
+        Spec §4.4 step 9: 'Derive the source path from the declared library
+        when available, falling back to vo_path.with_suffix(".v") when
+        declared_library is None.'
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        # Create the "wrong" .v file (re-exporting module) — no proof here
+        reexport_v = tmp_path / "ReExport.v"
+        reexport_v.write_text("Require Import Source. Include Source.\n")
+        reexport_vo = tmp_path / "ReExport.vo"
+        reexport_vo.touch()
+
+        # Create the "right" .v file (declaring module) — proof is here
+        source_dir = tmp_path / "user-contrib" / "Stdlib" / "Source"
+        source_dir.mkdir(parents=True)
+        source_v = source_dir / "Source.v"
+        source_v.write_text("Definition foo : nat. Proof. exact 0. Defined.\n")
+
+        result = detect_proof_body(
+            "Source.foo", "definition", reexport_vo,
+            opacity="transparent",
+            declared_library="Stdlib.Source.Source",
+            lib_root=tmp_path / "user-contrib",
+        )
+        assert result == 1
+
+
+class TestDetectProofBodyKindFilter:
+    """Kind filter still applies — excluded kinds get has_proof_body=0 (§4.4 step 9)."""
+
+    def test_inductive_returns_0_even_if_opaque(self):
+        """GIVEN an inductive type with opacity='opaque'
+        WHEN detect_proof_body runs
+        THEN has_proof_body=0 (kind not in checked set).
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        result = detect_proof_body(
+            "Coq.Init.Datatypes.nat", "inductive", None,
+            opacity="opaque",
+        )
+        assert result == 0
+
+    def test_constructor_returns_0(self):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        result = detect_proof_body(
+            "Coq.Init.Datatypes.O", "constructor", None,
+            opacity="opaque",
+        )
+        assert result == 0
+
+    def test_axiom_returns_0(self):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        result = detect_proof_body(
+            "Coq.Init.Logic.functional_extensionality", "axiom", None,
+            opacity=None,
+        )
+        assert result == 0

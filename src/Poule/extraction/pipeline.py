@@ -351,10 +351,10 @@ def _check_has_proof_body(
     short_name: str,
     v_text: str,
 ) -> bool:
-    """Check whether *short_name* has a ``Proof.`` block in *v_text*.
+    """Check whether *short_name* has a ``Proof`` block in *v_text*.
 
-    Uses the same regex patterns as the session backend's
-    ``_extract_tactics_regex`` to detect declarations with tactic proofs.
+    Matches all Proof sentence-opening forms: ``Proof.``, ``Proof using ...``,
+    ``Proof with ...``.
     """
     escaped = re.escape(short_name)
     decl_pattern = re.compile(
@@ -366,12 +366,13 @@ def _check_has_proof_body(
         return False
 
     after_decl = v_text[decl_match.start():]
-    proof_kw_match = re.search(r"\bProof\s*\.", after_decl)
+    # Match Proof. / Proof using ... / Proof with ...
+    proof_kw_match = re.search(r"\bProof\b[\s.]", after_decl)
     if proof_kw_match is None:
         return False
 
     # Guard: if another declaration appears between this declaration and
-    # the Proof. keyword, the Proof. belongs to a different declaration.
+    # the Proof keyword, the Proof belongs to a different declaration.
     between_text = after_decl[decl_match.end() - decl_match.start():proof_kw_match.start()]
     if re.search(
         r"\b(Lemma|Theorem|Proposition|Corollary|Fact|Remark|Definition|"
@@ -387,9 +388,8 @@ def _check_has_proof_body(
 _v_file_cache: dict[str, str | None] = {}
 
 
-def _get_v_text(vo_path: Path) -> str | None:
-    """Read the .v source file corresponding to *vo_path*, with caching."""
-    v_path = vo_path.with_suffix(".v")
+def _get_v_text(v_path: Path) -> str | None:
+    """Read a .v source file, with caching."""
     key = str(v_path)
     if key not in _v_file_cache:
         try:
@@ -399,16 +399,65 @@ def _get_v_text(vo_path: Path) -> str | None:
     return _v_file_cache[key]
 
 
-def detect_proof_body(name: str, kind: str, vo_path: Path | None) -> int:
-    """Return 1 if *name* has a tactic proof body in the .v source, else 0.
+def _resolve_v_path(
+    vo_path: Path | None,
+    declared_library: str | None,
+    lib_root: Path | None,
+) -> Path | None:
+    """Resolve the .v source file path for proof-body scanning.
+
+    Prefers *declared_library* (from About metadata) when available,
+    falling back to ``vo_path.with_suffix('.v')``.
+    """
+    if declared_library and lib_root:
+        # Convert "Stdlib.Arith.PeanoNat" → lib_root / "Stdlib/Arith/PeanoNat.v"
+        rel = declared_library.replace(".", "/") + ".v"
+        candidate = lib_root / rel
+        if candidate.exists():
+            return candidate
+        # Also try without the first component (e.g., Corelib.Init.Nat → Init/Nat.v)
+        parts = declared_library.split(".", 1)
+        if len(parts) == 2:
+            rel2 = parts[1].replace(".", "/") + ".v"
+            candidate2 = lib_root / rel2
+            if candidate2.exists():
+                return candidate2
+    if vo_path is not None:
+        v_path = vo_path.with_suffix(".v")
+        if v_path.exists():
+            return v_path
+    return None
+
+
+def detect_proof_body(
+    name: str,
+    kind: str,
+    vo_path: Path | None,
+    *,
+    opacity: str | None = None,
+    declared_library: str | None = None,
+    lib_root: Path | None = None,
+) -> int:
+    """Return 1 if *name* has a tactic proof body, else 0.
+
+    Uses a two-level strategy:
+    1. **Primary** — opacity from About: ``"opaque"`` → 1 immediately.
+    2. **Fallback** — .v source scanning for transparent/unknown declarations.
 
     Only checks declarations with kind in {lemma, theorem, definition, instance}.
     """
     if kind not in ("lemma", "theorem", "definition", "instance"):
         return 0
-    if vo_path is None:
+
+    # Primary signal: opaque declarations always have tactic proof bodies.
+    if opacity == "opaque":
+        return 1
+
+    # Fallback: scan .v source file.
+    v_path = _resolve_v_path(vo_path, declared_library, lib_root)
+    if v_path is None:
         return 0
-    v_text = _get_v_text(vo_path)
+    v_text = _get_v_text(v_path)
     if v_text is None:
         return 0
     # Use the short name (last dot-separated component)
@@ -516,7 +565,25 @@ def process_declaration(
     if dependency_names is None:
         dependency_names = backend.get_dependencies(name)
 
-    has_body = detect_proof_body(name, storage_kind, vo_path)
+    # Extract About metadata from constr_t if available (coq-lsp path).
+    about_opacity = constr_t.get("opacity") if isinstance(constr_t, dict) else None
+    about_declared_lib = constr_t.get("declared_library") if isinstance(constr_t, dict) else None
+
+    # Derive lib_root from vo_path for declared_library resolution.
+    lib_root = None
+    if vo_path is not None:
+        # Walk up from .vo path to find the library root (parent of user-contrib/).
+        for parent in vo_path.parents:
+            if parent.name in ("user-contrib", "theories"):
+                lib_root = parent
+                break
+
+    has_body = detect_proof_body(
+        name, storage_kind, vo_path,
+        opacity=about_opacity,
+        declared_library=about_declared_lib,
+        lib_root=lib_root,
+    )
 
     return DeclarationResult(
         name=name,
