@@ -343,12 +343,19 @@ class CoqProofBackend:
         if decl_idx is None:
             return []
 
-        # Find "Proof." span after the declaration
+        # Find "Proof." span after the declaration, but stop if another
+        # declaration is encountered first (the Proof. would belong to it).
         for i in range(decl_idx + 1, len(spans)):
             txt = span_text(spans[i]).strip()
             if re.match(r"Proof\b", txt):
                 proof_start_idx = i
                 break
+            if re.search(
+                r"\b(Lemma|Theorem|Proposition|Corollary|Fact|Remark|Definition|"
+                r"Fixpoint|CoFixpoint|Example|Let|Instance)\s+\w+",
+                txt,
+            ):
+                break  # Another declaration before Proof. — not our proof
 
         if proof_start_idx is None:
             return []
@@ -390,6 +397,17 @@ class CoqProofBackend:
         proof_kw_match = re.search(r"\bProof\s*\.", text[decl_match.start():])
         if proof_kw_match is None:
             return []
+
+        # Guard: if another declaration appears between this declaration and
+        # the Proof. keyword, the Proof. belongs to a different declaration.
+        between_text = text[decl_match.end():decl_match.start() + proof_kw_match.start()]
+        if re.search(
+            r"\b(Lemma|Theorem|Proposition|Corollary|Fact|Remark|Definition|"
+            r"Fixpoint|CoFixpoint|Example|Let|Instance)\s+\w+",
+            between_text,
+        ):
+            return []
+
         proof_kw_end = decl_match.start() + proof_kw_match.end()
 
         end_match = re.search(
