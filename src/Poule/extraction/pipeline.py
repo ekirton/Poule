@@ -341,47 +341,27 @@ def create_writer(db_path: Path) -> Any:
     return PipelineWriter(index_writer)
 
 
-_PROOF_BODY_DECL_RE = re.compile(
-    r"\b(Lemma|Theorem|Proposition|Corollary|Fact|Remark|Definition|"
-    r"Fixpoint|CoFixpoint|Example|Let|Instance)\s+{short_name}\b"
+# Vernacular keywords that always enter proof mode — a declaration starting
+# with one of these always has a tactic proof body.
+_PROOF_REQUIRING_KEYWORDS = frozenset({
+    "Lemma", "Theorem", "Proposition", "Corollary", "Fact", "Remark",
+})
+
+# Regex for Vernacular keyword at the start of a line (possibly indented).
+_VERNAC_KEYWORD_RE = re.compile(
+    r"^\s*(\w+)\b", re.MULTILINE
 )
 
+# Declaration keywords that are ambiguous — may use := or Proof mode.
+_AMBIGUOUS_KEYWORDS = frozenset({
+    "Definition", "Instance", "Fixpoint", "CoFixpoint", "Example", "Let",
+})
 
-def _check_has_proof_body(
-    short_name: str,
-    v_text: str,
-) -> bool:
-    """Check whether *short_name* has a ``Proof`` block in *v_text*.
-
-    Matches all Proof sentence-opening forms: ``Proof.``, ``Proof using ...``,
-    ``Proof with ...``.
-    """
-    escaped = re.escape(short_name)
-    decl_pattern = re.compile(
-        rf"\b(Lemma|Theorem|Proposition|Corollary|Fact|Remark|Definition|"
-        rf"Fixpoint|CoFixpoint|Example|Let|Instance)\s+{escaped}\b"
-    )
-    decl_match = decl_pattern.search(v_text)
-    if decl_match is None:
-        return False
-
-    after_decl = v_text[decl_match.start():]
-    # Match Proof. / Proof using ... / Proof with ...
-    proof_kw_match = re.search(r"\bProof\b[\s.]", after_decl)
-    if proof_kw_match is None:
-        return False
-
-    # Guard: if another declaration appears between this declaration and
-    # the Proof keyword, the Proof belongs to a different declaration.
-    between_text = after_decl[decl_match.end() - decl_match.start():proof_kw_match.start()]
-    if re.search(
-        r"\b(Lemma|Theorem|Proposition|Corollary|Fact|Remark|Definition|"
-        r"Fixpoint|CoFixpoint|Example|Let|Instance)\s+\w+",
-        between_text,
-    ):
-        return False
-
-    return True
+# Declaration keywords (all) — used to bound forward scanning.
+_ALL_DECL_KEYWORDS = _PROOF_REQUIRING_KEYWORDS | _AMBIGUOUS_KEYWORDS | frozenset({
+    "Inductive", "Record", "Class", "Axiom", "Parameter", "Conjecture",
+    "Module", "Section", "End",
+})
 
 
 # Cache of .v file text keyed by path, shared within a single extraction run.
@@ -400,69 +380,107 @@ def _get_v_text(v_path: Path) -> str | None:
 
 
 def _resolve_v_path(
-    vo_path: Path | None,
     declared_library: str | None,
     lib_root: Path | None,
 ) -> Path | None:
-    """Resolve the .v source file path for proof-body scanning.
-
-    Prefers *declared_library* (from About metadata) when available,
-    falling back to ``vo_path.with_suffix('.v')``.
-    """
-    if declared_library and lib_root:
-        # Convert "Stdlib.Arith.PeanoNat" → lib_root / "Stdlib/Arith/PeanoNat.v"
-        rel = declared_library.replace(".", "/") + ".v"
-        candidate = lib_root / rel
-        if candidate.exists():
-            return candidate
-        # Also try without the first component (e.g., Corelib.Init.Nat → Init/Nat.v)
-        parts = declared_library.split(".", 1)
-        if len(parts) == 2:
-            rel2 = parts[1].replace(".", "/") + ".v"
-            candidate2 = lib_root / rel2
-            if candidate2.exists():
-                return candidate2
-    if vo_path is not None:
-        v_path = vo_path.with_suffix(".v")
-        if v_path.exists():
-            return v_path
+    """Resolve the .v source file path from the declared library name."""
+    if not declared_library or not lib_root:
+        return None
+    # Convert "Stdlib.Arith.PeanoNat" → lib_root / "Stdlib/Arith/PeanoNat.v"
+    rel = declared_library.replace(".", "/") + ".v"
+    candidate = lib_root / rel
+    if candidate.exists():
+        return candidate
+    # Also try without the first component (e.g., Corelib.Init.Nat → Init/Nat.v)
+    parts = declared_library.split(".", 1)
+    if len(parts) == 2:
+        rel2 = parts[1].replace(".", "/") + ".v"
+        candidate2 = lib_root / rel2
+        if candidate2.exists():
+            return candidate2
     return None
+
+
+def _check_line_anchored(v_text: str, declared_line: int) -> bool:
+    """Check if the declaration at *declared_line* has a proof body.
+
+    1. If the line starts with a proof-requiring keyword (Lemma, Theorem, etc.),
+       return True immediately — these always enter proof mode.
+    2. If the line starts with an ambiguous keyword (Definition, Instance, etc.),
+       scan forward for a ``Proof`` keyword before the next declaration.
+    3. Otherwise return False.
+    """
+    lines = v_text.splitlines()
+    if declared_line < 1 or declared_line > len(lines):
+        return False
+    line = lines[declared_line - 1]  # 1-based → 0-based
+
+    m = _VERNAC_KEYWORD_RE.match(line)
+    if m is None:
+        return False
+    keyword = m.group(1)
+
+    if keyword in _PROOF_REQUIRING_KEYWORDS:
+        return True
+
+    if keyword not in _AMBIGUOUS_KEYWORDS:
+        return False
+
+    # Scan forward from declared_line for "Proof" before next declaration.
+    for scan_line in lines[declared_line:]:  # lines after declared_line
+        stripped = scan_line.strip()
+        if not stripped:
+            continue
+        sm = _VERNAC_KEYWORD_RE.match(scan_line)
+        if sm:
+            scan_kw = sm.group(1)
+            if scan_kw == "Proof":
+                return True
+            if scan_kw in _ALL_DECL_KEYWORDS:
+                return False  # hit next declaration without finding Proof
+    return False
 
 
 def detect_proof_body(
     name: str,
     kind: str,
-    vo_path: Path | None,
     *,
     opacity: str | None = None,
+    declared_line: int | None = None,
     declared_library: str | None = None,
     lib_root: Path | None = None,
 ) -> int:
     """Return 1 if *name* has a tactic proof body, else 0.
 
-    Uses a two-level strategy:
-    1. **Primary** — opacity from About: ``"opaque"`` → 1 immediately.
-    2. **Fallback** — .v source scanning for transparent/unknown declarations.
+    Uses three signals evaluated in order:
+
+    1. **Opacity** (About metadata): ``"opaque"`` → 1.
+    2. **Vernacular kind** (Coq ≤8.x): ``"lemma"``/``"theorem"`` → 1.
+    3. **Line-anchored .v check**: read the source line at *declared_line*
+       and check the Vernacular keyword.
 
     Only checks declarations with kind in {lemma, theorem, definition, instance}.
     """
     if kind not in ("lemma", "theorem", "definition", "instance"):
         return 0
 
-    # Primary signal: opaque declarations always have tactic proof bodies.
+    # Signal 1: opaque declarations always have tactic proof bodies.
     if opacity == "opaque":
         return 1
 
-    # Fallback: scan .v source file.
-    v_path = _resolve_v_path(vo_path, declared_library, lib_root)
-    if v_path is None:
-        return 0
-    v_text = _get_v_text(v_path)
-    if v_text is None:
-        return 0
-    # Use the short name (last dot-separated component)
-    short_name = name.rsplit(".", 1)[-1] if "." in name else name
-    return 1 if _check_has_proof_body(short_name, v_text) else 0
+    # Signal 2: Coq ≤8.x preserves Vernacular kind; these always enter proof mode.
+    if kind in ("lemma", "theorem"):
+        return 1
+
+    # Signal 3: line-anchored .v source check for transparent definitions/instances.
+    if declared_line is not None:
+        v_path = _resolve_v_path(declared_library, lib_root)
+        if v_path is not None:
+            v_text = _get_v_text(v_path)
+            if v_text is not None:
+                return 1 if _check_line_anchored(v_text, declared_line) else 0
+
+    return 0
 
 
 def process_declaration(
@@ -568,6 +586,7 @@ def process_declaration(
     # Extract About metadata from constr_t if available (coq-lsp path).
     about_opacity = constr_t.get("opacity") if isinstance(constr_t, dict) else None
     about_declared_lib = constr_t.get("declared_library") if isinstance(constr_t, dict) else None
+    about_declared_line = constr_t.get("declared_line") if isinstance(constr_t, dict) else None
 
     # Derive lib_root from vo_path for declared_library resolution.
     lib_root = None
@@ -579,8 +598,9 @@ def process_declaration(
                 break
 
     has_body = detect_proof_body(
-        name, storage_kind, vo_path,
+        name, storage_kind,
         opacity=about_opacity,
+        declared_line=about_declared_line,
         declared_library=about_declared_lib,
         lib_root=lib_root,
     )

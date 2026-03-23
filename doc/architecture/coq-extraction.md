@@ -34,34 +34,34 @@ Per-declaration processing:
 
   8b. Proof-body detection:
      For each declaration whose kind ∈ {lemma, theorem, definition, instance}:
-       Primary signal — opacity from About output:
+       Signal 1 — opacity from About output:
          The About query (already issued for kind detection) includes an
          opacity annotation in Rocq 9.x: "opaque" for Qed-terminated proofs,
          "transparent" for := definitions and Defined-terminated proofs.
          The backend extracts this flag during kind detection at no extra cost.
          If opacity == "opaque": set has_proof_body = true (done).
-         If opacity == "transparent": fall through to .v file scanning.
-         If opacity is unavailable (Coq ≤8.x): fall through to .v file scanning.
-       Fallback — .v source scanning (for transparent/unknown declarations):
-         Derive the source .v path from the declared library, not the
-         discovery .vo path. The About output includes
-         "Declared in library X, line Y" which names the library where the
-         declaration was originally defined. For re-exported declarations
-         (pulled in via Include or functor application), the declared library
-         differs from the .vo file's module — using the .vo path reads the
-         wrong file and misses the proof body.
+       Signal 2 — Vernacular kind from About output (Coq ≤8.x):
+         In Coq ≤8.x, About preserves the original Vernacular keyword
+         (e.g., "foo is a Lemma"). If kind ∈ {lemma, theorem}: set
+         has_proof_body = true (done). These keywords always enter proof mode.
+         In Rocq 9.x this signal is unavailable — all constants report
+         "Expands to: Constant" regardless of original keyword.
+       Signal 3 — line-anchored .v source check (for transparent/unknown declarations):
+         The About output includes "Declared in library X, line Y, characters ..."
+         which provides the exact source location. The backend extracts both
+         the declared library and the declared line number.
          Resolve the declared library name to a .v file path using the same
          prefix-stripping logic as module path derivation (in reverse).
-         If no declared library is available, fall back to vo_path.with_suffix('.v').
-         If the .v file exists:
-           Regex-scan for the declaration's short name preceded by a declaration
-           keyword (Lemma|Theorem|Proposition|Corollary|Fact|Definition|
-           Fixpoint|Instance|...) AND followed by a Proof keyword before the
-           next declaration keyword. The Proof keyword pattern matches all
-           sentence-opening forms: "Proof.", "Proof using ...", "Proof with ...".
-           Set has_proof_body = true if both conditions are met, false otherwise.
-         If the .v file does not exist:
-           Set has_proof_body = false (conservative default).
+         Read the .v source line at the declared line number. If the line
+         starts with a proof-requiring Vernacular keyword that always enters
+         proof mode (Lemma, Theorem, Proposition, Corollary, Fact, Remark):
+         set has_proof_body = true (done).
+         For ambiguous keywords at the declared line (Definition, Instance,
+         Fixpoint): scan forward from that line for a Proof keyword
+         (matching "Proof.", "Proof using ...", "Proof with ...") before
+         the next declaration keyword. Set has_proof_body = true if found.
+         If declared_line is unavailable, or the .v file does not exist:
+         set has_proof_body = false (conservative default).
        .v file reads are cached across all declarations from the same source file.
 
   Pass 2 (after all declarations are inserted):
@@ -106,7 +106,7 @@ In Rocq 9.x, the `About` response may include multiple `Expands to:` lines when 
 The `About` response also contains two additional signals extracted during the same batch:
 
 - **Opacity**: Rocq 9.x About output includes "`<name> is opaque`" or "`<name> is transparent`". Opaque declarations were proved with `Qed` (tactic proof body); transparent declarations were defined with `:=` or proved with `Defined`. This is the primary signal for proof-body detection (see step 8b above).
-- **Declared library**: The line "`Declared in library <lib>, line <n>`" names the library where the declaration was originally defined. For re-exported declarations (via `Include` or functor application), this differs from the `.vo` file where the declaration was discovered. This is used by proof-body detection to locate the correct `.v` source file.
+- **Declared library and line**: The line "`Declared in library <lib>, line <n>, characters <range>`" names the library and exact source position where the declaration was originally defined. For re-exported declarations (via `Include` or functor application), the declared library differs from the `.vo` file where the declaration was discovered. The backend extracts both the library name and the line number. Proof-body detection uses the declared library to locate the `.v` source file and the declared line to anchor its Vernacular keyword check to the exact declaration (eliminating ambiguity from same-named declarations in nested modules).
 
 ### Kind mapping
 

@@ -2178,7 +2178,7 @@ class TestFQNDerivationInListDeclarations:
             [{"text": "Nat.add_comm : forall n m, n + m = m + n", "level": 3}],
         ))
         backend._batch_get_about_metadata = Mock(return_value=[
-            AboutResult("lemma", "opaque", "Stdlib.Numbers.NatInt.NZAdd"),
+            AboutResult("lemma", "opaque", "Stdlib.Numbers.NatInt.NZAdd", 59),
         ])
 
         vo_path = Path("/opt/coq/user-contrib/Stdlib/Arith/PeanoNat.vo")
@@ -2202,7 +2202,7 @@ class TestFQNDerivationInListDeclarations:
             [{"text": "negb_involutive : forall b, negb (negb b) = b", "level": 3}],
         ))
         backend._batch_get_about_metadata = Mock(return_value=[
-            AboutResult("lemma", None, None),
+            AboutResult("lemma", None, None, None),
         ])
 
         vo_path = Path("/opt/coq/user-contrib/mathcomp/ssreflect/ssrbool.vo")
@@ -2813,34 +2813,18 @@ class TestSymbolFreqUsesFQNs:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class TestDetectProofBodyOpacityPrimary:
-    """Opaque declarations get has_proof_body=1 without .v scanning (§4.4 step 9)."""
+class TestDetectProofBodySignal1Opacity:
+    """Signal 1: opacity='opaque' → has_proof_body=1 (§4.4 step 9)."""
 
-    def test_opaque_returns_1_without_v_file(self):
-        """GIVEN opacity='opaque' and no .v file available
+    def test_opaque_returns_1_without_source_info(self):
+        """GIVEN opacity='opaque' and no declared_line/declared_library
         WHEN detect_proof_body runs
         THEN has_proof_body=1 (opacity signal is sufficient).
         """
         from Poule.extraction.pipeline import detect_proof_body
 
         result = detect_proof_body(
-            "Coq.Arith.PeanoNat.Nat.add_comm", "definition", None,
-            opacity="opaque",
-        )
-        assert result == 1
-
-    def test_opaque_skips_v_file_scan(self, tmp_path):
-        """GIVEN opacity='opaque' and a .vo path
-        WHEN detect_proof_body runs
-        THEN it returns 1 without reading the .v file.
-
-        The .v file is intentionally absent — opaque short-circuits.
-        """
-        from Poule.extraction.pipeline import detect_proof_body
-
-        vo_path = tmp_path / "Missing.vo"
-        result = detect_proof_body(
-            "Coq.Missing.foo", "definition", vo_path,
+            "Coq.Arith.PeanoNat.Nat.add_comm", "definition",
             opacity="opaque",
         )
         assert result == 1
@@ -2848,146 +2832,348 @@ class TestDetectProofBodyOpacityPrimary:
     def test_opaque_re_export_returns_1(self):
         """GIVEN an opaque re-exported declaration (Include'd from another module)
         WHEN detect_proof_body runs
-        THEN has_proof_body=1 regardless of .v file contents.
-
-        Spec §4.4 step 9: 'If opacity == "opaque": set has_proof_body = 1 (done).'
+        THEN has_proof_body=1 regardless of other metadata.
         """
         from Poule.extraction.pipeline import detect_proof_body
 
         result = detect_proof_body(
-            "Coq.Arith.PeanoNat.Nat.add_0_l", "definition", None,
+            "Coq.Arith.PeanoNat.Nat.add_0_l", "definition",
             opacity="opaque", declared_library="Stdlib.Numbers.NatInt.NZAdd",
+            declared_line=59,
+        )
+        assert result == 1
+
+    def test_opaque_instance_returns_1(self):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        result = detect_proof_body(
+            "Foo.bar_instance", "instance", opacity="opaque",
         )
         assert result == 1
 
 
-class TestDetectProofBodyTransparentFallback:
-    """Transparent declarations fall through to .v file scanning (§4.4 step 9)."""
+class TestDetectProofBodySignal2Kind:
+    """Signal 2: kind ∈ {lemma, theorem} → 1 for Coq ≤8.x (§4.4 step 9)."""
 
-    def test_transparent_with_proof_block(self, tmp_path):
-        """GIVEN opacity='transparent' and .v file containing Proof...Defined.
+    def test_lemma_kind_returns_1(self):
+        """GIVEN kind='lemma' and opacity=None (Coq 8.x preserves Vernacular kind)
         WHEN detect_proof_body runs
-        THEN has_proof_body=1 (.v scan detects the proof block).
+        THEN has_proof_body=1 (Lemma always enters proof mode).
         """
         from Poule.extraction.pipeline import detect_proof_body
 
-        v_file = tmp_path / "Test.v"
-        v_file.write_text("Definition foo : nat. Proof. exact 0. Defined.\n")
-        vo_path = tmp_path / "Test.vo"
-        vo_path.touch()
+        result = detect_proof_body("Foo.bar", "lemma", opacity=None)
+        assert result == 1
+
+    def test_theorem_kind_returns_1(self):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        result = detect_proof_body("Foo.baz", "theorem", opacity=None)
+        assert result == 1
+
+    def test_lemma_kind_transparent_returns_1(self):
+        """Lemma proved with Defined. is transparent but still has proof body."""
+        from Poule.extraction.pipeline import detect_proof_body
 
         result = detect_proof_body(
-            "Test.foo", "definition", vo_path,
-            opacity="transparent",
+            "Foo.bar", "lemma", opacity="transparent",
         )
         assert result == 1
 
-    def test_transparent_without_proof_block(self, tmp_path):
-        """GIVEN opacity='transparent' and .v file with := definition
+    def test_definition_kind_without_declared_line_returns_0(self):
+        """GIVEN kind='definition' and opacity=None, no declared_line
         WHEN detect_proof_body runs
-        THEN has_proof_body=0.
+        THEN has_proof_body=0 (definition is ambiguous, conservative default).
         """
         from Poule.extraction.pipeline import detect_proof_body
 
-        v_file = tmp_path / "Test.v"
-        v_file.write_text("Definition eq := @eq nat.\n")
-        vo_path = tmp_path / "Test.vo"
-        vo_path.touch()
+        result = detect_proof_body("Foo.qux", "definition", opacity=None)
+        assert result == 0
 
+
+class TestDetectProofBodySignal3LineAnchored:
+    """Signal 3: line-anchored .v source check (§4.4 step 9)."""
+
+    def _make_source(self, tmp_path, lib_name, content):
+        """Helper: create a .v file at user-contrib/<lib_name>/<leaf>.v."""
+        parts = lib_name.split(".")
+        source_dir = tmp_path / "user-contrib" / "/".join(parts[:-1])
+        source_dir.mkdir(parents=True, exist_ok=True)
+        v_file = source_dir / f"{parts[-1]}.v"
+        v_file.write_text(content)
+        return tmp_path / "user-contrib"
+
+    def test_lemma_keyword_at_declared_line(self, tmp_path):
+        """GIVEN declared_line points to a line starting with 'Lemma'
+        WHEN detect_proof_body runs
+        THEN has_proof_body=1 (Lemma is proof-requiring).
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test", (
+            "(* preamble *)\n"
+            "Lemma foo : 1 + 1 = 2.\n"
+            "Proof. reflexivity. Qed.\n"
+        ))
         result = detect_proof_body(
-            "Test.eq", "definition", vo_path,
-            opacity="transparent",
+            "Test.foo", "definition",
+            opacity="transparent", declared_line=2,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result == 1
+
+    def test_theorem_keyword_at_declared_line(self, tmp_path):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test",
+            "Theorem bar : True.\nProof. exact I. Qed.\n")
+        result = detect_proof_body(
+            "Test.bar", "definition",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result == 1
+
+    def test_proposition_keyword_at_declared_line(self, tmp_path):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test",
+            "Proposition p : True.\nProof. exact I. Qed.\n")
+        result = detect_proof_body(
+            "Test.p", "definition",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result == 1
+
+    def test_corollary_keyword_at_declared_line(self, tmp_path):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test",
+            "Corollary c : True.\nProof. exact I. Qed.\n")
+        result = detect_proof_body(
+            "Test.c", "definition",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result == 1
+
+    def test_fact_keyword_at_declared_line(self, tmp_path):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test",
+            "Fact f : True.\nProof. exact I. Qed.\n")
+        result = detect_proof_body(
+            "Test.f", "definition",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result == 1
+
+    def test_remark_keyword_at_declared_line(self, tmp_path):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test",
+            "Remark r : True.\nProof. exact I. Qed.\n")
+        result = detect_proof_body(
+            "Test.r", "definition",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result == 1
+
+    def test_definition_with_proof_keyword(self, tmp_path):
+        """GIVEN transparent Definition with 'Proof.' after declared_line
+        WHEN detect_proof_body runs
+        THEN has_proof_body=1 (Proof keyword found scanning forward).
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test",
+            "Definition bar : nat.\nProof. exact 0. Defined.\n")
+        result = detect_proof_body(
+            "Test.bar", "definition",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result == 1
+
+    def test_definition_with_proof_using(self, tmp_path):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test",
+            "Definition foo : nat.\nProof using. exact 0. Defined.\n")
+        result = detect_proof_body(
+            "Test.foo", "definition",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result == 1
+
+    def test_definition_with_proof_with(self, tmp_path):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test",
+            "Definition foo : nat.\nProof with auto. auto. Defined.\n")
+        result = detect_proof_body(
+            "Test.foo", "definition",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result == 1
+
+    def test_definition_with_assign_returns_0(self, tmp_path):
+        """GIVEN transparent definition with := at declared_line
+        WHEN detect_proof_body runs
+        THEN has_proof_body=0 (no Proof keyword found).
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test",
+            "Definition eq := @eq nat.\n")
+        result = detect_proof_body(
+            "Test.eq", "definition",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
         )
         assert result == 0
 
-    def test_none_opacity_falls_through_to_v_scan(self, tmp_path):
-        """GIVEN opacity=None (Coq 8.x) and .v file with proof block
+    def test_no_declared_line_returns_0(self):
+        """GIVEN transparent declaration without declared_line
         WHEN detect_proof_body runs
-        THEN has_proof_body=1 (.v scan as fallback).
+        THEN has_proof_body=0 (conservative default).
         """
         from Poule.extraction.pipeline import detect_proof_body
 
-        v_file = tmp_path / "Test.v"
-        v_file.write_text("Lemma bar : True. Proof. exact I. Qed.\n")
-        vo_path = tmp_path / "Test.vo"
-        vo_path.touch()
+        result = detect_proof_body(
+            "Foo.bar", "definition",
+            opacity="transparent", declared_line=None,
+        )
+        assert result == 0
+
+    def test_missing_v_file_returns_0(self):
+        """GIVEN declared_line but .v file does not exist
+        WHEN detect_proof_body runs
+        THEN has_proof_body=0 (conservative default).
+        """
+        from Poule.extraction.pipeline import detect_proof_body
 
         result = detect_proof_body(
-            "Test.bar", "definition", vo_path,
-            opacity=None,
+            "Foo.bar", "definition",
+            opacity="transparent", declared_line=5,
+            declared_library="Stdlib.Missing.Module",
+            lib_root=None,
         )
-        assert result == 1
+        assert result == 0
 
+    def test_nested_module_same_short_name(self, tmp_path):
+        """GIVEN two declarations with same short name in nested modules
+        WHEN detect_proof_body runs with correct declared_line for each
+        THEN each gets the correct has_proof_body value.
 
-class TestDetectProofBodyProofVariants:
-    """Proof keyword regex matches all sentence-opening forms (§4.4 step 9)."""
+        This is the key regression test: the old regex approach had a
+        short-name collision bug. The line-anchored approach fixes it.
+        """
+        from Poule.extraction.pipeline import detect_proof_body
 
-    def test_proof_using_detected(self, tmp_path):
-        """GIVEN .v file with 'Proof using' block
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test", (
+            "Module A.\n"
+            "  Definition bar := 42.\n"
+            "End A.\n"
+            "\n"
+            "Module B.\n"
+            "  Lemma bar : 1 + 1 = 2.\n"
+            "  Proof. reflexivity. Qed.\n"
+            "End B.\n"
+        ))
+        # A.bar: := definition on line 2 → 0
+        result_a = detect_proof_body(
+            "Test.A.bar", "definition",
+            opacity="transparent", declared_line=2,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result_a == 0
+
+        # B.bar: Lemma on line 6 → 1
+        result_b = detect_proof_body(
+            "Test.B.bar", "definition",
+            opacity="transparent", declared_line=6,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result_b == 1
+
+    def test_instance_with_proof(self, tmp_path):
+        """GIVEN transparent Instance with Proof block
         WHEN detect_proof_body runs
         THEN has_proof_body=1.
         """
         from Poule.extraction.pipeline import detect_proof_body
 
-        v_file = tmp_path / "Test.v"
-        v_file.write_text("Lemma foo : True. Proof using. exact I. Qed.\n")
-        vo_path = tmp_path / "Test.vo"
-        vo_path.touch()
-
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test",
+            "Instance foo : SomeClass nat.\nProof. constructor. Defined.\n")
         result = detect_proof_body(
-            "Test.foo", "definition", vo_path,
-            opacity="transparent",
+            "Test.foo", "instance",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
         )
         assert result == 1
 
-    def test_proof_with_detected(self, tmp_path):
-        """GIVEN .v file with 'Proof with' block
+    def test_instance_with_assign_returns_0(self, tmp_path):
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Test.Test",
+            "Instance foo : SomeClass nat := { method := fun x => x }.\n")
+        result = detect_proof_body(
+            "Test.foo", "instance",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Test.Test",
+            lib_root=lib_root,
+        )
+        assert result == 0
+
+    def test_declared_library_resolves_correct_file(self, tmp_path):
+        """GIVEN declared_library pointing to a different module than the discovery path
         WHEN detect_proof_body runs
-        THEN has_proof_body=1.
+        THEN it reads the .v file for declared_library.
         """
         from Poule.extraction.pipeline import detect_proof_body
 
-        v_file = tmp_path / "Test.v"
-        v_file.write_text("Lemma bar : True. Proof with auto. auto. Qed.\n")
-        vo_path = tmp_path / "Test.vo"
-        vo_path.touch()
-
+        lib_root = self._make_source(tmp_path, "Stdlib.Source.Source",
+            "Definition foo : nat.\nProof. exact 0. Defined.\n")
         result = detect_proof_body(
-            "Test.bar", "definition", vo_path,
-            opacity="transparent",
+            "Source.foo", "definition",
+            opacity="transparent", declared_line=1,
+            declared_library="Stdlib.Source.Source",
+            lib_root=lib_root,
         )
         assert result == 1
 
-
-class TestDetectProofBodyDeclaredLibrary:
-    """Declared library resolves .v file for re-exported declarations (§4.4 step 9)."""
-
-    def test_declared_library_overrides_vo_path(self, tmp_path):
-        """GIVEN a re-exported declaration with declared_library pointing to a different .v
-        WHEN detect_proof_body runs with opacity='transparent'
-        THEN it reads the .v file for declared_library, not the .vo path.
-
-        Spec §4.4 step 9: 'Derive the source path from the declared library
-        when available, falling back to vo_path.with_suffix(".v") when
-        declared_library is None.'
-        """
+    def test_declared_library_prefix_stripping(self, tmp_path):
+        """declared_library with first component stripped (e.g., Stdlib → lib_root)."""
         from Poule.extraction.pipeline import detect_proof_body
 
-        # Create the "wrong" .v file (re-exporting module) — no proof here
-        reexport_v = tmp_path / "ReExport.v"
-        reexport_v.write_text("Require Import Source. Include Source.\n")
-        reexport_vo = tmp_path / "ReExport.vo"
-        reexport_vo.touch()
-
-        # Create the "right" .v file (declaring module) — proof is here
-        source_dir = tmp_path / "user-contrib" / "Stdlib" / "Source"
+        # Create file at lib_root/Source/Source.v (stripping "Stdlib" prefix)
+        source_dir = tmp_path / "user-contrib" / "Source"
         source_dir.mkdir(parents=True)
-        source_v = source_dir / "Source.v"
-        source_v.write_text("Definition foo : nat. Proof. exact 0. Defined.\n")
+        v_file = source_dir / "Source.v"
+        v_file.write_text("Lemma foo : True.\nProof. exact I. Qed.\n")
 
         result = detect_proof_body(
-            "Source.foo", "definition", reexport_vo,
-            opacity="transparent",
+            "Source.foo", "definition",
+            opacity="transparent", declared_line=1,
             declared_library="Stdlib.Source.Source",
             lib_root=tmp_path / "user-contrib",
         )
@@ -2995,18 +3181,13 @@ class TestDetectProofBodyDeclaredLibrary:
 
 
 class TestDetectProofBodyKindFilter:
-    """Kind filter still applies — excluded kinds get has_proof_body=0 (§4.4 step 9)."""
+    """Kind filter: excluded kinds get has_proof_body=0 (§4.4 step 9)."""
 
     def test_inductive_returns_0_even_if_opaque(self):
-        """GIVEN an inductive type with opacity='opaque'
-        WHEN detect_proof_body runs
-        THEN has_proof_body=0 (kind not in checked set).
-        """
         from Poule.extraction.pipeline import detect_proof_body
 
         result = detect_proof_body(
-            "Coq.Init.Datatypes.nat", "inductive", None,
-            opacity="opaque",
+            "Coq.Init.Datatypes.nat", "inductive", opacity="opaque",
         )
         assert result == 0
 
@@ -3014,8 +3195,7 @@ class TestDetectProofBodyKindFilter:
         from Poule.extraction.pipeline import detect_proof_body
 
         result = detect_proof_body(
-            "Coq.Init.Datatypes.O", "constructor", None,
-            opacity="opaque",
+            "Coq.Init.Datatypes.O", "constructor", opacity="opaque",
         )
         assert result == 0
 
@@ -3023,7 +3203,7 @@ class TestDetectProofBodyKindFilter:
         from Poule.extraction.pipeline import detect_proof_body
 
         result = detect_proof_body(
-            "Coq.Init.Logic.functional_extensionality", "axiom", None,
+            "Coq.Init.Logic.functional_extensionality", "axiom",
             opacity=None,
         )
         assert result == 0

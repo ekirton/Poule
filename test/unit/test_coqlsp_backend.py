@@ -2026,17 +2026,17 @@ class TestParseAboutKind:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 20. About metadata extraction: opacity and declared_library (spec §4.1.1)
+# 20. About metadata extraction: opacity, declared_library, declared_line (spec §4.1.1)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 class TestParseAboutMetadata:
-    """_parse_about_kind returns AboutResult with kind, opacity, declared_library."""
+    """_parse_about_kind returns AboutResult with kind, opacity, declared_library, declared_line."""
 
     def test_opaque_constant_rocq9(self):
         """GIVEN a Rocq 9.x About response with 'is opaque' and 'Declared in library'
         WHEN _parse_about_kind parses the response
-        THEN it returns kind='definition', opacity='opaque', declared_library set.
+        THEN it returns kind='definition', opacity='opaque', declared_library and declared_line set.
 
         Spec §4.1.1: opacity='opaque' indicates Qed-terminated proof.
         """
@@ -2056,11 +2056,12 @@ class TestParseAboutMetadata:
         assert result.kind == "definition"
         assert result.opacity == "opaque"
         assert result.declared_library == "Stdlib.Numbers.NatInt.NZAdd"
+        assert result.declared_line == 59
 
     def test_transparent_constant_rocq9(self):
         """GIVEN a Rocq 9.x About response with 'is transparent'
         WHEN _parse_about_kind parses the response
-        THEN opacity='transparent'.
+        THEN opacity='transparent', declared_line extracted.
 
         Spec §4.1.1: transparent means := definition or Proof...Defined.
         """
@@ -2079,11 +2080,12 @@ class TestParseAboutMetadata:
         assert result.kind == "definition"
         assert result.opacity == "transparent"
         assert result.declared_library == "Corelib.Init.Nat"
+        assert result.declared_line == 20
 
     def test_coq8_no_opacity_no_declared_library(self):
         """GIVEN a Coq 8.x About response without opacity or declared-library lines
         WHEN _parse_about_kind parses the response
-        THEN opacity=None and declared_library=None.
+        THEN opacity=None, declared_library=None, declared_line=None.
 
         Spec §4.1.1: these fields are absent in Coq ≤8.x.
         """
@@ -2094,11 +2096,12 @@ class TestParseAboutMetadata:
         assert result.kind == "lemma"
         assert result.opacity is None
         assert result.declared_library is None
+        assert result.declared_line is None
 
     def test_not_defined_object_no_metadata(self):
         """GIVEN About returns 'not a defined object'
         WHEN _parse_about_kind parses the response
-        THEN kind defaults to 'definition', opacity=None, declared_library=None.
+        THEN kind defaults to 'definition', all metadata None.
         """
         from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
@@ -2107,13 +2110,12 @@ class TestParseAboutMetadata:
         assert result.kind == "definition"
         assert result.opacity is None
         assert result.declared_library is None
+        assert result.declared_line is None
 
     def test_declared_library_with_different_module(self):
         """GIVEN a re-exported declaration where declared_library differs from discovery module
         WHEN _parse_about_kind parses the response
-        THEN declared_library reflects the originating module, not the re-exporter.
-
-        This is the core re-export detection case.
+        THEN declared_library and declared_line reflect the originating module.
         """
         from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
@@ -2129,6 +2131,23 @@ class TestParseAboutMetadata:
         result = CoqLspBackend._parse_about_kind("Nat.EvenT_0", msgs)
         assert result.opacity == "opaque"
         assert result.declared_library == "Stdlib.Arith.PeanoNat"
+        assert result.declared_line == 1222
+
+    def test_declared_line_without_characters(self):
+        """GIVEN a Declared-in-library line without the characters suffix
+        WHEN _parse_about_kind parses the response
+        THEN declared_line is still extracted.
+        """
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        about_text = (
+            "Expands to: Constant Corelib.Init.Nat.add\n"
+            "Declared in library Corelib.Init.Nat, line 20"
+        )
+        msgs = [_make_sentence_message(about_text)]
+        result = CoqLspBackend._parse_about_kind("Nat.add", msgs)
+        assert result.declared_library == "Corelib.Init.Nat"
+        assert result.declared_line == 20
 
     def test_backward_compat_kind_only_access(self):
         """Existing callers that compare result to a string should still work
@@ -2137,7 +2156,6 @@ class TestParseAboutMetadata:
 
         msgs = [_make_sentence_message("Expands to: Constant Corelib.Init.Nat.add")]
         result = CoqLspBackend._parse_about_kind("Nat.add", msgs)
-        # Should be accessible as .kind
         assert result.kind == "definition"
 
 

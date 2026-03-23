@@ -59,19 +59,20 @@ _VERSION_RE = re.compile(r"version\s+([\d.]+)")
 # Regex for opacity from About output: "<name> is opaque" / "<name> is transparent"
 _OPACITY_RE = re.compile(r"^\S+\s+is\s+(opaque|transparent)\s*$", re.MULTILINE)
 
-# Regex for declared library from About output:
-# "Declared in library <lib>, line <n>, characters <range>"
+# Regex for declared library and line from About output:
+# "Declared in library <lib>, line <n>[, characters <range>]"
 _DECLARED_LIB_RE = re.compile(
-    r"^Declared in library\s+([\w.]+),", re.MULTILINE
+    r"^Declared in library\s+([\w.]+),\s*line\s+(\d+)", re.MULTILINE
 )
 
 
 class AboutResult(NamedTuple):
-    """Result of parsing an About response: kind, opacity, and declared library."""
+    """Result of parsing an About response: kind, opacity, declared library, and line."""
 
     kind: str
     opacity: str | None  # "opaque", "transparent", or None
     declared_library: str | None  # e.g. "Stdlib.Numbers.NatInt.NZAdd"
+    declared_line: int | None  # 1-based source line number
 
 
 # Kind normalization map for About output.
@@ -372,18 +373,18 @@ class CoqLspBackend:
 
     @staticmethod
     def _parse_about_kind(name: str, messages: list[dict[str, Any]]) -> AboutResult:
-        """Parse ``About`` output messages to determine kind, opacity, and declared library.
+        """Parse ``About`` output messages to determine kind, opacity, declared library, and line.
 
         Returns an :class:`AboutResult` namedtuple with ``kind``, ``opacity``,
-        and ``declared_library`` fields.  Callers that only need the kind can
-        access ``result.kind``.
+        ``declared_library``, and ``declared_line`` fields.  Callers that only
+        need the kind can access ``result.kind``.
         """
         all_text = "\n".join(
             m["text"] for m in messages if m.get("level", 3) != 1
         )
         logger.debug("About output for %s: %r", name, all_text)
 
-        # Extract opacity and declared_library from the full text.
+        # Extract opacity and declared_library/declared_line from the full text.
         opacity_match = _OPACITY_RE.search(all_text)
         opacity: str | None = opacity_match.group(1) if opacity_match else None
 
@@ -391,16 +392,18 @@ class CoqLspBackend:
         # a constant the About output may include two Declared-in lines; the
         # second one describes the underlying constant.
         declared_library: str | None = None
+        declared_line: int | None = None
         for dl_match in _DECLARED_LIB_RE.finditer(all_text):
             declared_library = dl_match.group(1)
+            declared_line = int(dl_match.group(2))
 
         # --- Kind detection (unchanged logic) ---
 
         # Rocq 9.x: detect Ltac and Module formats before Expands-to
         if _LTAC_RE.search(all_text):
-            return AboutResult("ltac", opacity, declared_library)
+            return AboutResult("ltac", opacity, declared_library, declared_line)
         if _MODULE_RE.search(all_text):
-            return AboutResult("module", opacity, declared_library)
+            return AboutResult("module", opacity, declared_library, declared_line)
 
         # Rocq 9.x: parse all "Expands to: <Category> ..." lines.
         # Prefer Constant/Inductive/Constructor over Notation when both
@@ -412,11 +415,11 @@ class CoqLspBackend:
                 category = category_raw.lower()
                 kind = _EXPANDS_TO_KIND.get(category)
                 if kind and kind != "notation":
-                    return AboutResult(kind, opacity, declared_library)
+                    return AboutResult(kind, opacity, declared_library, declared_line)
                 if kind == "notation":
                     notation_seen = True
             if notation_seen:
-                return AboutResult("notation", opacity, declared_library)
+                return AboutResult("notation", opacity, declared_library, declared_line)
 
         # Coq ≤8.x: parse "X is a Definition/Lemma/Theorem."
         match = _ABOUT_KIND_RE.search(all_text)
@@ -426,11 +429,11 @@ class CoqLspBackend:
             if "universe" not in raw_kind and "transparent" not in raw_kind:
                 for key, value in _KIND_MAP.items():
                     if key in raw_kind:
-                        return AboutResult(value, opacity, declared_library)
+                        return AboutResult(value, opacity, declared_library, declared_line)
                 logger.warning(
                     "Unknown declaration kind for %s: %r", name, raw_kind
                 )
-                return AboutResult(raw_kind, opacity, declared_library)
+                return AboutResult(raw_kind, opacity, declared_library, declared_line)
 
         if "not a defined object" in all_text:
             logger.debug("About failed for %s (not a defined object)", name)
@@ -438,7 +441,7 @@ class CoqLspBackend:
             logger.warning(
                 "Could not determine kind for %s from About output", name
             )
-        return AboutResult("definition", opacity, declared_library)
+        return AboutResult("definition", opacity, declared_library, declared_line)
 
     def _get_declaration_kind(self, name: str) -> AboutResult:
         """Use ``About`` to determine the kind of a declaration."""
@@ -751,6 +754,7 @@ class CoqLspBackend:
                 "source": "coq-lsp",
                 "opacity": about.opacity,
                 "declared_library": about.declared_library,
+                "declared_line": about.declared_line,
             }
             declarations.append((fqn, about.kind, constr_t))
 
