@@ -36,6 +36,7 @@ from Poule.neural.training.errors import (
     CheckpointNotFoundError,
     InsufficientDataError,
     NeuralTrainingError,
+    TuningError,
 )
 
 
@@ -995,6 +996,84 @@ def cmd_validate_training_data(json_mode: bool, data: tuple[str, ...]):
         click.echo(_format_validation_report_json(report))
     else:
         click.echo(_format_validation_report_human(report))
+
+
+# ---------------------------------------------------------------------------
+# tune
+# ---------------------------------------------------------------------------
+
+
+@cli.command("tune")
+@_db_option
+@click.argument("data", nargs=-1, required=True)
+@click.option("--output-dir", required=True, type=click.Path(), help="Directory for HPO study output.")
+@click.option("--vocabulary", default=None, type=click.Path(exists=True), help="Path to closed vocabulary JSON.")
+@click.option("--n-trials", default=20, type=int, help="Number of HPO trials (default: 20).")
+@click.option("--study-name", default="poule-hpo", help="Optuna study name (default: poule-hpo).")
+@click.option("--resume", is_flag=True, default=False, help="Resume an existing study.")
+def cmd_tune(
+    db: str,
+    data: tuple[str, ...],
+    output_dir: str,
+    vocabulary: str | None,
+    n_trials: int,
+    study_name: str,
+    resume: bool,
+):
+    """Run hyperparameter optimization to find the best training configuration."""
+    from Poule.neural.training.data import TrainingDataLoader
+    from Poule.neural.training.tuner import HyperparameterTuner
+
+    jsonl_paths = _validate_input_files(data)
+
+    click.echo("Loading training data...", err=True)
+    dataset = TrainingDataLoader.load(jsonl_paths, Path(db))
+    click.echo(
+        f"  train={len(dataset.train)}, val={len(dataset.val)}, "
+        f"premises={len(dataset.premise_corpus)}",
+        err=True,
+    )
+
+    vocab_path = Path(vocabulary) if vocabulary else None
+
+    try:
+        click.echo(
+            f"Starting hyperparameter optimization ({n_trials} trials)...",
+            err=True,
+        )
+        result = HyperparameterTuner.tune(
+            dataset,
+            Path(output_dir),
+            vocabulary_path=vocab_path,
+            n_trials=n_trials,
+            study_name=study_name,
+            resume=resume,
+        )
+    except InsufficientDataError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+    except TuningError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+    except NeuralTrainingError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+
+    # Human-readable summary
+    click.echo("\nHyperparameter Optimization", err=True)
+    click.echo("=" * 28, err=True)
+    click.echo(f"Trials:       {result.n_trials} ({result.n_pruned} pruned)", err=True)
+    click.echo(f"Best R@32:    {result.best_value:.4f}", err=True)
+    click.echo("", err=True)
+    click.echo("Best hyperparameters:", err=True)
+    for k, v in sorted(result.best_hyperparams.items()):
+        if isinstance(v, float):
+            click.echo(f"  {k:30s} {v:.6g}", err=True)
+        else:
+            click.echo(f"  {k:30s} {v}", err=True)
+    click.echo("", err=True)
+    click.echo(f"Best checkpoint: {Path(output_dir) / 'best-model.pt'}", err=True)
+    click.echo(f"Study database:  {result.study_path}", err=True)
 
 
 # ---------------------------------------------------------------------------
