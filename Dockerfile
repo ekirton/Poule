@@ -188,11 +188,17 @@ COPY --chown=${HOST_UID}:${HOST_GID} docker/validate-index.py /tmp/validate-inde
 RUN python3 /tmp/validate-index.py && rm -f /tmp/validate-index.py
 
 # ── Education model + Software Foundations textbook ──────────────────────
-# Placed before source COPY so model/SF changes (rare) don't invalidate
-# the source layer.  The education DB is built from SF HTML at image time.
-COPY --chown=${HOST_UID}:${HOST_GID} models/education/ /data/models/education/
+# Both are downloaded at build time (not checked into the repo).
+# Placed before source COPY so changes don't invalidate the source layer.
 
-# Download SF volumes from upstream (not checked into the repo).
+# Download pre-quantized all-MiniLM-L6-v2 ONNX model + tokenizer from HuggingFace.
+RUN mkdir -p /data/models/education && \
+    curl -fsSL https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model_quint8_avx2.onnx \
+         -o /data/models/education/encoder.onnx && \
+    curl -fsSL https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json \
+         -o /data/models/education/tokenizer.json
+
+# Download SF volumes from upstream.
 # CACHEBUST_SF is set by CI when a new SF release is published.
 ARG CACHEBUST_SF=0
 COPY --chown=${HOST_UID}:${HOST_GID} scripts/download-software-foundations.sh /tmp/download-sf.sh
