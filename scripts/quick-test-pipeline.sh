@@ -4,11 +4,11 @@ set -euo pipefail
 # Quick-test the indexing and extraction pipelines.
 #
 # Usage:
-#   ./scripts/quick-test-pipeline.sh                                    # all libraries, smoke (4 files each)
-#   ./scripts/quick-test-pipeline.sh --tier debug                       # all libraries, debug (14 files each)
+#   ./scripts/quick-test-pipeline.sh                                    # all libraries, smoke tier
+#   ./scripts/quick-test-pipeline.sh --tier debug                       # all libraries, debug tier
 #   ./scripts/quick-test-pipeline.sh --libraries coquelicot             # full coquelicot
 #   ./scripts/quick-test-pipeline.sh --libraries flocq,coquelicot       # full flocq + coquelicot
-#   ./scripts/quick-test-pipeline.sh --libraries flocq --tier smoke     # flocq, 4 files
+#   ./scripts/quick-test-pipeline.sh --libraries flocq --tier smoke     # flocq, ~4 files
 #   ./scripts/quick-test-pipeline.sh --index-only                       # index only
 #   ./scripts/quick-test-pipeline.sh --extract-only                     # extract only (needs prior index)
 
@@ -31,13 +31,13 @@ usage() {
     echo "Libraries (default: all 6):" >&2
     echo "  stdlib, mathcomp, stdpp, flocq, coquelicot, coqinterval" >&2
     echo "" >&2
-    echo "Tiers (limit .vo file count per library, default: smoke):" >&2
-    echo "  smoke   4 .vo files   (~30 seconds per library)" >&2
-    echo "  debug   14 .vo files  (~1-2 minutes per library)" >&2
+    echo "Tiers (pick a small subdirectory per library, default: smoke):" >&2
+    echo "  smoke   ~4 .vo files   (~30 seconds per library)" >&2
+    echo "  debug   ~14 .vo files  (~1-2 minutes per library)" >&2
     echo "" >&2
     echo "Options:" >&2
     echo "  --libraries     Comma-separated list of libraries (default: all 6)" >&2
-    echo "  --tier          Limit to N .vo files per library (default: smoke). Omit for full." >&2
+    echo "  --tier          Limit scope per library (default: smoke). Omit for full." >&2
     echo "  --output-dir    Output directory (default: /data/quick-test)" >&2
     echo "  --index-only    Run only the indexing phase" >&2
     echo "  --extract-only  Run only the extraction phase (requires prior index)" >&2
@@ -137,6 +137,32 @@ resolve_project_dir() {
     fi
 }
 
+# --- Find a subdirectory with at most N .vo files for tier-limited indexing ---
+# The subdirectory must be within the real Coq lib tree so that the backend's
+# _vo_to_canonical_module path heuristic (which looks for user-contrib/ or
+# theories/ markers) works correctly.
+
+find_tier_target() {
+    local project_dir="$1" tier_limit="$2"
+
+    local best_dir="" best_count=0
+    while IFS= read -r subdir; do
+        local count
+        count=$(find "$subdir" -name "*.vo" | wc -l)
+        if [[ $count -le $tier_limit && $count -gt $best_count ]]; then
+            best_dir="$subdir"
+            best_count=$count
+        fi
+    done < <(find "$project_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+
+    # Fall back to full directory for flat libraries (e.g. stdpp, coquelicot)
+    if [[ -n "$best_dir" ]]; then
+        echo "$best_dir"
+    else
+        echo "$project_dir"
+    fi
+}
+
 # --- Parse library list ---
 
 IFS=',' read -ra LIB_ARRAY <<< "$LIBRARIES"
@@ -161,11 +187,6 @@ echo "  Output dir: ${OUTPUT_DIR}"
 echo ""
 
 OVERALL_START=$(date +%s)
-TIER_DIR=""
-
-# Clean up temp dir on exit if created
-cleanup() { [[ -n "$TIER_DIR" ]] && rm -rf "$TIER_DIR"; }
-trap cleanup EXIT
 
 # --- Per-library loop ---
 
@@ -181,30 +202,25 @@ for lib in "${LIB_ARRAY[@]}"; do
         continue
     fi
 
-    # Determine index target (full library or tier-limited temp dir)
+    # Determine index target
     if [[ -n "$TIER" ]]; then
         TIER_LIMIT="${TIER_LIMITS[$TIER]}"
-        TIER_DIR=$(mktemp -d)
-
-        while IFS= read -r vo; do
-            rel="${vo#"$PROJECT_DIR"/}"
-            mkdir -p "$TIER_DIR/$(dirname "$rel")"
-            ln -s "$vo" "$TIER_DIR/$rel"
-        done < <(find "$PROJECT_DIR" -name "*.vo" | sort | head -n "$TIER_LIMIT")
-
-        VO_COUNT=$(find "$TIER_DIR" -name "*.vo" | wc -l)
-        INDEX_TARGET="$TIER_DIR"
+        INDEX_TARGET="$(find_tier_target "$PROJECT_DIR" "$TIER_LIMIT")"
         DB_SUFFIX="${lib}-${TIER}"
     else
-        VO_COUNT=$(find "$PROJECT_DIR" -name "*.vo" | wc -l)
+        # Full library: use library name so pipeline applies library-specific logic
         INDEX_TARGET="$lib"
         DB_SUFFIX="$lib"
     fi
 
+    VO_COUNT=$(find "$INDEX_TARGET" -name "*.vo" 2>/dev/null | wc -l)
     DB_PATH="${OUTPUT_DIR}/index-${DB_SUFFIX}.db"
     JSONL_PATH="${OUTPUT_DIR}/${DB_SUFFIX}.jsonl"
 
     echo "=== ${lib} (${VO_COUNT} .vo files) ==="
+    if [[ -n "$TIER" ]]; then
+        echo "  Index target: ${INDEX_TARGET}"
+    fi
 
     # --- Indexing phase ---
 
@@ -216,7 +232,6 @@ for lib in "${LIB_ARRAY[@]}"; do
         if ! python -m Poule.extraction --target "$INDEX_TARGET" --db "$DB_PATH" --progress; then
             echo "  ERROR: Indexing failed for ${lib}" >&2
             RESULTS[$lib]="FAILED (index)"
-            [[ -n "$TIER" ]] && rm -rf "$TIER_DIR" && TIER_DIR=""
             continue
         fi
 
@@ -233,7 +248,6 @@ for lib in "${LIB_ARRAY[@]}"; do
             echo "  ERROR: Index database not found at ${DB_PATH}" >&2
             echo "  Run without --extract-only first." >&2
             RESULTS[$lib]="FAILED (no index)"
-            [[ -n "$TIER" ]] && rm -rf "$TIER_DIR" && TIER_DIR=""
             continue
         fi
 
@@ -248,7 +262,6 @@ for lib in "${LIB_ARRAY[@]}"; do
             --watchdog-timeout "$WATCHDOG_TIMEOUT"; then
             echo "  ERROR: Extraction failed for ${lib}" >&2
             RESULTS[$lib]="FAILED (extract)"
-            [[ -n "$TIER" ]] && rm -rf "$TIER_DIR" && TIER_DIR=""
             continue
         fi
 
@@ -258,12 +271,6 @@ for lib in "${LIB_ARRAY[@]}"; do
     fi
 
     RESULTS[$lib]="ok"
-
-    # Clean up tier temp dir between libraries
-    if [[ -n "$TIER" ]]; then
-        rm -rf "$TIER_DIR"
-        TIER_DIR=""
-    fi
 done
 
 # --- Summary ---
