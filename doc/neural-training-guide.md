@@ -90,7 +90,7 @@ The vocabulary is constructed from two sources:
 - **Search index** (`index.db`) — all fully-qualified declaration names from the indexed libraries
 - **Serialized proof states** from the training data — hypothesis variable names and syntax tokens
 
-The resulting vocabulary contains ~15,500 tokens: ~15,000 library identifiers, ~200 variable names, ~200 syntax/keyword/tactic tokens, ~80 Unicode math symbols, and 5 special tokens (`[PAD]`, `[UNK]`, `[CLS]`, `[SEP]`, `[MASK]`). NFC Unicode normalization is applied before tokenization.
+The resulting vocabulary contains ~15,500 tokens: ~15,000 library identifiers, ~200 variable names, ~200 syntax/keyword/tactic tokens, 64 Unicode/Greek symbols, and 5 special tokens (`[PAD]`, `[UNK]`, `[CLS]`, `[SEP]`, `[MASK]`). NFC Unicode normalization is applied before tokenization.
 
 At inference time, tokenization is a whitespace split followed by O(1) dictionary lookup per token — no regex, no subword search. See `coq-vocabulary.md` for the full design rationale.
 
@@ -112,13 +112,13 @@ poule train \
   --vocabulary coq-vocabulary.json \
   --db index.db \
   --output model.pt \
-  --batch-size 128 \
+  --batch-size 256 \
   --learning-rate 2e-5 \
   --max-epochs 20
 ```
 
 Training details:
-- **Architecture**: ~100M parameter bi-encoder (shared-weight CodeBERT-class encoder, 768-dim embeddings, mean pooling)
+- **Architecture**: ~98M parameter bi-encoder (CodeBERT 125M base with closed-vocabulary embedding layer, 768-dim embeddings, mean pooling)
 - **Vocabulary**: Closed vocabulary (~15,500 tokens) from `coq-vocabulary.json`
 - **Embedding initialization**: Tokens overlapping with CodeBERT's vocabulary (digits, punctuation, common English words) retain pretrained embeddings; Coq-specific tokens initialized randomly (σ=0.02). CodeBERT's 12 transformer layers keep their full pretrained weights
 - **Loss**: Masked contrastive (InfoNCE) with temperature τ=0.05. Shared premises across proof states in a batch are masked to prevent false negatives

@@ -73,8 +73,8 @@ In addition to corpus-extracted tokens, the vocabulary includes fixed token sets
 | Punctuation / delimiters | `(`, `)`, `{`, `}`, `[`, `]`, `:`, `;`, `,`, `.`, `\|`, `@`, `!`, `?`, `_`, `'`, `#`, `=`, `+`, `-`, `*`, `/`, `<`, `>`, `~` | ~25 |
 | SSReflect tacticals | `/=`, `//`, `//=`, `=>`, `->`, `<-` | 6 |
 | Scope delimiters | `%N`, `%Z`, `%R`, `%Q`, `%positive`, `%type` | 6 |
-| Unicode math symbols | `∀`, `∃`, `→`, `←`, `↔`, `⊢`, `≤`, `≥`, `≠`, `≡`, `∧`, `∨`, `¬`, `⊆`, etc. | ~30 |
-| Greek letters | `α`–`ω`, `Γ`–`Ω` | ~33 |
+| Unicode math symbols | `∀`, `∃`, `→`, `←`, `↔`, `⊢`, `≤`, `≥`, `≠`, `≡`, `∧`, `∨`, `¬`, `⊆`, etc. | 31 |
+| Greek letters | `α`–`ω`, `Γ`–`Ω` | 33 |
 | Digits | `0`–`9` | 10 |
 
 ### Construction Procedure
@@ -107,7 +107,7 @@ In addition to corpus-extracted tokens, the vocabulary includes fixed token sets
 
 ### Expected Size
 
-~15,500 tokens: ~15,000 library identifiers, ~200 variable names, ~200 syntax/keyword/tactic tokens, ~80 Unicode/Greek symbols, 5 special tokens.
+~15,500 tokens: ~15,000 library identifiers, ~200 variable names, ~200 syntax/keyword/tactic tokens, 64 Unicode/Greek symbols, 5 special tokens.
 
 ### Tokenization at Inference
 
@@ -147,9 +147,9 @@ This replaces `AutoTokenizer.from_pretrained("microsoft/codebert-base")` through
 
 ### Input Format
 
-The training pipeline consumes JSON Lines files produced by the Training Data Extraction pipeline. Each line is an ExtractionRecord containing per-step proof states and premise annotations.
+The training pipeline consumes JSON Lines files produced by the Training Data Extraction pipeline. Each line has a `record_type` field — one of `campaign_metadata`, `proof_trace`, `extraction_error`, or `extraction_summary`. The data loader filters to `proof_trace` records, each of which is an ExtractionRecord containing per-step proof states and premise annotations. Non-`proof_trace` records are skipped.
 
-The data loader extracts `(proof_state, premises_used)` pairs from the ExtractionRecord's step sequence. Each ExtractionStep contains the proof state (goals and hypotheses) *after* the step's tactic was applied, plus the premises used by that tactic. Step 0 is the initial state with no tactic. The training pair for a tactic at step k uses the proof state from step k-1 (the state *before* the tactic) and the premises from step k:
+The data loader extracts `(proof_state, premises_used)` pairs from each ExtractionRecord's step sequence. Each ExtractionStep contains the proof state (goals and hypotheses) *after* the step's tactic was applied, plus the premises used by that tactic. Step 0 is the initial state with no tactic. The training pair for a tactic at step k uses the proof state from step k-1 (the state *before* the tactic) and the premises from step k:
 
 ```
 For each ExtractionRecord:
@@ -346,7 +346,7 @@ Checks extracted data before committing to a training run:
 | Empty premise lists | > 10% of total pairs |
 | Malformed fields (missing state, missing premises) | Any occurrence |
 | Degenerate premise distribution (single premise accounts for > 5% of all occurrences) | Any occurrence |
-| Total pair count | < 5,000 pairs |
+| Total pair count | < 10,000 pairs |
 | Unique premise count | < 1,000 unique premises |
 
 Validation is instant (single pass over the JSONL file) and catches the most common data quality issues before GPU time is committed.
