@@ -25,6 +25,9 @@ index.db
 *.onnx
 proof-diagram.html
 
+# Downloaded model files (see scripts/download-education-model.sh)
+models/
+
 # Coq build artifacts
 *.vo
 *.vos

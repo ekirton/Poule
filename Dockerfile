@@ -187,12 +187,25 @@ ARG CACHEBUST_INDEX=0
 COPY --chown=${HOST_UID}:${HOST_GID} docker/validate-index.py /tmp/validate-index.py
 RUN python3 /tmp/validate-index.py && rm -f /tmp/validate-index.py
 
+# ── Education model + Software Foundations textbook ──────────────────────
+# Placed before source COPY so model/SF changes (rare) don't invalidate
+# the source layer.  The education DB is built from SF HTML at image time.
+COPY --chown=${HOST_UID}:${HOST_GID} models/education/ /data/models/education/
+COPY --chown=${HOST_UID}:${HOST_GID} software-foundations/ software-foundations/
+
 # ── Application code ─────────────────────────────────────────────────────
 COPY --chown=${HOST_UID}:${HOST_GID} src/ src/
 COPY --chown=${HOST_UID}:${HOST_GID} test/ test/
 COPY --chown=${HOST_UID}:${HOST_GID} examples/ examples/
 COPY --chown=${HOST_UID}:${HOST_GID} commands/ commands/
 COPY --chown=${HOST_UID}:${HOST_GID} .mcp.json CLAUDE.md README.md ./
+
+# ── Build education database from SF HTML ────────────────────────────────
+RUN uv run python -m Poule.education.build \
+        --sf-dir /poule/software-foundations \
+        --output /data/education.db \
+        --model /data/models/education/encoder.onnx \
+        --tokenizer /data/models/education/tokenizer.json
 
 # Minimal zshrc (overridden by persistent home mount at runtime)
 RUN cat > ~/.zshrc << 'ZSHEOF'

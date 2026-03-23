@@ -152,20 +152,15 @@ The encoder model and tokenizer are not checked into the repository. They must b
 | all-MiniLM-L6-v2 (INT8 ONNX) | `/data/models/education/encoder.onnx` | ~23 MB |
 | WordPiece tokenizer | `/data/models/education/tokenizer.json` | ~700 KB |
 
-To obtain these files:
+To obtain these files, run the download script from the project root (on the host, not inside the container):
 
 ```bash
-# Download from Hugging Face and quantize
-pip install optimum onnxruntime
-optimum-cli export onnx --model sentence-transformers/all-MiniLM-L6-v2 /tmp/minilm/
-python -m onnxruntime.quantization.preprocess --input /tmp/minilm/model.onnx --output /tmp/minilm/model_prep.onnx
-python -c "
-from onnxruntime.quantization import quantize_dynamic, QuantType
-quantize_dynamic('/tmp/minilm/model_prep.onnx', '/tmp/minilm/model_int8.onnx', weight_type=QuantType.QInt8)
-"
-cp /tmp/minilm/model_int8.onnx models/education/encoder.onnx
-cp /tmp/minilm/tokenizer.json models/education/tokenizer.json
+./scripts/download-education-model.sh
 ```
+
+This creates a temporary Python venv, installs `optimum` and `onnxruntime`, exports the model to ONNX, quantizes to INT8, and copies the results to `models/education/`. The temp venv is cleaned up automatically.
+
+The `models/education/` directory is `.gitignore`'d — model files are not checked into the repository.
 
 ## Database Schema
 
