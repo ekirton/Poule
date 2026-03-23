@@ -250,6 +250,74 @@ The quantized model runs at <10ms per encoding on CPU, enabling sub-second retri
 
 The neural retrieval channel is one of several in the search pipeline. At query time, a proof state is encoded and compared against precomputed premise embeddings via cosine similarity. The neural rankings are fused with symbolic channel rankings (WL kernel, MePo symbol overlap, FTS5) using reciprocal rank fusion (RRF). The fused ranking is returned to an LLM reasoning layer via MCP, which serves as an implicit reranking and reasoning stage — performing a function analogous to the cross-encoder reranking stage in systems like Magnushammer, but with the additional capability of incorporating contextual reasoning about the proof state.
 
+## 4. Evaluation
+
+The central claim of this work is that adding a neural retrieval channel to the existing symbolic pipeline improves premise selection quality. This section describes the experimental protocol for testing that claim.
+
+### 4.1 Experimental Setup
+
+**Test corpus.** Evaluation uses the held-out test split (10% of source files, selected by position mod 10 = 9 as described in §3.2). All (proof_state, premises_used) pairs from test-split files are evaluation queries. The premise corpus is the full set of declarations from the six target libraries (~34,000 declarations across Stdlib, MathComp, stdpp, Flocq, Coquelicot, and Interval).
+
+**Hardware.** All retrieval latency measurements use CPU-only inference with the INT8 quantized model (§3.7). No GPU is used at evaluation time, matching the deployment target.
+
+### 4.2 Baseline: Symbolic Pipeline
+
+The baseline is the existing symbolic retrieval pipeline operating without the neural channel. It comprises four channels fused via reciprocal rank fusion (RRF) with *k* = 60:
+
+| Channel | Algorithm | Signal |
+|---------|-----------|--------|
+| Structural | Weisfeiler-Lehman kernel hashing | Term structure similarity |
+| Fine Structural | Tree Edit Distance | Fine-grained structural comparison |
+| Symbol Overlap | Meng-Paulson (MePo) | Iterative breadth-first symbol overlap |
+| Lexical | FTS5 with BM25 | Full-text lexical matching |
+
+This symbolic pipeline is the base model against which the neural channel must demonstrate improvement. It represents the strongest retrieval configuration achievable without learned embeddings or training data.
+
+### 4.3 Retrieval Configurations
+
+We evaluate three retrieval configurations to isolate the neural channel's contribution:
+
+1. **Symbolic-only.** The four symbolic channels (§4.2) fused via RRF. This is the baseline.
+2. **Neural-only.** Bi-encoder cosine similarity retrieval using the trained model (§3.4). No symbolic channels.
+3. **Hybrid.** All five channels (four symbolic + neural) fused via RRF with *k* = 60. This is the target deployment configuration.
+
+### 4.4 Metrics
+
+**Primary metric.** Recall@32 — the fraction of evaluation queries for which the correct premise appears within the top 32 retrieved candidates. This cutoff follows LeanHammer's convention and represents a practical budget for downstream consumption by a tactic generator or LLM reasoning layer.
+
+**Secondary metrics.** Recall@1, Recall@10, and Mean Reciprocal Rank (MRR) provide additional resolution across the ranking.
+
+**Relative improvement.** The key measure of the neural channel's value is:
+
+$$\Delta = \frac{\text{Recall@32}_{\text{hybrid}} - \text{Recall@32}_{\text{symbolic}}}{\text{Recall@32}_{\text{symbolic}}}$$
+
+### 4.5 Complementarity Analysis
+
+Following LeanHammer's union analysis methodology, we partition the set of correctly retrieved premises into three categories:
+
+- **Symbolic-only hits:** premises retrieved by the symbolic pipeline but missed by the neural channel
+- **Neural-only hits:** premises retrieved by the neural channel but missed by the symbolic pipeline
+- **Shared hits:** premises retrieved by both
+
+The neural channel justifies its inclusion if the neural-only hit fraction is substantial — indicating that it captures premises invisible to symbolic matching. A channel that only duplicates symbolic hits adds fusion overhead without retrieval benefit.
+
+### 4.6 Latency Evaluation
+
+| Measurement | Target | Method |
+|-------------|--------|--------|
+| Neural encoding latency | < 100ms per query | Median over all test queries on CPU with INT8 model |
+| End-to-end hybrid retrieval | < 1 second | Wall-clock time from query input to ranked result list, including all channels and fusion |
+| Index rebuild | < 10 minutes for 50K declarations | Wall-clock time to encode all premises and build the retrieval index |
+
+### 4.7 Success Criteria
+
+The neural channel is considered successful if both conditions are met on the held-out test set:
+
+1. **Neural retrieval quality.** Neural-only Recall@32 ≥ 50%.
+2. **Hybrid improvement.** Hybrid Recall@32 achieves ≥ 15% relative improvement over symbolic-only Recall@32.
+
+These thresholds are advisory deployment gates, not hard constraints. A model that narrowly misses one threshold but demonstrates strong complementarity (§4.5) may still warrant deployment. Conversely, a model meeting both thresholds but showing negligible neural-only hits would suggest the improvement comes from fusion noise rather than genuine complementary signal.
+
 ## References
 
 Blaauwbroek, L., Olšák, M., Rute, J., Massolo, F.N., and Piepenbrock, J. "Graph2Tac: Online Representation Learning of Formal Math Concepts." *Proceedings of the 41st International Conference on Machine Learning (ICML)*, 2024.
