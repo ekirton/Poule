@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -118,6 +119,7 @@ class CoqLspBackend:
         self._proc: subprocess.Popen[bytes] | None = None
         self._server_info: dict[str, Any] = {}
         self._notification_buffer: list[dict[str, Any]] = []
+        self._stderr_file: Any = None  # temp file for coq-lsp stderr
         self._next_id = 0
         self._next_uri_id = 0
 
@@ -264,11 +266,16 @@ class CoqLspBackend:
         if self._proc is not None:
             return
         try:
+            # Redirect stderr to a temp file instead of a pipe to avoid
+            # deadlock when the OS pipe buffer fills (coq-lsp writes
+            # diagnostic/logging output to stderr continuously).  The
+            # file is read on crash for error diagnostics.
+            self._stderr_file = tempfile.TemporaryFile(mode="w+b")
             self._proc = subprocess.Popen(
                 ["coq-lsp"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=self._stderr_file,
             )
         except FileNotFoundError as exc:
             raise ExtractionError(
@@ -302,6 +309,13 @@ class CoqLspBackend:
             self._proc.wait(timeout=5)
         finally:
             self._proc = None
+            if self._stderr_file is not None:
+                try:
+                    self._stderr_file.close()
+                except Exception:
+                    pass
+                self._stderr_file = None
+            self._notification_buffer.clear()
 
     def __enter__(self) -> CoqLspBackend:
         self.start()
@@ -321,9 +335,10 @@ class CoqLspBackend:
         if self._proc.poll() is not None:
             exit_code = self._proc.returncode
             stderr = ""
-            if self._proc.stderr:
+            if self._stderr_file is not None:
                 try:
-                    raw = self._proc.stderr.read()
+                    self._stderr_file.seek(0)
+                    raw = self._stderr_file.read()
                     stderr = (
                         raw.decode("utf-8", errors="replace")
                         if isinstance(raw, bytes)
@@ -332,6 +347,12 @@ class CoqLspBackend:
                 except Exception:
                     pass
             self._proc = None
+            if self._stderr_file is not None:
+                try:
+                    self._stderr_file.close()
+                except Exception:
+                    pass
+                self._stderr_file = None
             raise BackendCrashError(
                 f"coq-lsp exited unexpectedly (exit code {exit_code}). "
                 f"stderr: {stderr!r}"
@@ -369,6 +390,9 @@ class CoqLspBackend:
             messages = goals_result.get("messages", [])
 
         self._close_document(uri)
+        # Drain buffered notifications ($/progress, etc.) to prevent
+        # unbounded memory growth over many document lifecycles.
+        self._notification_buffer.clear()
         return diags, messages
 
     @staticmethod
@@ -491,6 +515,9 @@ class CoqLspBackend:
             results.append(goals_result.get("messages", []))
 
         self._close_document(uri)
+        # Drain buffered notifications ($/progress, etc.) to prevent
+        # unbounded memory growth over many document lifecycles.
+        self._notification_buffer.clear()
         return results
 
     def query_declaration_data(

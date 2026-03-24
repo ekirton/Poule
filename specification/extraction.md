@@ -479,11 +479,17 @@ Each message identifies the current stage name. Messages are written to stderr s
 
 ### 4.12 Backend Process Lifecycle
 
-When the extraction backend (coq-lsp) crashes or becomes unresponsive:
+**Per-file restart:** The backend process shall be stopped and restarted after processing each `.vo` file during declaration collection. Each `Require Import` permanently loads a module and its transitive dependencies into the coq-lsp process; restarting is the only way to reclaim that memory. Without per-file restarts, libraries like MathComp (105 `.vo` files with deep dependency chains) cause coq-lsp to consume multiple gigabytes of RAM.
+
+**Notification buffer draining:** The backend shall discard buffered LSP notifications (e.g., `$/progress`) after each document lifecycle (query or batch) completes. coq-lsp emits progress notifications between responses; without draining, these accumulate unboundedly across hundreds of `proof/goals` requests per file.
+
+**stderr handling:** The backend shall redirect the coq-lsp subprocess's stderr to a temporary file rather than an OS pipe. coq-lsp writes diagnostic output to stderr continuously; an unread pipe buffer fills at 64 KB and blocks the subprocess. The temporary file is read on crash for error diagnostics and cleaned up on stop.
+
+**Crash handling:** When the extraction backend crashes or becomes unresponsive:
 - Abort the indexing run
 - Close the database connection
 - Delete the partial database file
-- Report the error to the caller
+- Report the error to the caller (including stderr contents from the temporary file)
 
 This is a pipeline-level fatal error — partial results are not preserved.
 
@@ -508,6 +514,7 @@ Error hierarchy:
 - The entire process runs without GPU, network access, or external API keys.
 - Batch size: 1000 declarations per transaction.
 - Progress reporting at per-declaration granularity.
+- **Backend memory:** coq-lsp is restarted after every `.vo` file (§4.12). Peak backend memory is bounded by the single largest module, not cumulative across the library.
 - **Kind detection overhead (coq-lsp):** About queries are batched into shared documents (≤100 commands each), and Print + Print Assumptions queries are batched similarly (≤50 declarations = ≤100 lines per document), reducing document lifecycle overhead by 3–10x compared to per-declaration queries. Each Print batch document shall begin with `Require Import <import_path>.` so that declaration names are in scope; names shall be grouped by source module so each group shares a single import preamble.
 
 ## 7. Examples
