@@ -1501,7 +1501,8 @@ class TestBackendErrors:
         backend._proc = Mock()
         backend._proc.poll.return_value = 1  # exited
         backend._proc.returncode = 1
-        backend._proc.stderr = io.BytesIO(b"segfault")
+        # _ensure_alive reads stderr from the temp file, not proc.stderr
+        backend._stderr_file = io.BytesIO(b"segfault")
 
         with pytest.raises(BackendCrashError):
             backend._ensure_alive()
@@ -1552,6 +1553,7 @@ class TestLifecycle:
         backend._proc.wait.return_value = 0
         backend._next_id = 0
         backend._notification_buffer = []
+        backend._stderr_file = None
 
         backend.stop()
 

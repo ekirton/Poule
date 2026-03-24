@@ -230,7 +230,7 @@ For each declaration extracted from a `.vo` file:
 
    **Signal 2 — Vernacular kind (Coq ≤8.x):** If kind ∈ {`lemma`, `theorem`}, set `has_proof_body = 1` (done). These Vernacular keywords always enter proof mode. In Rocq 9.x this signal is inert because all constants report kind `"definition"` via the `Expands to: Constant` path.
 
-   **Signal 3 — line-anchored .v source check (transparent/unknown declarations):** If `declared_line` (from About metadata, §4.1.1) is available, resolve the `.v` source file from `declared_library` using the same prefix-mapping as module path derivation. Read the source line at `declared_line` (1-based). If the line starts with a proof-requiring Vernacular keyword that always enters proof mode (`Lemma`, `Theorem`, `Proposition`, `Corollary`, `Fact`, `Remark`): set `has_proof_body = 1` (done). For ambiguous keywords at the declared line (`Definition`, `Instance`, `Fixpoint`): scan forward from that line for a `Proof` keyword (`Proof.`, `Proof using ...`, `Proof with ...`) before the next declaration keyword; set `has_proof_body = 1` if found. If `declared_line` is unavailable, or the `.v` file does not exist: set `has_proof_body = 0` (conservative default). Each `.v` file's text shall be read at most once (cached by source path across all declarations).
+   **Signal 3 — line-anchored .v source check (transparent/unknown declarations):** If `declared_line` (from About metadata, §4.1.1) is available, resolve the `.v` source file from `declared_library` using the same prefix-mapping as module path derivation. Read the source line at `declared_line` (1-based). If the line starts with a proof-requiring Vernacular keyword that always enters proof mode (`Lemma`, `Theorem`, `Proposition`, `Corollary`, `Fact`, `Remark`): set `has_proof_body = 1` (done). For ambiguous keywords at the declared line (`Definition`, `Instance`, `Fixpoint`): scan forward from that line for a `Proof` keyword (`Proof.`, `Proof using ...`, `Proof with ...`) before the next declaration keyword; set `has_proof_body = 1` if found. If `declared_line` is unavailable, or the `.v` file does not exist: set `has_proof_body = 0` (conservative default). `.v` file content is cached via a bounded LRU cache (maxsize 16) keyed by source path. Since declarations from the same `.vo` file share a `.v` source and `.vo` files are processed sequentially, the working set is typically 1 entry; the 16-entry bound prevents unbounded memory growth while keeping near-100% hit rates.
 
 > **Given** a declaration `Nat.add_comm` with opacity=`"opaque"` (from About)
 > **When** proof-body detection runs
@@ -260,7 +260,7 @@ For each declaration extracted from a `.vo` file:
 > **When** proof-body detection runs
 > **Then** `has_proof_body = 0` (conservative default)
 
-The declaration row (including `has_proof_body`), WL vector, and declaration data are co-inserted in the same batch transaction (batch size: 1000 declarations).
+The declaration row (including `has_proof_body`), WL vector, and declaration data are co-inserted in the same batch transaction (batch size: 1000 declarations). After each batch is flushed to SQLite, the pipeline releases all fields not required by Pass 2 from in-memory results. Only `name`, `dependency_names`, and `symbol_set` are retained; `tree`, `kind`, `module`, `statement`, `type_expr`, `wl_vector`, and `has_proof_body` are set to `None`.
 
 **Individual declaration failure**: When normalization or extraction fails for a single declaration, log the declaration name and error, then continue to the next declaration. The index is usable with partial coverage.
 
@@ -479,11 +479,17 @@ Each message identifies the current stage name. Messages are written to stderr s
 
 ### 4.12 Backend Process Lifecycle
 
-When the extraction backend (coq-lsp) crashes or becomes unresponsive:
+**Per-file restart:** The backend process shall be stopped and restarted after processing each `.vo` file during declaration collection. Each `Require Import` permanently loads a module and its transitive dependencies into the coq-lsp process; restarting is the only way to reclaim that memory. Without per-file restarts, libraries like MathComp (105 `.vo` files with deep dependency chains) cause coq-lsp to consume multiple gigabytes of RAM.
+
+**Notification buffer draining:** The backend shall discard buffered LSP notifications (e.g., `$/progress`) after each document lifecycle (query or batch) completes. coq-lsp emits progress notifications between responses; without draining, these accumulate unboundedly across hundreds of `proof/goals` requests per file.
+
+**stderr handling:** The backend shall redirect the coq-lsp subprocess's stderr to a temporary file rather than an OS pipe. coq-lsp writes diagnostic output to stderr continuously; an unread pipe buffer fills at 64 KB and blocks the subprocess. The temporary file is read on crash for error diagnostics and cleaned up on stop.
+
+**Crash handling:** When the extraction backend crashes or becomes unresponsive:
 - Abort the indexing run
 - Close the database connection
 - Delete the partial database file
-- Report the error to the caller
+- Report the error to the caller (including stderr contents from the temporary file)
 
 This is a pipeline-level fatal error — partial results are not preserved.
 
@@ -508,6 +514,7 @@ Error hierarchy:
 - The entire process runs without GPU, network access, or external API keys.
 - Batch size: 1000 declarations per transaction.
 - Progress reporting at per-declaration granularity.
+- **Backend memory:** coq-lsp is restarted after every `.vo` file (§4.12). Peak backend memory is bounded by the single largest module, not cumulative across the library.
 - **Kind detection overhead (coq-lsp):** About queries are batched into shared documents (≤100 commands each), and Print + Print Assumptions queries are batched similarly (≤50 declarations = ≤100 lines per document), reducing document lifecycle overhead by 3–10x compared to per-declaration queries. Each Print batch document shall begin with `Require Import <import_path>.` so that declaration names are in scope; names shall be grouped by source module so each group shares a single import preamble.
 
 ## 7. Examples
