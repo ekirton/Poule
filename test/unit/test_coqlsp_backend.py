@@ -1211,6 +1211,51 @@ class TestPrettyPrint:
 
         assert any("Print Nat.add" in doc for doc in opened_docs)
 
+    def test_excludes_fetching_opaque_proofs_diagnostic(self):
+        """Diagnostic 'Fetching opaque proofs from disk' must be filtered out.
+
+        coq-lsp emits this level-3 message before the actual Print output when
+        loading opaque proof bodies.  The statement must contain only the
+        Vernacular command output (specification/extraction.md §4.1.1).
+        """
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = Mock()
+        backend._proc.poll.return_value = None
+        backend._server_info = {}
+        backend._notification_buffer = []
+        backend._next_uri_id = 0
+        backend._next_id = 0
+
+        print_body = "inbetween_ex =\nfun (d u : R) (l0 : location) => ..."
+        diagnostic_msg = _make_sentence_message(
+            "Fetching opaque proofs from disk for Flocq.Calc.Bracket"
+        )
+        actual_msg = _make_sentence_message(print_body)
+        goals_result = _make_goals_result(
+            "file:///tmp/wily_query_0.v",
+            line=0,
+            messages=[diagnostic_msg, actual_msg],
+        )
+
+        with (
+            patch.object(backend, "_open_document"),
+            patch.object(backend, "_close_document"),
+            patch.object(
+                backend, "_wait_for_diagnostics", return_value=[]
+            ),
+            patch.object(
+                backend, "_send_request", return_value=goals_result
+            ),
+        ):
+            result = backend.pretty_print(
+                "Flocq.Calc.Bracket.inbetween_ex"
+            )
+
+        assert "Fetching opaque proofs" not in result
+        assert result == print_body
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 9. pretty_print_type
@@ -1967,6 +2012,37 @@ class TestQueryDeclarationData:
         assert "Nat.mul" in stmt_mul
         assert len(deps_mul) >= 1
         assert any(d[0] == "ax1" for d in deps_mul)
+
+    def test_excludes_fetching_opaque_proofs_from_statement(self):
+        """Diagnostic 'Fetching opaque proofs from disk' must not appear in statement.
+
+        The batched Print path must apply the same diagnostic filter as
+        pretty_print (specification/extraction.md §4.1.1).
+        """
+        backend = self._make_backend()
+
+        batch_messages = [
+            # Print — diagnostic + actual output
+            [
+                _make_sentence_message(
+                    "Fetching opaque proofs from disk for Flocq.Calc.Bracket"
+                ),
+                _make_sentence_message(
+                    "inbetween_ex =\nfun (d u : R) (l0 : location) => ..."
+                ),
+            ],
+            # Print Assumptions
+            [_make_sentence_message("Closed under the global context")],
+        ]
+
+        with patch.object(backend, "_run_vernac_batch", return_value=batch_messages):
+            result = backend.query_declaration_data(
+                ["Flocq.Calc.Bracket.inbetween_ex"]
+            )
+
+        stmt, _deps = result["Flocq.Calc.Bracket.inbetween_ex"]
+        assert "Fetching opaque proofs" not in stmt
+        assert stmt == "inbetween_ex =\nfun (d u : R) (l0 : location) => ..."
 
     def test_batches_at_50_declarations(self):
         """More than 50 declarations should result in multiple batch calls."""

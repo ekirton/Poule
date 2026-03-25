@@ -130,17 +130,28 @@ Backends that do not return fully qualified names directly (e.g., coq-lsp `Searc
 #### pretty_print(name)
 
 - REQUIRES: `name` is a fully qualified declaration name.
-- ENSURES: Returns the human-readable statement string.
+- ENSURES: Returns the human-readable statement string. The returned text contains only the Vernacular command output — coq-lsp diagnostic messages (e.g., "Fetching opaque proofs from disk for …") are excluded.
+
+**coq-lsp backend — message filtering:** coq-lsp `proof/goals` responses include an array of messages, each with a `text` field and an optional `level` field (1 = error, 2 = warning, 3 = information). The actual Vernacular output and coq-lsp diagnostic noise both arrive as level 3 messages, so level alone is insufficient to distinguish them. The backend shall apply a two-stage filter to all Vernacular query responses (Print, Check, About, Print Assumptions, Locate):
+
+1. **Exclude errors**: Discard messages with `level == 1`.
+2. **Exclude known diagnostics**: Discard messages whose `text` starts with `"Fetching opaque proofs from disk"`. This prefix is emitted by the coq-lsp kernel when loading opaque proof bodies and is not part of the Vernacular output.
+
+The remaining messages are joined with `"\n"` and stripped. This filter applies to all six sites that extract text from coq-lsp response messages: `pretty_print`, `pretty_print_type`, `get_dependencies`, `_parse_about_kind`, and both `Print`/`Print Assumptions` paths in the batched query method.
+
+> **Given** a `Print` query where coq-lsp returns two messages: `[{"text": "Fetching opaque proofs from disk for Flocq.Calc.Bracket", "level": 3}, {"text": "inbetween_ex =\nfun ...", "level": 3}]`,
+> **When** `pretty_print` extracts the statement,
+> **Then** the returned string is `"inbetween_ex =\nfun ..."` (the diagnostic message is excluded).
 
 #### pretty_print_type(name)
 
 - REQUIRES: `name` is a fully qualified declaration name.
-- ENSURES: Returns the human-readable type signature string, or `None`.
+- ENSURES: Returns the human-readable type signature string, or `None`. The returned text excludes coq-lsp diagnostic messages (same filter as `pretty_print`).
 
 #### get_dependencies(name)
 
 - REQUIRES: `name` is a fully qualified declaration name.
-- ENSURES: Returns a list of `(target_name, relation)` pairs.
+- ENSURES: Returns a list of `(target_name, relation)` pairs. The response text excludes coq-lsp diagnostic messages (same filter as `pretty_print`).
 
 #### locate(name)
 
