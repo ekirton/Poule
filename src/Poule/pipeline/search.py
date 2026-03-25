@@ -505,61 +505,6 @@ def _resolve_scored_results(
     return results
 
 
-def _resolve_fused_results(
-    fused_pairs: list, reader: Any,
-) -> list[SearchResult]:
-    """Resolve RRF-fused (key, score) pairs into SearchResult objects.
-
-    Keys may be integer decl_ids (from structural/MePo channels) or string
-    names (from FTS channel).  Both are resolved via the reader.
-    """
-    if not fused_pairs or not isinstance(fused_pairs[0], tuple):
-        return list(fused_pairs)
-
-    int_ids = [k for k, _ in fused_pairs if isinstance(k, int)]
-    str_names = [k for k, _ in fused_pairs if isinstance(k, str)]
-
-    decl_map: dict = {}
-
-    # Batch-lookup integer decl_ids
-    if int_ids:
-        try:
-            rows = reader.get_declarations_by_ids(int_ids)
-            if isinstance(rows, list):
-                for d in rows:
-                    if isinstance(d, dict) and "id" in d:
-                        decl_map[d["id"]] = d
-        except (TypeError, KeyError):
-            pass
-
-    # Lookup string names individually
-    for name in str_names:
-        try:
-            d = reader.get_declaration(name)
-            if isinstance(d, dict):
-                decl_map[name] = d
-        except (TypeError, KeyError):
-            pass
-
-    if not decl_map:
-        return list(fused_pairs)
-
-    results: list[SearchResult] = []
-    for key, score in fused_pairs:
-        decl = decl_map.get(key)
-        if decl is None:
-            continue
-        results.append(SearchResult(
-            name=decl.get("name", ""),
-            statement=decl.get("statement", ""),
-            type=decl.get("type_expr", ""),
-            module=decl.get("module", ""),
-            kind=decl.get("kind", ""),
-            score=score,
-        ))
-    return results if results else list(fused_pairs)
-
-
 def search_by_type(ctx: Any, type_expr: str, limit: int) -> list[Any]:
     """Search declarations by type expression using multi-channel fusion.
 
@@ -623,9 +568,10 @@ def search_by_type(ctx: Any, type_expr: str, limit: int) -> list[Any]:
     # expressions containing qualified names like "List.map".
     fts_input = _clean_type_expr_for_fts(type_expr)
     query = fts_query(fts_input)
-    fts_results = fts_search(query, limit=limit, reader=ctx.reader)
-    # Convert SearchResult objects to (name, score) pairs for RRF
-    fts_pairs = [(r.name, r.score) for r in fts_results]
+    # Use reader.search_fts directly to get (decl_id, score) pairs —
+    # RRF requires all channels to use integer decl_id keys (fusion spec §4.5).
+    fts_rows = ctx.reader.search_fts(query, limit=limit)
+    fts_pairs = [(row["id"], row["score"]) for row in fts_rows]
 
     # Step 5: RRF fusion
     ranked_lists = [structural_scored, mepo_results, fts_pairs]
@@ -644,8 +590,8 @@ def search_by_type(ctx: Any, type_expr: str, limit: int) -> list[Any]:
     )
     top = fused[:limit]
 
-    # Step 7: Resolve to SearchResult objects (spec §4.4 step 7)
-    return _resolve_fused_results(top, ctx.reader)
+    # Step 7: Resolve to SearchResult objects (spec §4.4 step 11)
+    return _resolve_scored_results(top, ctx.reader)
 
 
 def score_candidates(
