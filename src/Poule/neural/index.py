@@ -1,36 +1,50 @@
-"""In-memory embedding index with brute-force cosine similarity search."""
+"""FAISS-backed embedding index for cosine similarity search."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import faiss
 import numpy as np
 
 
 class EmbeddingIndex:
-    """Holds a matrix of L2-normalized premise embeddings for cosine search."""
+    """Holds L2-normalized premise embeddings in a FAISS index for cosine search."""
 
-    def __init__(self, matrix: np.ndarray, id_map: np.ndarray):
-        self._matrix = matrix
-        self._id_map = id_map
+    def __init__(self, index: faiss.Index):
+        self._index = index
 
     @classmethod
     def build(cls, embedding_matrix: np.ndarray, decl_id_map: np.ndarray) -> EmbeddingIndex:
-        return cls(
-            embedding_matrix.astype(np.float32),
-            decl_id_map.copy(),
-        )
+        matrix = np.ascontiguousarray(embedding_matrix.astype(np.float32))
+        ids = decl_id_map.astype(np.int64)
+        dim = matrix.shape[1]
+        flat = faiss.IndexFlatIP(dim)
+        index = faiss.IndexIDMap(flat)
+        index.add_with_ids(matrix, ids)
+        return cls(index)
+
+    @classmethod
+    def from_file(cls, faiss_path: Path | str) -> EmbeddingIndex:
+        path = Path(faiss_path)
+        if not path.exists():
+            raise FileNotFoundError(f"FAISS index not found: {path}")
+        index = faiss.read_index(str(path))
+        return cls(index)
+
+    def save(self, faiss_path: Path | str) -> None:
+        faiss.write_index(self._index, str(faiss_path))
 
     def search(self, query_vector: np.ndarray, k: int) -> list[tuple[int, float]]:
-        # Cosine similarity = dot product for L2-normalized vectors
-        scores = self._matrix @ query_vector.astype(np.float32)
-        n = len(scores)
-        actual_k = min(k, n)
-        if actual_k >= n:
-            top_indices = np.argsort(scores)[::-1]
-        else:
-            # argpartition for top-k, then sort those k
-            top_indices = np.argpartition(scores, -actual_k)[-actual_k:]
-            top_indices = top_indices[np.argsort(scores[top_indices])[::-1]]
+        query = np.ascontiguousarray(
+            query_vector.astype(np.float32).reshape(1, -1)
+        )
+        actual_k = min(k, self._index.ntotal)
+        if actual_k == 0:
+            return []
+        scores, ids = self._index.search(query, actual_k)
         return [
-            (int(self._id_map[i]), float(scores[i]))
-            for i in top_indices
+            (int(ids[0][i]), float(scores[0][i]))
+            for i in range(len(ids[0]))
+            if ids[0][i] != -1
         ]

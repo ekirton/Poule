@@ -20,18 +20,19 @@ Coq Library Extraction                   Retrieval Pipeline
   │ declarations                           ├─ WL screening    → structural ranked list
   ▼                                        ├─ MePo            → symbol ranked list
 Storage (SQLite)                           ├─ FTS5            → lexical ranked list
-  │                                        ├─ Neural channel  → neural ranked list ◄── NEW
+  │                                        ├─ Neural channel  → neural ranked list
   │ read declarations                      │     │
-  ▼                                        │     │ encode query → cosine search
+  ▼                                        │     │ encode query → FAISS search
 Embedding Generator                        │     ▼
   │                                        │   Encoder (INT8, CPU)
   │ encode each declaration                │     │
-  │ via Encoder (INT8, CPU)                │     │ top-k by cosine similarity
+  │ via Encoder (INT8, CPU)                │     │ top-k by inner product (FAISS)
   │                                        │     ▼
-  │ write embeddings                       │   Embedding vectors (from SQLite)
+  │ write embeddings → build FAISS index   │   FAISS index (from .faiss sidecar file)
   ▼                                        │
-Storage (SQLite)                           ├─ rrf_fuse([structural, symbol, lexical, neural])
-  embeddings table ◄───────────────────────┘     │
+Storage (SQLite + FAISS sidecar)           ├─ rrf_fuse([structural, symbol, lexical, neural])
+  embeddings table (persistence)           │     │
+  index.faiss (vector search) ◄────────────┘     │
                                                  ▼
                                            Fused ranked results
 ```
@@ -76,7 +77,7 @@ The encoder is stateless and thread-safe. Multiple queries can be encoded concur
 
 ## Embedding Storage
 
-Embeddings are stored in the existing SQLite index database. See [storage.md](storage.md) for the schema addition.
+Embeddings use a dual-storage model: raw vectors are persisted in the SQLite `embeddings` table during the write path, and a FAISS index is serialized to a sidecar `.faiss` file at finalization. The read path loads only the FAISS index. See [storage.md](storage.md) for the SQLite schema.
 
 ### Write Path (Indexing)
 
@@ -90,41 +91,46 @@ After the standard indexing pass (declarations, WL vectors, dependencies, FTS5),
      c. Serialize vector as raw bytes (768 × 4 bytes = 3,072 bytes per embedding)
      d. Batch-insert into embeddings table
 3. Write model checkpoint hash to index_meta ('neural_model_hash')
+4. At finalize: read all embeddings from SQLite, build FAISS IndexFlatIP, write to .faiss sidecar file
 ```
 
 **Batch processing**: Encode declarations in batches of 64 to amortize model loading overhead. On CPU with INT8, a batch of 64 completes in ~500ms. For 50K declarations: ~800 batches × 500ms ≈ 7 minutes.
 
-**Atomicity**: The embedding pass runs within the same database transaction as the rest of indexing. If embedding computation fails partway through, the entire index is discarded (same behavior as any other indexing failure).
+**Atomicity**: The embedding pass runs within the same database transaction as the rest of indexing. If embedding computation fails partway through, the entire index is discarded (same behavior as any other indexing failure). The FAISS sidecar file is written after SQLite finalization succeeds — if FAISS serialization fails, the SQLite database still contains the embeddings and the sidecar can be regenerated.
+
+**FAISS sidecar convention**: For a database at `path/to/index.db`, the FAISS index is written to `path/to/index.faiss`. The sidecar file is a derived artifact — it can be regenerated from the SQLite `embeddings` table without re-encoding.
 
 ### Read Path (Query)
 
-At server startup, all embeddings are loaded into memory as a contiguous float32 matrix:
+At server startup, the FAISS index is loaded from the sidecar file:
 
 ```
-embedding_matrix: float[N × 768]  where N = number of declarations
-decl_id_map: int[N]               mapping matrix row → declaration ID
+faiss_index: faiss.IndexIDMap(faiss.IndexFlatIP(768))   # declaration IDs stored in the index
 ```
 
-Memory footprint: N × 768 × 4 bytes. For 50K declarations: ~150MB. For 200K: ~600MB. This sits alongside the WL histogram memory (~100MB for 100K declarations).
+Memory footprint: N × 768 × 4 bytes + FAISS overhead. For 50K declarations: ~150MB. For 200K: ~600MB. This sits alongside the WL histogram memory (~100MB for 100K declarations).
 
-**Startup latency**: Loading 50K embeddings from SQLite into a contiguous matrix takes <1 second. This is comparable to the existing WL histogram loading.
+**Startup latency**: Loading a FAISS index from file is faster than reading individual SQLite BLOBs — `faiss.read_index` memory-maps the file and reads in a single I/O operation. For 50K embeddings: <500ms.
+
+**Fallback**: If the `.faiss` file is missing but the `embeddings` table exists, the reader builds the FAISS index from SQLite BLOBs and writes the sidecar file for subsequent startups. This supports migration from pre-FAISS databases without re-encoding.
 
 ## Similarity Search
 
-### Brute-Force Cosine Search
+### FAISS IndexFlatIP Search
 
-At the scale of Coq libraries (50K–200K declarations), brute-force cosine similarity is fast enough:
+Vector similarity search uses FAISS `IndexFlatIP` (exact inner product search on L2-normalized vectors, equivalent to cosine similarity):
 
 ```
 query_embedding = encode(query_text)           # <10ms (INT8 CPU)
-scores = embedding_matrix @ query_embedding    # <5ms (50K × 768 matmul)
-top_k_indices = argpartition(scores, k)        # <1ms
-results = [(decl_id_map[i], scores[i]) for i in top_k_indices]
+scores, ids = faiss_index.search(query, k)     # <5ms (FAISS optimized BLAS)
+results = [(int(ids[0][i]), float(scores[0][i])) for i in range(k)]
 ```
 
 Total neural channel latency: <16ms on CPU. Well within the 100ms budget.
 
-**Why not FAISS HNSW**: At 50K items, brute-force is <5ms. HNSW adds index build complexity and approximate results for no meaningful latency gain. If corpus size exceeds 500K, HNSW should be evaluated.
+**Why IndexFlatIP rather than HNSW**: `IndexFlatIP` provides exact results — no approximation, no tuning parameters, no index build step beyond insertion. At 50K–200K declarations, exact search is <5ms via FAISS's optimized BLAS kernels. HNSW or IVF should be evaluated if corpus size exceeds 500K declarations; switching index types requires changing only the index construction code, not the search interface.
+
+**Why FAISS rather than brute-force NumPy**: FAISS uses optimized BLAS routines (OpenBLAS/MKL) for the matrix-vector product, provides a standard `read_index`/`write_index` serialization format, and offers a clear upgrade path to approximate nearest neighbor indexes (HNSW, IVF) when needed — all without changing the search interface. The `IndexIDMap` wrapper stores declaration IDs directly in the index, eliminating the separate ID map array.
 
 ### Result Format
 
@@ -216,17 +222,21 @@ This prevents serving results from embeddings computed by a different model vers
 
 ## Design Rationale
 
-### Why brute-force search rather than ANN index
+### Why FAISS IndexFlatIP rather than brute-force NumPy
 
-At 50K declarations, a 768-dim matmul takes <5ms on CPU. FAISS HNSW or IVF would add index construction complexity, tuning parameters (ef_construction, nprobe), and approximate results — all for <1ms improvement at this scale. The brute-force approach is exact, trivially correct, and fast enough. The threshold for switching to ANN is ~500K declarations, which is beyond the current Coq library landscape.
+At 50K declarations, both approaches are <5ms. FAISS provides three advantages: (1) optimized BLAS kernels are marginally faster for the matmul, (2) `read_index`/`write_index` provides a standard serialization format with fast loading, and (3) the index type can be changed to HNSW or IVF for approximate search at larger scales without modifying the search interface. The cost is one additional dependency (`faiss-cpu`).
+
+### Why IndexFlatIP rather than approximate indexes
+
+`IndexFlatIP` is exact — no recall degradation, no tuning parameters. At the current scale (50K–200K declarations), exact search is fast enough. Approximate indexes (HNSW, IVF) add index build complexity and tuning surface for <1ms improvement. The threshold for switching to approximate search is ~500K declarations. The FAISS index type can be changed without modifying the search interface or storage format.
+
+### Why dual storage (SQLite + FAISS sidecar)
+
+The SQLite `embeddings` table persists raw vectors during the write path, providing atomicity within the existing database transaction. The FAISS sidecar file is a derived artifact generated at finalization, optimized for fast read-path loading. This preserves write-path simplicity (SQLite batch inserts) while providing fast read-path performance (FAISS native load). The sidecar can be regenerated from SQLite without re-encoding — supporting migration from pre-FAISS databases and recovery from sidecar corruption.
 
 ### Why load all embeddings into memory
 
 The embedding matrix for 50K declarations is ~150MB — comparable to the WL histograms already loaded at startup. Memory-mapped file access would save startup time but add complexity for marginal benefit. The matrix is read-once-at-startup, used-many-times — in-memory is the right trade-off.
-
-### Why store embeddings in SQLite rather than a separate file
-
-The index is a single SQLite file — adding embeddings to it preserves the single-file property. A separate embeddings file would require coordinating two files (versioning, copying, deletion). The BLOB storage overhead in SQLite is minimal for fixed-size binary data.
 
 ### Why shared encoder weights for queries and premises
 

@@ -71,7 +71,7 @@ Cross-references:
 | R5-P0-1 | Train a bi-encoder retrieval model on `(proof_state, premises_used)` pairs extracted by the Training Data Extraction pipeline |
 | R5-P0-2 | Encode proof states and premise declarations into a shared embedding space; retrieve premises by cosine similarity |
 | R5-P0-3 | Integrate the neural retrieval channel into the Semantic Lemma Search pipeline as an additional retrieval channel, participating in the existing fusion/ranking mechanism |
-| R5-P0-4 | Precompute and store premise embeddings in the existing SQLite index alongside other retrieval channel data |
+| R5-P0-4 | Precompute and store premise embeddings in the search index alongside other retrieval channel data |
 | R5-P0-5 | Neural channel query latency < 100ms on CPU without GPU |
 | R5-P0-6 | Support INT8 quantized inference for the encoder model on CPU |
 | R5-P0-7 | Rebuild premise embeddings when the library index is rebuilt, using the same trigger as existing index rebuilds |
