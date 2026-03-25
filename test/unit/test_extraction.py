@@ -1932,6 +1932,101 @@ class TestFullRunIntegration:
             f"got {backend.stop.call_count}"
         )
 
+    def test_pass1_restarts_backend_between_batches_when_rss_high(
+        self, tmp_path
+    ):
+        """Pass 1 checks RSS after each BATCH_SIZE flush and restarts
+        coq-lsp when it exceeds the threshold (spec §4.12)."""
+        from Poule.extraction.pipeline import run_extraction, BATCH_SIZE
+
+        # Create enough declarations to trigger at least 2 batch flushes.
+        num_decls = BATCH_SIZE + 10
+        vo = Path("/fake/user-contrib/Pkg/Huge.vo")
+        decl_names = [f"Pkg.Huge.d{i}" for i in range(num_decls)]
+
+        def fake_list_declarations(vo_path):
+            return [
+                (n, "Lemma", {"type_signature": "nat", "source": "coq-lsp"})
+                for n in decl_names
+            ]
+
+        backend = _make_mock_backend()
+        backend.list_declarations.side_effect = fake_list_declarations
+        backend.query_declaration_data.side_effect = lambda names, **kw: {
+            n: ("stmt", []) for n in names
+        }
+        # Low RSS during collection + query phases, high during Pass 1.
+        # Switch to high RSS when process_declaration is first called
+        # (unique to Pass 1).
+        rss_state = {"phase": "early"}
+
+        LOW_RSS = 100 * 1024 * 1024  # 100 MiB
+        HIGH_RSS = 10 * 1024 * 1024 * 1024  # 10 GiB
+
+        def rss_by_phase():
+            return HIGH_RSS if rss_state["phase"] == "pass1" else LOW_RSS
+
+        backend._get_child_rss_bytes.side_effect = lambda: rss_by_phase()
+
+        writer = _make_mock_writer()
+        writer.batch_insert.return_value = {n: i for i, n in enumerate(decl_names)}
+
+        mock_results = []
+        for name in decl_names:
+            r = Mock()
+            r.name = name
+            r.dependency_names = []
+            mock_results.append(r)
+
+        result_iter = iter(mock_results)
+
+        def tracking_process_decl(*args, **kwargs):
+            rss_state["phase"] = "pass1"
+            return next(result_iter)
+
+        # Track restart pairs (stop+start) during pass1.  The final
+        # cleanup calls stop() without start(), so only true restarts
+        # produce a stop→start pair.
+        pass1_restarts = []
+
+        def tracking_stop(*a, **kw):
+            if rss_state["phase"] == "pass1":
+                pass1_restarts.append("stop")
+
+        def tracking_start(*a, **kw):
+            if rss_state["phase"] == "pass1" and pass1_restarts and pass1_restarts[-1] == "stop":
+                pass1_restarts.append("start")
+
+        backend.stop = Mock(side_effect=tracking_stop)
+        backend.start = Mock(side_effect=tracking_start)
+
+        with (
+            patch(
+                "Poule.extraction.pipeline.discover_libraries",
+                return_value=[vo],
+            ),
+            patch(
+                "Poule.extraction.pipeline.create_backend",
+                return_value=backend,
+            ),
+            patch(
+                "Poule.extraction.pipeline.create_writer",
+                return_value=writer,
+            ),
+            patch(
+                "Poule.extraction.pipeline.process_declaration",
+                side_effect=tracking_process_decl,
+            ),
+        ):
+            run_extraction(targets=["stdlib"], db_path=tmp_path / "test.db")
+
+        # At least one stop→start restart pair during Pass 1.
+        restart_pairs = pass1_restarts.count("start")
+        assert restart_pairs >= 1, (
+            f"Expected >= 1 restart (stop+start) during Pass 1, "
+            f"got {restart_pairs}. Events: {pass1_restarts}"
+        )
+
     def test_pipeline_order_is_pass1_then_pass2_then_postprocess(
         self, tmp_path
     ):

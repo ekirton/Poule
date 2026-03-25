@@ -948,6 +948,17 @@ def run_extraction(
                     r.has_proof_body = None
                 batch = []
 
+                # Restart backend when RSS exceeds threshold.
+                rss = backend._get_child_rss_bytes()
+                if rss > _LSP_RSS_RESTART_THRESHOLD:
+                    logger.debug(
+                        "Restarting coq-lsp during Pass 1 "
+                        "(RSS=%.0f MiB)",
+                        rss / (1024 * 1024),
+                    )
+                    backend.stop()
+                    backend.start()
+
         # Flush remaining batch
         if batch:
             ids = writer.batch_insert(batch)

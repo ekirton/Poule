@@ -266,13 +266,15 @@ After resolution, the `symbol_set` column in `declarations` and the `symbol_freq
 
 Each `Require Import` permanently loads a module and its transitive dependencies into the coq-lsp process. Memory can only be reclaimed by restarting the process. The pipeline monitors the coq-lsp child process's RSS (via `/proc/<pid>/status`) and restarts it when RSS exceeds a configurable threshold (default 5 GiB, overridable via `POULE_LSP_RSS_LIMIT`).
 
-RSS checks occur at two points in the pipeline:
+RSS checks occur at three points in the pipeline:
 
 1. **Declaration collection** — after processing each `.vo` file. If RSS exceeds the threshold, the backend is stopped and restarted before the next file. Each `list_declarations` call is self-contained (creates its own synthetic document with `Require Import`), so a restart between files loses no state.
 
 2. **Batched queries** — after each batch of ≤50 declarations within an import-path group. Each batch creates its own synthetic document starting with `Require Import <import_path>.`, so batches are self-contained and restarts between them lose no state. This is critical for large modules (e.g., CoqInterval with 20K+ declarations) where a single import group can exhaust memory before the group completes.
 
-The threshold-based approach avoids unnecessary restart overhead for lightweight modules while still bounding peak memory for heavy ones. Peak backend memory is bounded by the single largest batch, not cumulative across modules.
+3. **Pass 1 (per-declaration processing)** — after each BATCH_SIZE (1000 declaration) flush to SQLite. Pass 1 issues `Locate` queries for symbol resolution; while most are served from cache, the backend process may still carry memory from prior phases' `Require Import` loads.
+
+The threshold-based approach avoids unnecessary restart overhead for lightweight modules while still bounding peak memory for heavy ones. Peak backend memory is bounded by the threshold, not cumulative across modules.
 
 ## Error Handling
 
