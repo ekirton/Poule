@@ -26,7 +26,7 @@ import pytest
 from Poule.neural.encoder import NeuralEncoder
 from Poule.neural.index import EmbeddingIndex
 from Poule.neural.channel import neural_retrieve, check_availability
-from Poule.neural.embeddings import compute_embeddings, load_embeddings
+from Poule.neural.embeddings import compute_embeddings, load_embeddings, build_faiss_index, load_faiss_index
 from Poule.neural.errors import ModelNotFoundError, ModelLoadError
 
 
@@ -133,7 +133,7 @@ class TestNeuralEncoderEncode:
 
 
 class TestEmbeddingIndexBuild:
-    """EmbeddingIndex.build constructs an in-memory search index."""
+    """EmbeddingIndex.build constructs a FAISS-backed search index."""
 
     def test_build_from_matrix_and_id_map(self):
         matrix = _random_embedding_matrix(100)
@@ -148,6 +148,15 @@ class TestEmbeddingIndexBuild:
         # Should be able to search after build
         results = index.search(_random_unit_vector(), k=5)
         assert len(results) == 5
+
+    def test_build_stores_declaration_ids(self):
+        """FAISS IndexIDMap stores declaration IDs directly in the index."""
+        matrix = _random_embedding_matrix(5)
+        id_map = np.array([10, 20, 30, 40, 50], dtype=np.int64)
+        index = EmbeddingIndex.build(matrix, id_map)
+        query = matrix[0]  # query the first vector
+        results = index.search(query, k=1)
+        assert results[0][0] == 10  # should return decl_id 10, not row index 0
 
 
 class TestEmbeddingIndexSearch:
@@ -198,7 +207,7 @@ class TestEmbeddingIndexSearch:
             assert -1.0 <= score <= 1.0
 
     def test_exact_search_finds_identical_vector(self, small_index):
-        """Brute-force search must return exact match at rank 1."""
+        """Exact search (IndexFlatIP) must return exact match at rank 1."""
         index, matrix = small_index
         # Query with the exact vector at row 3
         query = matrix[3]
@@ -218,6 +227,181 @@ class TestEmbeddingIndexSearch:
         for decl_id, score in results:
             expected = float(np.dot(matrix[int(decl_id)], query))
             assert abs(score - expected) < 1e-5
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 2b. EmbeddingIndex Serialization (FAISS)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestEmbeddingIndexSerialization:
+    """EmbeddingIndex save/from_file round-trips through FAISS serialization."""
+
+    def test_save_creates_file(self, tmp_path):
+        """spec §4.2: save writes a FAISS index file."""
+        matrix = _random_embedding_matrix(20)
+        id_map = np.arange(20, dtype=np.int64)
+        index = EmbeddingIndex.build(matrix, id_map)
+        faiss_path = tmp_path / "test.faiss"
+        index.save(faiss_path)
+        assert faiss_path.exists()
+        assert faiss_path.stat().st_size > 0
+
+    def test_round_trip_preserves_search_results(self, tmp_path):
+        """Save and from_file produce an index with identical search results."""
+        matrix = _random_embedding_matrix(50)
+        id_map = np.array([i * 10 for i in range(50)], dtype=np.int64)
+        original = EmbeddingIndex.build(matrix, id_map)
+
+        faiss_path = tmp_path / "test.faiss"
+        original.save(faiss_path)
+        restored = EmbeddingIndex.from_file(faiss_path)
+
+        query = _random_unit_vector(seed=99)
+        original_results = original.search(query, k=10)
+        restored_results = restored.search(query, k=10)
+
+        assert len(original_results) == len(restored_results)
+        for (id_a, sc_a), (id_b, sc_b) in zip(original_results, restored_results):
+            assert id_a == id_b
+            assert abs(sc_a - sc_b) < 1e-5
+
+    def test_from_file_nonexistent_raises(self, tmp_path):
+        """spec §4.2: from_file raises FileNotFoundError for missing file."""
+        with pytest.raises(FileNotFoundError):
+            EmbeddingIndex.from_file(tmp_path / "nonexistent.faiss")
+
+    def test_from_file_preserves_declaration_ids(self, tmp_path):
+        """IndexIDMap stores IDs through serialization round-trip."""
+        matrix = _random_embedding_matrix(5)
+        id_map = np.array([100, 200, 300, 400, 500], dtype=np.int64)
+        index = EmbeddingIndex.build(matrix, id_map)
+        faiss_path = tmp_path / "test.faiss"
+        index.save(faiss_path)
+
+        restored = EmbeddingIndex.from_file(faiss_path)
+        # Query the first vector — should return decl_id 100
+        results = restored.search(matrix[0], k=1)
+        assert results[0][0] == 100
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 2c. FAISS Index Build/Load from SQLite
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestBuildFaissIndex:
+    """build_faiss_index reads SQLite embeddings and writes a .faiss sidecar."""
+
+    def test_builds_sidecar_from_sqlite(self, tmp_path):
+        """spec §4.5: Reads embeddings from SQLite, writes .faiss file."""
+        db_path = tmp_path / "index.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE embeddings (decl_id INTEGER PRIMARY KEY, vector BLOB)")
+        v1 = _random_unit_vector(seed=1)
+        v2 = _random_unit_vector(seed=2)
+        conn.execute("INSERT INTO embeddings VALUES (10, ?)", (_vector_to_blob(v1),))
+        conn.execute("INSERT INTO embeddings VALUES (20, ?)", (_vector_to_blob(v2),))
+        conn.commit()
+        conn.close()
+
+        faiss_path = build_faiss_index(db_path)
+        assert faiss_path is not None
+        assert faiss_path == tmp_path / "index.faiss"
+        assert faiss_path.exists()
+
+    def test_returns_none_for_empty_embeddings(self, tmp_path):
+        """spec §4.5: No sidecar when embeddings table is empty."""
+        db_path = tmp_path / "index.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE embeddings (decl_id INTEGER PRIMARY KEY, vector BLOB)")
+        conn.commit()
+        conn.close()
+
+        result = build_faiss_index(db_path)
+        assert result is None
+
+    def test_sidecar_search_matches_source_vectors(self, tmp_path):
+        """Sidecar index returns correct results for known vectors."""
+        db_path = tmp_path / "index.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE embeddings (decl_id INTEGER PRIMARY KEY, vector BLOB)")
+        v1 = _random_unit_vector(seed=1)
+        v2 = _random_unit_vector(seed=2)
+        conn.execute("INSERT INTO embeddings VALUES (42, ?)", (_vector_to_blob(v1),))
+        conn.execute("INSERT INTO embeddings VALUES (99, ?)", (_vector_to_blob(v2),))
+        conn.commit()
+        conn.close()
+
+        faiss_path = build_faiss_index(db_path)
+        index = EmbeddingIndex.from_file(faiss_path)
+        # Query with v1 — should return decl_id 42 as top result
+        results = index.search(v1, k=1)
+        assert results[0][0] == 42
+        assert abs(results[0][1] - 1.0) < 1e-5
+
+
+class TestLoadFaissIndex:
+    """load_faiss_index loads from sidecar with SQLite fallback."""
+
+    def test_loads_from_existing_sidecar(self, tmp_path):
+        """spec §4.6: Loads from .faiss sidecar when it exists."""
+        db_path = tmp_path / "index.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE embeddings (decl_id INTEGER PRIMARY KEY, vector BLOB)")
+        v1 = _random_unit_vector(seed=1)
+        conn.execute("INSERT INTO embeddings VALUES (10, ?)", (_vector_to_blob(v1),))
+        conn.commit()
+        conn.close()
+
+        # Pre-build the sidecar
+        build_faiss_index(db_path)
+        assert (tmp_path / "index.faiss").exists()
+
+        index = load_faiss_index(db_path)
+        assert index is not None
+        results = index.search(v1, k=1)
+        assert results[0][0] == 10
+
+    def test_builds_sidecar_from_sqlite_fallback(self, tmp_path):
+        """spec §4.6: Builds FAISS index from SQLite when sidecar is missing."""
+        db_path = tmp_path / "index.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE embeddings (decl_id INTEGER PRIMARY KEY, vector BLOB)")
+        v1 = _random_unit_vector(seed=1)
+        conn.execute("INSERT INTO embeddings VALUES (10, ?)", (_vector_to_blob(v1),))
+        conn.commit()
+        conn.close()
+
+        # No sidecar exists
+        assert not (tmp_path / "index.faiss").exists()
+
+        index = load_faiss_index(db_path)
+        assert index is not None
+        # Sidecar should now exist for next time
+        assert (tmp_path / "index.faiss").exists()
+
+    def test_returns_none_when_no_embeddings(self, tmp_path):
+        """spec §4.6: Returns None when no embeddings exist."""
+        db_path = tmp_path / "index.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE embeddings (decl_id INTEGER PRIMARY KEY, vector BLOB)")
+        conn.commit()
+        conn.close()
+
+        result = load_faiss_index(db_path)
+        assert result is None
+
+    def test_returns_none_when_no_embeddings_table(self, tmp_path):
+        """spec §4.6: Returns None when embeddings table doesn't exist."""
+        db_path = tmp_path / "index.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE index_meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn.commit()
+        conn.close()
+
+        result = load_faiss_index(db_path)
+        assert result is None
 
 
 # ═══════════════════════════════════════════════════════════════════════════

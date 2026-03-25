@@ -93,8 +93,9 @@ Declarations and their WL vectors shall be co-inserted in the same batch transac
 #### finalize()
 
 - REQUIRES: All data has been inserted.
-- ENSURES: FTS5 `rebuild` command is executed. `PRAGMA integrity_check` passes. Connection is closed.
+- ENSURES: FTS5 `rebuild` command is executed. `PRAGMA integrity_check` passes. If the `embeddings` table contains rows, a FAISS sidecar index file is generated (see [neural-retrieval.md](neural-retrieval.md) § `build_faiss_index`). Connection is closed.
 - On integrity check failure: close connection, delete database file, raise `StorageError`.
+- On FAISS sidecar generation failure: log warning, continue. The sidecar can be regenerated from SQLite on first read.
 
 #### Batch transaction protocol
 
@@ -186,6 +187,8 @@ The `IndexReader` manages the read path during online queries.
 
 - REQUIRES: Database is open and valid.
 - ENSURES: If the `embeddings` table exists and contains rows, returns a tuple `(embedding_matrix, decl_id_map)` where `embedding_matrix` is a contiguous float32 array of shape `[N, 768]` and `decl_id_map` is an integer array of length N mapping row indices to declaration IDs. If the table does not exist or is empty, returns `(None, None)`.
+
+Note: This method is used by the FAISS sidecar builder and migration path. The primary read path for search uses `load_faiss_index` from the neural retrieval module (see [neural-retrieval.md](neural-retrieval.md) § `load_faiss_index`).
 
 #### get_meta(key)
 

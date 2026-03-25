@@ -69,13 +69,25 @@ Define the neural retrieval channel: encoder interface, embedding storage and lo
 #### build(embedding_matrix, decl_id_map)
 
 - REQUIRES: `embedding_matrix` is a 2D float array of shape `[N, 768]`. `decl_id_map` is a 1D integer array of length N mapping row indices to declaration IDs. N > 0.
-- ENSURES: Returns an `EmbeddingIndex` ready for search.
+- ENSURES: Returns an `EmbeddingIndex` backed by a FAISS `IndexIDMap(IndexFlatIP(768))`. Declaration IDs are stored directly in the FAISS index via `IndexIDMap`.
+
+#### from_file(faiss_path)
+
+- REQUIRES: `faiss_path` points to a valid FAISS index file produced by `save`.
+- ENSURES: Returns an `EmbeddingIndex` loaded from file. The index is ready for search.
+- On file not found: raises `FileNotFoundError`.
+- On invalid FAISS format: raises `RuntimeError`.
+
+#### save(faiss_path)
+
+- REQUIRES: `faiss_path` is a writable filesystem path.
+- ENSURES: The FAISS index is serialized to `faiss_path` via `faiss.write_index`.
 
 #### search(query_vector, k)
 
 - REQUIRES: `query_vector` is a 768-dim L2-normalized float vector. `k` is a positive integer.
 - ENSURES: Returns up to `min(k, N)` `(declaration_id, cosine_similarity_score)` pairs, sorted by descending score. Scores are in range [-1, 1].
-- MAINTAINS: Search is exact (brute-force); no approximation.
+- MAINTAINS: Search is exact (`IndexFlatIP`); no approximation.
 
 > **Given** an index with 50,000 embeddings
 > **When** `search(query_vector, k=32)` is called
@@ -88,9 +100,9 @@ Define the neural retrieval channel: encoder interface, embedding storage and lo
 #### Algorithm
 
 ```
-scores = embedding_matrix @ query_vector     # [N] dot products (= cosine sim for L2-normalized vectors)
-top_k_indices = argpartition(scores, k)      # top-k by score
-results = [(decl_id_map[i], scores[i]) for i in top_k_indices]
+scores, ids = faiss_index.search(query_vector.reshape(1, -1), k)   # FAISS inner product search
+results = [(int(ids[0][i]), float(scores[0][i]))
+           for i in range(len(ids[0])) if ids[0][i] != -1]        # -1 = padding when N < k
 sort results by score descending
 return results
 ```
@@ -138,9 +150,9 @@ When any condition fails, the neural channel marks itself as unavailable. The pi
 
 ### 4.5 Embedding Write Path (Indexing)
 
-#### compute_embeddings(reader, encoder, writer)
+#### compute_embeddings(db_path, encoder)
 
-- REQUIRES: `reader` provides access to all declarations in the index. `encoder` is a loaded `NeuralEncoder`. `writer` provides write access to the `embeddings` table and `index_meta`.
+- REQUIRES: `db_path` points to a valid index database with declarations. `encoder` is a loaded `NeuralEncoder`.
 - ENSURES: For each declaration, encodes `declarations.statement` via the encoder and inserts the vector into the `embeddings` table. Writes `neural_model_hash` to `index_meta`. All writes are within a single transaction.
 - On encoder failure for a single declaration: skips that declaration, logs a warning, continues. The `embeddings` table may have fewer rows than `declarations` — this is acceptable.
 
@@ -160,16 +172,40 @@ Algorithm:
 > **When** `compute_embeddings` runs on CPU
 > **Then** embeddings are computed in under 10 minutes and stored in the database
 
+#### build_faiss_index(db_path)
+
+- REQUIRES: `db_path` points to a valid index database with a populated `embeddings` table.
+- ENSURES: Reads all embeddings from the SQLite `embeddings` table, constructs a FAISS `IndexIDMap(IndexFlatIP(768))` with declaration IDs, and writes the index to the sidecar path (`db_path` with `.faiss` extension). Returns the sidecar path.
+- On empty embeddings table: no sidecar file is written. Returns `None`.
+
+Algorithm:
+```
+1. Read all (decl_id, vector_blob) from embeddings table ORDER BY rowid
+2. Parse each blob as float32[768] via np.frombuffer
+3. Stack into matrix of shape [N, 768]
+4. Build faiss.IndexFlatIP(768), wrap in faiss.IndexIDMap
+5. Add vectors with declaration IDs: index.add_with_ids(matrix, id_array)
+6. Write to sidecar: faiss.write_index(index, faiss_path)
+```
+
+> **Given** an index.db with 50,000 embeddings
+> **When** `build_faiss_index("index.db")` is called
+> **Then** writes `index.faiss` (~150MB) and returns the path
+
 ### 4.6 Embedding Read Path (Startup)
 
-#### load_embeddings(reader)
+#### load_faiss_index(db_path)
 
-- REQUIRES: `reader` provides access to the `embeddings` table.
-- ENSURES: Returns `(embedding_matrix, decl_id_map)` where `embedding_matrix` is a contiguous float32 array of shape `[N, 768]` and `decl_id_map` is an integer array mapping row indices to declaration IDs. Returns `(None, None)` if the `embeddings` table is empty or does not exist.
+- REQUIRES: `db_path` points to a valid index database.
+- ENSURES: If the `.faiss` sidecar file exists, loads and returns an `EmbeddingIndex` from it. If the sidecar is missing but the SQLite `embeddings` table has rows, builds the FAISS index from SQLite, writes the sidecar for future use, and returns the `EmbeddingIndex`. Returns `None` if no embeddings exist.
 
-> **Given** an index with 50,000 embeddings
-> **When** `load_embeddings` is called
-> **Then** returns a `(50000, 768)` matrix and a 50,000-element ID map in under 1 second
+> **Given** an index.db with a corresponding index.faiss sidecar
+> **When** `load_faiss_index` is called
+> **Then** returns an EmbeddingIndex loaded from the sidecar in under 500ms
+
+> **Given** a pre-FAISS index.db with embeddings in SQLite but no .faiss sidecar
+> **When** `load_faiss_index` is called
+> **Then** builds the FAISS index from SQLite BLOBs, writes index.faiss, and returns an EmbeddingIndex
 
 ### 4.7 Neural Query Text Construction
 
@@ -224,7 +260,7 @@ When both files exist, `NeuralEncoder.load` uses the vocabulary file for tokeniz
 |----------|-------|
 | Input | Query text (string) + limit (integer) |
 | Output | List of `(declaration_id, cosine_similarity_score)` pairs, sorted by descending score |
-| Guarantees | Results are exact (brute-force search). Scores are cosine similarities in [-1, 1]. |
+| Guarantees | Results are exact (FAISS `IndexFlatIP`). Scores are cosine similarities in [-1, 1] (inner product on L2-normalized vectors). |
 | Error strategy | If encoder fails on query text, return empty list and log warning. Never propagate encoder errors as user-facing errors. |
 | Concurrency | Encoder is stateless and thread-safe. EmbeddingIndex is read-only after construction and thread-safe. |
 
@@ -317,9 +353,10 @@ Then:
 ## 10. Language-Specific Notes (Python)
 
 - Use `onnxruntime` for INT8 model inference. `InferenceSession` with `CPUExecutionProvider`.
-- Use `numpy` for the embedding matrix and cosine search (`np.dot`, `np.argpartition`).
-- Serialize embeddings as `numpy.ndarray.tobytes()` for SQLite BLOB storage. Deserialize with `numpy.frombuffer(blob, dtype=np.float32)`.
+- Use `faiss-cpu` for vector indexing and search. `IndexFlatIP` for exact inner product search, wrapped in `IndexIDMap` for declaration ID storage.
+- Use `numpy` for embedding matrix construction. Serialize embeddings as `numpy.ndarray.tobytes()` for SQLite BLOB storage. Deserialize with `numpy.frombuffer(blob, dtype=np.float32)`.
+- FAISS index serialization: `faiss.write_index(index, path)` / `faiss.read_index(path)`.
 - `NeuralEncoder` as a class wrapping `onnxruntime.InferenceSession`.
-- `EmbeddingIndex` as a class holding a `numpy.ndarray` and an ID map.
-- Thread safety: `onnxruntime.InferenceSession` is thread-safe for concurrent `run()` calls.
+- `EmbeddingIndex` as a class wrapping a `faiss.IndexIDMap` instance.
+- Thread safety: `onnxruntime.InferenceSession` is thread-safe for concurrent `run()` calls. FAISS `search()` is thread-safe for read-only indexes.
 - Package location: `src/poule/neural/`.

@@ -8,6 +8,7 @@ dependencies = [
     "alectryon",
     "onnxruntime>=1.16",
     "tokenizers>=0.15",
+    "faiss-cpu>=1.7",
 ]
 
 [dependency-groups]
