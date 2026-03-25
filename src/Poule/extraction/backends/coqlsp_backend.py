@@ -66,6 +66,21 @@ _DECLARED_LIB_RE = re.compile(
     r"^Declared in library\s+([\w.]+),\s*line\s+(\d+)", re.MULTILINE
 )
 
+# Prefix emitted by coq-lsp when loading opaque proof bodies from disk.
+# This is a level-3 (information) diagnostic, not Vernacular output.
+_DIAGNOSTIC_PREFIXES = ("Fetching opaque proofs from disk",)
+
+
+def _extract_vernac_text(messages: list[dict[str, Any]]) -> str:
+    """Join Vernacular output messages, excluding errors and known diagnostics."""
+    texts = [
+        m["text"]
+        for m in messages
+        if m.get("level", 3) != 1
+        and not any(m["text"].startswith(p) for p in _DIAGNOSTIC_PREFIXES)
+    ]
+    return "\n".join(texts).strip()
+
 
 class AboutResult(NamedTuple):
     """Result of parsing an About response: kind, opacity, declared library, and line."""
@@ -416,9 +431,7 @@ class CoqLspBackend:
         ``declared_library``, and ``declared_line`` fields.  Callers that only
         need the kind can access ``result.kind``.
         """
-        all_text = "\n".join(
-            m["text"] for m in messages if m.get("level", 3) != 1
-        )
+        all_text = _extract_vernac_text(messages)
         logger.debug("About output for %s: %r", name, all_text)
 
         # Extract opacity and declared_library/declared_line from the full text.
@@ -586,15 +599,10 @@ class CoqLspBackend:
                     assumptions_msgs = all_messages[idx + 1] if idx + 1 < len(all_messages) else []
 
                     # Parse Print output → statement
-                    texts = [
-                        m["text"] for m in print_msgs if m.get("level", 3) != 1
-                    ]
-                    statement = "\n".join(texts).strip()
+                    statement = _extract_vernac_text(print_msgs)
 
                     # Parse Print Assumptions output → dependencies
-                    all_text = "\n".join(
-                        m["text"] for m in assumptions_msgs if m.get("level", 3) != 1
-                    )
+                    all_text = _extract_vernac_text(assumptions_msgs)
                     deps: list[tuple[str, str]] = []
                     if "Closed under the global context" not in all_text:
                         for match in _ASSUMPTION_RE.finditer(all_text):
@@ -855,10 +863,7 @@ class CoqLspBackend:
         """Return the human-readable statement of a declaration."""
         self._ensure_alive()
         _diags, messages = self._run_vernac_query(f"Print {name}.")
-        texts = [
-            m["text"] for m in messages if m.get("level", 3) != 1
-        ]
-        return "\n".join(texts).strip()
+        return _extract_vernac_text(messages)
 
     def pretty_print_type(self, name: str) -> str | None:
         """Return the type signature of a declaration, or ``None``."""
@@ -867,12 +872,8 @@ class CoqLspBackend:
         if any(d.get("severity") == 1 for d in diags):
             logger.warning("pretty_print_type failed for %s", name)
             return None
-        texts = [
-            m["text"] for m in messages if m.get("level", 3) != 1
-        ]
-        if not texts:
-            return None
-        return "\n".join(texts).strip() or None
+        result = _extract_vernac_text(messages)
+        return result or None
 
     # Patterns for parsing Locate output
     _LOCATE_CATEGORIES = frozenset({"Constant", "Inductive", "Constructor"})
@@ -946,9 +947,7 @@ class CoqLspBackend:
         """Return dependency pairs ``(target_name, relation)``."""
         self._ensure_alive()
         _diags, messages = self._run_vernac_query(f"Print Assumptions {name}.")
-        all_text = "\n".join(
-            m["text"] for m in messages if m.get("level", 3) != 1
-        )
+        all_text = _extract_vernac_text(messages)
 
         if "Closed under the global context" in all_text:
             return []
