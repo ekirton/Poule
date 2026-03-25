@@ -830,6 +830,17 @@ class TestSearchByType:
     ):
         parser = _mock_parser()
         ctx = _mock_context(parser=parser)
+        # reader.search_fts returns dicts with id and score (search_by_type
+        # now calls this directly instead of fts_search)
+        ctx.reader.search_fts.return_value = [
+            {"id": 3, "name": "D.3", "module": "M", "kind": "lemma",
+             "statement": "", "type_expr": "", "score": 0.6},
+        ]
+        ctx.reader.get_declarations_by_ids.return_value = [
+            {"id": 1, "name": "D.1", "module": "M", "kind": "lemma", "statement": "", "type_expr": ""},
+            {"id": 2, "name": "D.2", "module": "M", "kind": "lemma", "statement": "", "type_expr": ""},
+            {"id": 3, "name": "D.3", "module": "M", "kind": "lemma", "statement": "", "type_expr": ""},
+        ]
 
         cse_tree = MagicMock()
         cse_tree.node_count = 10
@@ -839,21 +850,11 @@ class TestSearchByType:
         mock_wl_screen.return_value = [(1, 0.9)]
         mock_score.return_value = [(1, 0.85)]
 
-        structural_results = [_mock_search_result(1, 0.85)]
-        mepo_results = [_mock_search_result(2, 0.7)]
-        fts_results = [_mock_search_result(3, 0.6)]
-
         mock_extract.return_value = {"Coq.Init.Nat.add"}
-        mock_mepo.return_value = mepo_results
+        mock_mepo.return_value = [(2, 0.7)]
         mock_fts_query.return_value = "nat AND nat AND nat"
-        mock_fts_search.return_value = fts_results
 
-        fused = [
-            _mock_search_result(1, 0.9),
-            _mock_search_result(2, 0.5),
-            _mock_search_result(3, 0.4),
-        ]
-        mock_rrf.return_value = fused
+        mock_rrf.return_value = [(1, 0.9), (2, 0.5), (3, 0.4)]
 
         results = search_by_type(ctx, "nat -> nat -> nat", limit=20)
 
@@ -885,7 +886,6 @@ class TestSearchByTypeRealFusion:
     All three must be converted to a compatible format before passing to
     rrf_fuse."""
 
-    @patch("Poule.pipeline.search.fts_search")
     @patch("Poule.pipeline.search.fts_query")
     @patch("Poule.pipeline.search.mepo_select")
     @patch("Poule.pipeline.search.extract_consts")
@@ -904,20 +904,27 @@ class TestSearchByTypeRealFusion:
         mock_extract,
         mock_mepo,
         mock_fts_query,
-        mock_fts_search,
     ):
         """search_by_type must pass the real rrf_fuse without TypeError.
 
-        Channels return:
-        - score_candidates: [(1, 0.85), (2, 0.70)]  (int, float) tuples
-        - mepo_select:      [(2, 0.90), (3, 0.60)]  (int, float) tuples
-        - fts_search:       [SearchResult(...)]       SearchResult objects
-
-        rrf_fuse must handle all three without raising TypeError."""
-        from Poule.models.responses import SearchResult
-
+        All channels return (int, float) tuples — consistent key types for RRF.
+        - score_candidates: [(1, 0.85), (2, 0.70)]
+        - mepo_select:      [(2, 0.90), (3, 0.60)]
+        - reader.search_fts: rows with id and score → [(4, 0.95), (5, 0.80)]
+        """
         parser = _mock_parser()
         ctx = _mock_context(parser=parser)
+        # reader.search_fts returns dicts with id and score
+        ctx.reader.search_fts.return_value = [
+            {"id": 4, "name": "Coq.Init.Nat.add", "module": "Coq.Init.Nat",
+             "kind": "Lemma", "statement": "", "type_expr": "", "score": 0.95},
+            {"id": 5, "name": "Coq.Init.Nat.mul", "module": "Coq.Init.Nat",
+             "kind": "Lemma", "statement": "", "type_expr": "", "score": 0.80},
+        ]
+        ctx.reader.get_declarations_by_ids.return_value = [
+            {"id": i, "name": f"D.{i}", "module": "M", "kind": "lemma", "statement": "", "type_expr": ""}
+            for i in range(1, 6)
+        ]
 
         cse_tree = MagicMock()
         cse_tree.node_count = 10
@@ -926,33 +933,10 @@ class TestSearchByTypeRealFusion:
         mock_wl_hist.return_value = {"label_A": 2}
         mock_wl_screen.return_value = [(1, 0.9), (2, 0.8)]
 
-        # score_candidates returns list[tuple[int, float]]
         mock_score.return_value = [(1, 0.85), (2, 0.70)]
-
-        # mepo_select returns list[tuple[int, float]]
         mock_extract.return_value = {"Coq.Init.Nat.add"}
         mock_mepo.return_value = [(2, 0.90), (3, 0.60)]
-
-        # fts_search returns list[SearchResult]
         mock_fts_query.return_value = "nat AND nat AND nat"
-        mock_fts_search.return_value = [
-            SearchResult(
-                name="Coq.Init.Nat.add",
-                statement="forall n m : nat, ...",
-                type="nat -> nat -> nat",
-                module="Coq.Init.Nat",
-                kind="Lemma",
-                score=0.95,
-            ),
-            SearchResult(
-                name="Coq.Init.Nat.mul",
-                statement="forall n m : nat, ...",
-                type="nat -> nat -> nat",
-                module="Coq.Init.Nat",
-                kind="Lemma",
-                score=0.80,
-            ),
-        ]
 
         # This must not raise TypeError
         results = search_by_type(ctx, "nat -> nat -> nat", limit=20)
@@ -1523,12 +1507,13 @@ class TestResultsSortedDescending:
         mock_extract.return_value = set()
         mock_mepo.return_value = []
         mock_fts_query.return_value = "test"
-        mock_fts_search.return_value = []
-        # RRF returns in non-sorted order
-        mock_rrf.return_value = [
-            _mock_search_result(1, 0.3),
-            _mock_search_result(2, 0.9),
-            _mock_search_result(3, 0.6),
+        ctx.reader.search_fts.return_value = []
+        # RRF returns in non-sorted order — use (int, float) tuples
+        mock_rrf.return_value = [(1, 0.3), (2, 0.9), (3, 0.6)]
+        ctx.reader.get_declarations_by_ids.return_value = [
+            {"id": 1, "name": "D.1", "module": "M", "kind": "lemma", "statement": "", "type_expr": ""},
+            {"id": 2, "name": "D.2", "module": "M", "kind": "lemma", "statement": "", "type_expr": ""},
+            {"id": 3, "name": "D.3", "module": "M", "kind": "lemma", "statement": "", "type_expr": ""},
         ]
 
         results = search_by_type(ctx, "nat -> nat", limit=10)
@@ -2038,10 +2023,16 @@ class TestRRFFusionMissingNeuralChannel:
         mock_wl_screen.return_value = [(1, 0.9)]
         mock_score.return_value = [(1, 0.85)]
         mock_extract.return_value = set()
-        mock_mepo.return_value = [_mock_search_result(2, 0.7)]
+        mock_mepo.return_value = [(2, 0.7)]
         mock_fts_query.return_value = "nat"
-        mock_fts_search.return_value = [_mock_search_result(3, 0.6)]
-        mock_rrf.return_value = [_mock_search_result(1, 0.9)]
+        ctx.reader.search_fts.return_value = [
+            {"id": 3, "name": "D.3", "module": "M", "kind": "lemma",
+             "statement": "", "type_expr": "", "score": 0.6},
+        ]
+        mock_rrf.return_value = [(1, 0.9)]
+        ctx.reader.get_declarations_by_ids.return_value = [
+            {"id": 1, "name": "D.1", "module": "M", "kind": "lemma", "statement": "", "type_expr": ""},
+        ]
 
         search_by_type(ctx, "nat -> nat", limit=10)
 
@@ -2052,7 +2043,6 @@ class TestRRFFusionMissingNeuralChannel:
         assert len(ranked_lists) == 3
 
     @patch("Poule.pipeline.search.rrf_fuse")
-    @patch("Poule.pipeline.search.fts_search")
     @patch("Poule.pipeline.search.fts_query")
     @patch("Poule.pipeline.search.mepo_select")
     @patch("Poule.pipeline.search.extract_consts")
@@ -2071,7 +2061,6 @@ class TestRRFFusionMissingNeuralChannel:
         mock_extract,
         mock_mepo,
         mock_fts_query,
-        mock_fts_search,
         mock_rrf,
     ):
         """When ctx.neural_encoder is present but ctx.embedding_index is None,
@@ -2080,6 +2069,10 @@ class TestRRFFusionMissingNeuralChannel:
         ctx = _mock_context(parser=parser)
         ctx.neural_encoder = MagicMock()  # encoder exists
         ctx.embedding_index = None         # but index does not
+        ctx.reader.search_fts.return_value = [
+            {"id": 2, "name": "D.2", "module": "M", "kind": "lemma",
+             "statement": "", "type_expr": "", "score": 0.6},
+        ]
 
         cse_tree = MagicMock()
         cse_tree.node_count = 10
@@ -2089,10 +2082,12 @@ class TestRRFFusionMissingNeuralChannel:
         mock_wl_screen.return_value = []
         mock_score.return_value = []
         mock_extract.return_value = set()
-        mock_mepo.return_value = [_mock_search_result(1, 0.7)]
+        mock_mepo.return_value = [(1, 0.7)]
         mock_fts_query.return_value = "nat"
-        mock_fts_search.return_value = [_mock_search_result(2, 0.6)]
-        mock_rrf.return_value = [_mock_search_result(1, 0.8)]
+        mock_rrf.return_value = [(1, 0.8)]
+        ctx.reader.get_declarations_by_ids.return_value = [
+            {"id": 1, "name": "D.1", "module": "M", "kind": "lemma", "statement": "", "type_expr": ""},
+        ]
 
         search_by_type(ctx, "nat -> nat", limit=10)
 
@@ -2102,7 +2097,6 @@ class TestRRFFusionMissingNeuralChannel:
         assert len(ranked_lists) == 3
 
     @patch("Poule.pipeline.search.rrf_fuse")
-    @patch("Poule.pipeline.search.fts_search")
     @patch("Poule.pipeline.search.fts_query")
     @patch("Poule.pipeline.search.mepo_select")
     @patch("Poule.pipeline.search.extract_consts")
@@ -2121,7 +2115,6 @@ class TestRRFFusionMissingNeuralChannel:
         mock_extract,
         mock_mepo,
         mock_fts_query,
-        mock_fts_search,
         mock_rrf,
     ):
         """Results are still valid (non-empty if data exists) when the neural
@@ -2130,6 +2123,7 @@ class TestRRFFusionMissingNeuralChannel:
         ctx = _mock_context(parser=parser)
         ctx.neural_encoder = None
         ctx.embedding_index = None
+        ctx.reader.search_fts.return_value = []
 
         cse_tree = MagicMock()
         cse_tree.node_count = 10
@@ -2141,9 +2135,11 @@ class TestRRFFusionMissingNeuralChannel:
         mock_extract.return_value = set()
         mock_mepo.return_value = []
         mock_fts_query.return_value = "nat"
-        mock_fts_search.return_value = []
-        fused = [_mock_search_result(1, 0.85), _mock_search_result(2, 0.7)]
-        mock_rrf.return_value = fused
+        mock_rrf.return_value = [(1, 0.85), (2, 0.7)]
+        ctx.reader.get_declarations_by_ids.return_value = [
+            {"id": 1, "name": "D.1", "module": "M", "kind": "lemma", "statement": "", "type_expr": ""},
+            {"id": 2, "name": "D.2", "module": "M", "kind": "lemma", "statement": "", "type_expr": ""},
+        ]
 
         results = search_by_type(ctx, "nat -> nat", limit=10)
 
@@ -2654,3 +2650,65 @@ class TestSearchReturnsSearchResult:
         assert r.module == "Coq.Arith.PeanoNat"
         assert r.kind == "theorem"
         assert r.score == 0.85
+
+
+class TestSearchByTypeRRFKeyConsistency:
+    """RRF fusion requires all channels to use (decl_id, score) pairs with
+    integer keys (fusion spec §4.5). When structural and FTS channels both
+    rank the same declaration, RRF must merge them into ONE entry with a
+    combined score — not two separate entries with different key types."""
+
+    @patch("Poule.pipeline.search.rrf_fuse")
+    @patch("Poule.pipeline.search.mepo_select")
+    @patch("Poule.pipeline.search.extract_consts")
+    @patch("Poule.pipeline.search.score_candidates")
+    @patch("Poule.pipeline.search.wl_screen")
+    @patch("Poule.pipeline.search.wl_histogram")
+    @patch("Poule.pipeline.search.cse_normalize")
+    @patch("Poule.pipeline.search.coq_normalize")
+    def test_fts_channel_uses_decl_id_keys_for_rrf(
+        self,
+        mock_coq,
+        mock_cse,
+        mock_wl_hist,
+        mock_wl_screen,
+        mock_score,
+        mock_extract,
+        mock_mepo,
+        mock_rrf,
+    ):
+        """The FTS channel must feed (int decl_id, score) pairs into RRF,
+        not (str name, score) pairs. This ensures RRF can aggregate the same
+        declaration across channels."""
+        parser = _mock_parser()
+        ctx = _mock_context(parser=parser)
+        # reader.search_fts returns rows with "id" and "score"
+        ctx.reader.search_fts.return_value = [
+            {"id": 1, "name": "Coq.Init.Nat.add_0_r", "module": "M",
+             "kind": "lemma", "statement": "", "type_expr": "", "score": 0.9},
+        ]
+
+        cse_tree = MagicMock()
+        cse_tree.node_count = 10
+        mock_coq.return_value = MagicMock()
+        mock_cse.return_value = cse_tree
+        mock_wl_hist.return_value = {}
+        mock_wl_screen.return_value = [(1, 0.8)]
+        mock_score.return_value = [(1, 0.85)]
+        mock_extract.return_value = set()
+        mock_mepo.return_value = []
+        mock_rrf.return_value = [(1, 0.05)]
+
+        search_by_type(ctx, "forall n : nat, n + 0 = n", limit=10)
+
+        # Inspect the ranked_lists passed to rrf_fuse
+        mock_rrf.assert_called_once()
+        ranked_lists = mock_rrf.call_args[0][0]
+        fts_list = ranked_lists[2]  # Third channel is FTS
+
+        # FTS channel must use integer decl_id keys, not string names
+        for item in fts_list:
+            key = item[0]
+            assert isinstance(key, int), (
+                f"FTS channel key must be int (decl_id), got {type(key).__name__}: {key!r}"
+            )
