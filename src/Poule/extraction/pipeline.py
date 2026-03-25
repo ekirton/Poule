@@ -948,13 +948,16 @@ def run_extraction(
                     r.has_proof_body = None
                 batch = []
 
-                # Restart backend when RSS exceeds threshold.
+            # Check RSS every 50 declarations, independent of batch flush.
+            # process_declaration calls backend.locate() per uncached symbol,
+            # so coq-lsp RSS can grow rapidly between batch boundaries.
+            if idx % 50 == 0:
                 rss = backend._get_child_rss_bytes()
                 if rss > _LSP_RSS_RESTART_THRESHOLD:
                     logger.debug(
-                        "Restarting coq-lsp during Pass 1 "
+                        "Restarting coq-lsp during Pass 1 at decl %d/%d "
                         "(RSS=%.0f MiB)",
-                        rss / (1024 * 1024),
+                        idx, total_decls, rss / (1024 * 1024),
                     )
                     backend.stop()
                     backend.start()
