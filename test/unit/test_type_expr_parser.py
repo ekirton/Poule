@@ -412,6 +412,72 @@ class TestInfixOperators:
             [App(Const("+"), [Const("n"), Const("0")]), Const("n")],
         )
 
+    def test_scalar_mul_operator(self):
+        """n *: X — stdpp scalar multiplication (§4.2, §4.3)."""
+        result = self.parser.parse("n *: X")
+        assert result == App(Const("*:"), [Const("n"), Const("X")])
+
+    def test_scalar_mul_precedence(self):
+        """n *: X = m *: Y  ≡  (n *: X) = (m *: Y) — *: at BP 60, = at BP 30."""
+        result = self.parser.parse("n *: X = m *: Y")
+        assert result == App(
+            Const("="),
+            [
+                App(Const("*:"), [Const("n"), Const("X")]),
+                App(Const("*:"), [Const("m"), Const("Y")]),
+            ],
+        )
+
+    def test_triple_colon_operator(self):
+        """x ::: v — stdpp vector cons (§4.2, §4.3)."""
+        result = self.parser.parse("x ::: v")
+        assert result == App(Const(":::"), [Const("x"), Const("v")])
+
+    def test_triple_colon_right_assoc(self):
+        """x ::: y ::: z  ≡  x ::: (y ::: z) — right-associative at BP 55."""
+        result = self.parser.parse("x ::: y ::: z")
+        assert result == App(
+            Const(":::"),
+            [Const("x"), App(Const(":::"), [Const("y"), Const("z")])],
+        )
+
+    def test_triple_colon_in_equality(self):
+        """x ::: v = y ::: w — ::: at BP 55, = at BP 30."""
+        result = self.parser.parse("x ::: v = y ::: w")
+        assert result == App(
+            Const("="),
+            [
+                App(Const(":::"), [Const("x"), Const("v")]),
+                App(Const(":::"), [Const("y"), Const("w")]),
+            ],
+        )
+
+    def test_gmultiset_scalar_mul_full(self):
+        """Real stdpp type: S n *: X = n *: X (after binder stripping)."""
+        result = self.parser.parse("S n *: X = n *: X")
+        assert result == App(
+            Const("="),
+            [
+                App(Const("*:"), [App(Const("S"), [Const("n")]), Const("X")]),
+                App(Const("*:"), [Const("n"), Const("X")]),
+            ],
+        )
+
+    def test_vcons_inj_full(self):
+        """Real stdpp type: x ::: v = y ::: w → x = y (after binder stripping)."""
+        result = self.parser.parse("x ::: v = y ::: w -> x = y")
+        assert result == Prod(
+            "_",
+            App(
+                Const("="),
+                [
+                    App(Const(":::"), [Const("x"), Const("v")]),
+                    App(Const(":::"), [Const("y"), Const("w")]),
+                ],
+            ),
+            App(Const("="), [Const("x"), Const("y")]),
+        )
+
 
 # ---------------------------------------------------------------------------
 # 7. De Bruijn indices
