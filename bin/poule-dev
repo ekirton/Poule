@@ -250,11 +250,11 @@ if [ ! -f "$DATA_DIR/index.db" ]; then
             -v "$DATA_DIR:/data" \
             --entrypoint sh \
             "$DEV_IMAGE" \
-            -c 'uv run --project /poule python -m Poule.cli download-index --output /data/index.db'; then
+            -c 'uv run --project /poule python -m Poule.cli download-index --libraries-dir /data'; then
             echo "Index downloaded successfully."
         else
             echo "Warning: Index download failed. You can retry later from inside the container:"
-            echo "  uv run --project /poule python -m Poule.cli download-index --output ~/data/index.db"
+            echo "  uv run --project /poule python -m Poule.cli download-index --libraries-dir ~/data"
         fi
     fi
     echo ""
