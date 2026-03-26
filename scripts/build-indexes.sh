@@ -95,7 +95,7 @@ fi
 # --- Compute neural embeddings (optional) ---
 # Runs only if a model checkpoint exists. Skipped silently otherwise.
 
-MODEL_DIR="${POULE_MODEL_DIR:-${HOME}/.local/share/poule/models}"
+MODEL_DIR="${POULE_MODEL_DIR:-${OUTPUT_DIR}}"
 MODEL_PATH="${MODEL_DIR}/neural-premise-selector.onnx"
 VOCAB_PATH="${MODEL_DIR}/coq-vocabulary.json"
 
