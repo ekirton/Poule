@@ -73,12 +73,12 @@ Token kinds:
 | `RRECORD` | `\|}` | |
 | `PIPE` | <code>&#124;</code> | |
 | `UNDERSCORE` | Standalone `_` (not followed by alphanumeric/`_`/`'`) | |
-| `INFIX_OP` | Infix operator | `+`, `*`, `^`, `&`, `=`, `==`, `<`, `<=`, `>=`, `<>`, `<->`, `==>`, `\/`, `/\`, `\|\|`, `&&`, `=?`, `?=`, `++`, `::` |
+| `INFIX_OP` | Infix operator | `+`, `*`, `*:`, `^`, `&`, `=`, `==`, `<`, `<=`, `>=`, `<>`, `<->`, `==>`, `\/`, `/\`, `\|\|`, `&&`, `=?`, `?=`, `++`, `::`, `:::` |
 | `EOF` | End of input | |
 
 The standalone `_` token (UNDERSCORE) is distinguished from `_`-prefixed identifiers: `_` followed by alphanumeric, `_`, or `'` is an IDENT; `_` alone or followed by whitespace/punctuation is UNDERSCORE. Identifiers may start with `'` to support MathComp notation prefixes (e.g., `'M_`, `'End`).
 
-Multi-character operators (`<->`, `==>`, `->`, `=>`, `:=`, `::`, `++`, `==`, `<=`, `>=`, `<>`, `<=?`, `=?`, `?=`, `||`, `&&`, `\/`, `/\`, `{|`, `|}`) shall be recognized before single-character operators. Three-character operators (`<->`, `==>`, `<=?`) shall be recognized before two-character operators.
+Multi-character operators (`:::`, `<->`, `==>`, `->`, `=>`, `:=`, `::`, `*:`, `++`, `==`, `<=`, `>=`, `<>`, `<=?`, `=?`, `?=`, `||`, `&&`, `\/`, `/\`, `{|`, `|}`) shall be recognized before single-character operators. Three-character operators (`:::`, `<->`, `==>`, `<=?`) shall be recognized before two-character operators.
 
 #### Preprocessing
 
@@ -104,8 +104,8 @@ The parser shall use Pratt (top-down operator precedence) parsing with the follo
 |--------------|-----------|---------------|
 | 70 | `<`, `<=`, `>`, `>=` | left |
 | 65 | `^`, `\/`, `/\` | left |
-| 60 | `*` | left |
-| 55 | `++`, `::` | right |
+| 60 | `*`, `*:` | left |
+| 55 | `++`, `::`, `:::` | right |
 | 50 | `+`, `-` | left |
 | 40 | `&`, `&&` | left |
 | 35 | `\|\|` | left |

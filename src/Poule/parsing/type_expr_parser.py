@@ -81,7 +81,9 @@ _INFIX_BP: dict[str, tuple[int, int]] = {
     "-": (50, 51),
     "++": (55, 54),
     "::": (55, 54),
+    ":::": (55, 54),
     "*": (60, 61),
+    "*:": (60, 61),
     "^": (65, 66),
     "\\/": (65, 66),
     "/\\": (65, 66),
@@ -168,6 +170,10 @@ def tokenize(text: str) -> list[Token]:
                 tokens.append(Token(TokenKind.INFIX_OP, "==>", pos))
                 i += 3
                 continue
+            if three == ":::":
+                tokens.append(Token(TokenKind.INFIX_OP, ":::", pos))
+                i += 3
+                continue
             if three in ("<=?", "=?b", "<?b"):
                 # Decidable comparison notations — treat as identifiers
                 tokens.append(Token(TokenKind.IDENT, three, pos))
@@ -191,6 +197,10 @@ def tokenize(text: str) -> list[Token]:
                 continue
             if two == "::":
                 tokens.append(Token(TokenKind.INFIX_OP, "::", pos))
+                i += 2
+                continue
+            if two == "*:":
+                tokens.append(Token(TokenKind.INFIX_OP, "*:", pos))
                 i += 2
                 continue
             if two == "++":
