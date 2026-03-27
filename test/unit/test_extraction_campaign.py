@@ -332,6 +332,27 @@ class TestTheoremEnumeration:
         assert "Bad.bad_thm" in names
         assert "Good.good_thm" in names
 
+    def test_functor_instantiated_excluded(self, tmp_path):
+        """Declarations with has_proof_body=2 are excluded from the plan."""
+        from Poule.extraction.campaign import build_campaign_plan
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        idx = _make_index(tmp_path, [
+            {"name": "Tactic.Private.I1.foo", "module": "Tactic",
+             "kind": "lemma", "has_proof_body": 2},
+            {"name": "Tactic.own_lemma", "module": "Tactic",
+             "kind": "lemma", "has_proof_body": 1},
+        ])
+
+        plan = build_campaign_plan(
+            [str(proj)], scope_filter=None, index_db_path=idx,
+        )
+
+        names = [t[2] for t in plan.targets]
+        assert "Tactic.own_lemma" in names
+        assert "Tactic.Private.I1.foo" not in names
+
 
 class TestScopeFiltering:
     """Scope filtering restricts which theorems are extracted (§4.1 P1)."""

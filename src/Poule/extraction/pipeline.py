@@ -453,6 +453,9 @@ def _check_line_anchored(v_text: str, declared_line: int) -> bool:
     return False
 
 
+_MODULE_ALIAS_RE = re.compile(r"^\s*Module\s+\w+\s*:=")
+
+
 def detect_proof_body(
     name: str,
     kind: str,
@@ -462,10 +465,16 @@ def detect_proof_body(
     declared_library: str | None = None,
     lib_root: Path | None = None,
 ) -> int:
-    """Return 1 if *name* has a tactic proof body, else 0.
+    """Return 0, 1, or 2 indicating proof-body status.
 
-    Uses three signals evaluated in order:
+    0 = no tactic proof body.
+    1 = has tactic proof body extractable from the source file.
+    2 = has tactic proof body but in a different source file
+        (functor-instantiated via ``Module X := Y Z``).
 
+    Uses four signals evaluated in order:
+
+    0. **Module alias line**: ``declared_line`` resolves to ``Module X :=`` → 2.
     1. **Opacity** (About metadata): ``"opaque"`` → 1.
     2. **Vernacular kind** (Coq ≤8.x): ``"lemma"``/``"theorem"`` → 1.
     3. **Line-anchored .v check**: read the source line at *declared_line*
@@ -475,6 +484,18 @@ def detect_proof_body(
     """
     if kind not in ("lemma", "theorem", "definition", "instance"):
         return 0
+
+    # Signal 0: functor-instantiated declarations have proofs elsewhere.
+    if declared_line is not None:
+        v_path = _resolve_v_path(declared_library, lib_root)
+        if v_path is not None:
+            v_text = _get_v_text(v_path)
+            if v_text is not None:
+                lines = v_text.splitlines()
+                if 1 <= declared_line <= len(lines):
+                    line = lines[declared_line - 1]
+                    if _MODULE_ALIAS_RE.match(line):
+                        return 2
 
     # Signal 1: opaque declarations always have tactic proof bodies.
     if opacity == "opaque":
