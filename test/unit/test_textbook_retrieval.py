@@ -553,6 +553,34 @@ class TestEducationRAGSearch:
     def test_is_available_true_when_loaded(self, rag_with_data):
         assert rag_with_data.is_available()
 
+    def test_search_hybrid_fts_surfaces_keyword_match(self, tmp_path):
+        """FTS5 should surface a chunk that embedding search would miss."""
+        db_path = tmp_path / "hybrid.db"
+        EducationStorage.create(db_path)
+        chunks = [
+            _make_chunk("Unrelated content about sorting algorithms", section="Sorting"),
+            _make_chunk("The induction tactic proves goals about inductive types", section="Proof by Induction", chapter="Induction"),
+        ]
+        ids = EducationStorage.write_chunks(db_path, chunks)
+
+        # Embeddings: make chunk 0 (sorting) close to query, chunk 1 (induction) far away
+        # This simulates the embedding model failing to rank the induction chunk
+        vecs = _random_embedding_matrix(2, 384, seed=42)
+        EducationStorage.write_embeddings(db_path, ids, list(vecs))
+
+        mock_encoder = Mock(spec=EducationEncoder)
+        mock_encoder.encode.return_value = vecs[0]  # query vector close to sorting chunk
+        mock_encoder.model_hash.return_value = "test"
+
+        with patch.object(EducationEncoder, "load", return_value=mock_encoder):
+            rag = EducationRAG(db_path, tmp_path / "m.onnx", tmp_path / "t.json")
+            rag._encoder = mock_encoder
+
+        # With hybrid search, FTS5 should boost the induction chunk
+        results = rag.search("induction", limit=2)
+        texts = [r.text for r in results]
+        assert any("induction" in t.lower() for t in texts)
+
 
 class TestEducationRAGUnavailable:
     """EducationRAG handles missing resources gracefully."""

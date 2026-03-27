@@ -171,3 +171,37 @@ class EducationStorage:
         matrix = np.stack(vectors).astype(np.float32)
         id_map = np.array(ids, dtype=np.int64)
         return matrix, id_map
+
+    @staticmethod
+    def search_fts(
+        db_path: Path, query: str, limit: int
+    ) -> list[tuple[int, float]]:
+        """Execute FTS5 search against the education chunks_fts index.
+
+        Returns ``(chunk_id, normalized_bm25_score)`` pairs sorted by relevance.
+        BM25 column weights: ``text=1.0, section_title=10.0, chapter=10.0``.
+        """
+        if not query or not query.strip():
+            return []
+        conn = sqlite3.connect(str(db_path))
+        try:
+            rows = conn.execute(
+                "SELECT rowid, bm25(chunks_fts, 1.0, 10.0, 10.0) AS rank "
+                "FROM chunks_fts WHERE chunks_fts MATCH ? "
+                "ORDER BY rank LIMIT ?",
+                (query, limit),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        finally:
+            conn.close()
+
+        if not rows:
+            return []
+
+        # BM25 returns negative values where lower is better; negate and normalize.
+        negated = [-row[1] for row in rows]
+        max_score = max(negated)
+        if max_score <= 0:
+            return [(row[0], 1.0) for row in rows]
+        return [(row[0], neg / max_score) for row, neg in zip(rows, negated)]
