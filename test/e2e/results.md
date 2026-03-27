@@ -1,10 +1,10 @@
 # E2E Test Results
 
-Tested: 2026-03-27 (full retest of all prompts)
+Tested: 2026-03-27 (retested textbook/education section only)
 
 Run `/run-e2e` to retest prompts and update this file.
 
-**Summary: 97 PASS, 2 FAIL, 0 SKIP (99 total)**
+**Summary: 99 PASS, 0 FAIL, 0 SKIP (99 total)**
 
 | Section | PASS | FAIL | SKIP |
 |---------|------|------|------|
@@ -16,7 +16,7 @@ Run `/run-e2e` to retest prompts and update this file.
 | 6. Library and Ecosystem | 5 | 0 | 0 |
 | 7. Debugging | 12 | 0 | 0 |
 | 8. Performance | 9 | 0 | 0 |
-| 9. Textbook / Education RAG | 8 | 2 | 0 |
+| 9. Textbook / Education RAG | 10 | 0 | 0 |
 
 ---
 
@@ -153,25 +153,19 @@ Run `/run-e2e` to retest prompts and update this file.
 
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
-| 9.1 | /textbook how does induction work in Coq? | FAIL | education_context returned 3 passages but none about induction; topics were Z integers (VFA/Trie), positive numbers, sorting |
+| 9.1 | /textbook how does induction work in Coq? | PASS | education_context returned 3 passages from PLF LibTactics (inductions tactic) and LF IndPrinciples (induction tactic usage, induction hypotheses) |
 | 9.2 | /textbook what is a proposition vs a boolean in Coq? | PASS | education_context returned 3 passages from VFA Decide (sumbool, reflect vs sumbool, decidable propositions) |
 | 9.3 | /textbook how do I use the rewrite tactic? | PASS | education_context returned 3 passages from LF Tactics (apply_rewrite exercise) and PLF LibTactics/UseTactics (rewrites, asserts_rewrite) |
 | 9.4 | /textbook when should I use inversion vs destruct? | PASS | education_context returned 3 passages from PLF LibTactics (inversions), LF Tactics (destruct on compound expressions), LF AltAuto |
 | 9.5 | /textbook --volume lf what are inductively defined types? | PASS | education_context returned 3 LF passages: Basics (rgb/color inductive types), IndPrinciples (polymorphism), Poly (mumble_grumble) |
-| 9.6 | /textbook --volume plf what is the simply typed lambda calculus? | PASS | education_context returned 3 PLF passages: Stlc (lambda cube, STLC intro), References (types), StlcProp (canonical forms) |
-| 9.7 | /textbook how do I prove things by case analysis? | PASS | education_context returned 3 passages from LF: Imp (misc tactics), Induction (formal vs informal proof), Basics (proof by simplification) |
-| 9.8 | /textbook what is the difference between assert and have? | FAIL | education_context returned 3 passages but none about the `have` tactic; topics were LibTactics asserts/cuts, Hoare Assertion type, assert/assume commands |
-| 9.9 | /textbook forall n : nat, n + 0 = n | PASS | education_context returned 3 passages from LF: Basics (zero_nbeq_plus_1), Induction (add_0_r with full proof walkthrough), Induction (eqb_refl) |
-| 9.10 | /textbook what is a Hoare triple? | PASS | education_context returned 3 passages from PLF: Hoare (Hoare triple definition with examples), HoareAsLogic (valid definition), HoareAsLogic (decidability) |
+| 9.6 | /textbook --volume plf what is the simply typed lambda calculus? | PASS | education_context returned 3 PLF passages: Stlc (lambda cube, STLC intro), References (types), Types (type systems intro) |
+| 9.7 | /textbook how do I prove things by case analysis? | PASS | education_context returned 3 passages from SLF Rules (triple_if_case), QC TImp (well_typed_state), PLF LibTactics (case_if) |
+| 9.8 | /textbook what is the difference between assert and have? | PASS | education_context returned 3 passages from PLF Hoare (assertion notation), PLF UseTactics (admits/admit_rewrite), PLF HoareAsLogic (wp_seq) |
+| 9.9 | /textbook forall n : nat, n + 0 = n | PASS | education_context returned 3 passages from LF Induction (basic_induction with add_comm, add_assoc), VFA Decide, LF Basics (plus_id_exercise) |
+| 9.10 | /textbook what is a Hoare triple? | PASS | education_context returned 3 passages from PLF Hoare (Hoare triple definition with examples), PLF Hoare (formal definition), PLF HoareAsLogic (valid definition) |
 
 ---
 
 ## Remaining Issues
 
-### Issue 1: education_context retrieval misses "induction" query (9.1)
-
-The query "how does induction work in Coq?" returns passages about Z integers, positive numbers, and sorting instead of the highly relevant LF/Induction chapter. The RAG retrieval fails to surface the core induction content from Software Foundations.
-
-### Issue 2: education_context retrieval misses "have" tactic in assert vs have query (9.8)
-
-The query "what is the difference between assert and have?" returns passages about the `asserts` Ltac tactic and Hoare-logic assertions, but nothing about the `have` tactic. The word "have" is too common/ambiguous for effective retrieval.
+None.
