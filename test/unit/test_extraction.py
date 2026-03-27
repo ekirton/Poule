@@ -3950,6 +3950,66 @@ class TestDetectProofBodySignal3LineAnchored:
         assert result == 1
 
 
+class TestDetectProofBodyCorelibAlias:
+    """Signal 3 with Corelib.* declared_library resolves to Stdlib/ paths
+    (Rocq 9.x compatibility — spec §4.4 step 9)."""
+
+    def _make_source(self, tmp_path, lib_name, content):
+        """Helper: create a .v file at user-contrib/<lib_name>/<leaf>.v."""
+        parts = lib_name.split(".")
+        source_dir = tmp_path / "user-contrib" / "/".join(parts[:-1])
+        source_dir.mkdir(parents=True, exist_ok=True)
+        v_file = source_dir / f"{parts[-1]}.v"
+        v_file.write_text(content)
+        return tmp_path / "user-contrib"
+
+    def test_corelib_declared_library_resolves_to_stdlib(self, tmp_path):
+        """GIVEN declared_library='Corelib.Init.Nat' but .v file is at Stdlib/Init/Nat.v
+        WHEN detect_proof_body runs
+        THEN the .v file is found via Corelib→Stdlib alias and has_proof_body=1.
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        # File is at Stdlib/Init/Nat.v (Rocq 9.x layout)
+        lib_root = self._make_source(tmp_path, "Stdlib.Init.Nat", (
+            "Lemma addn0 : forall n, n + 0 = n.\n"
+            "Proof. intros. ring. Qed.\n"
+        ))
+        result = detect_proof_body(
+            "Nat.addn0", "definition",
+            opacity="transparent", declared_line=1,
+            # About reports Corelib.Init.Nat but file is at Stdlib/Init/Nat.v
+            declared_library="Corelib.Init.Nat",
+            lib_root=lib_root,
+        )
+        assert result == 1
+
+    def test_corelib_alias_in_refine_kind(self, tmp_path):
+        """refine_kind must also resolve Corelib→Stdlib for kind recovery."""
+        from Poule.extraction.pipeline import refine_kind
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Init.Nat", (
+            "Lemma addn0 : forall n, n + 0 = n.\n"
+            "Proof. intros. ring. Qed.\n"
+        ))
+        result = refine_kind(
+            "definition",
+            declared_line=1,
+            declared_library="Corelib.Init.Nat",
+            lib_root=lib_root,
+        )
+        assert result == "lemma"
+
+    def test_resolve_v_path_corelib_to_stdlib(self, tmp_path):
+        """_resolve_v_path resolves Corelib.X.Y to Stdlib/X/Y.v."""
+        from Poule.extraction.pipeline import _resolve_v_path
+
+        lib_root = self._make_source(tmp_path, "Stdlib.Init.Nat", "")
+        result = _resolve_v_path("Corelib.Init.Nat", lib_root)
+        assert result is not None
+        assert "Stdlib" in str(result)
+
+
 class TestDetectProofBodyKindFilter:
     """Kind filter: excluded kinds get has_proof_body=0 (§4.4 step 9)."""
 
