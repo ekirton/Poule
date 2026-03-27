@@ -431,9 +431,6 @@ Retrieve and explain Coq concepts using passages from Software Foundations.
 
 **Ask about a core concept:**
 ```
-/textbook how does induction work in Coq?
-```
-```
 /textbook what is a proposition vs a boolean in Coq?
 ```
 
@@ -456,9 +453,6 @@ Retrieve and explain Coq concepts using passages from Software Foundations.
 **Ask about proof techniques:**
 ```
 /textbook how do I prove things by case analysis?
-```
-```
-/textbook what is the difference between assert and have?
 ```
 
 **Search for Coq expressions:**

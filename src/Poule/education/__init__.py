@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import logging
 import os
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 
+from Poule.education.fts import education_fts_query
 from Poule.education.models import EducationSearchResult
 from Poule.education.storage import EducationStorage
 from Poule.neural.index import EmbeddingIndex
 
 logger = logging.getLogger(__name__)
+
+# FTS score weight relative to embedding score in additive fusion.
+# Higher values make keyword/title matches dominate over embedding similarity.
+_FTS_WEIGHT = 2.0
 
 
 class EducationRAG:
@@ -24,6 +30,7 @@ class EducationRAG:
         model_path: Path,
         tokenizer_path: Path,
     ):
+        self._db_path = db_path
         self._encoder = None
         self._index = None
         self._chunks = {}
@@ -60,13 +67,33 @@ class EducationRAG:
         if not self.is_available():
             return []
 
+        candidate_k = limit * 4
+
+        # Channel 1: embedding cosine similarity
         query_vec = self._encoder.encode(query)
-        # Retrieve more candidates than needed for filtering
-        k = limit * 3 if volume_filter else limit
-        raw_results = self._index.search(query_vec, k)
+        k_embed = candidate_k * 2 if volume_filter else candidate_k
+        embed_results = self._index.search(query_vec, k_embed)
+
+        # Channel 2: FTS5 keyword search (BM25 with chapter/title boosting)
+        # Use a larger candidate pool to ensure chapter-title matches surface.
+        fts_query_str = education_fts_query(query)
+        fts_results = EducationStorage.search_fts(
+            self._db_path, fts_query_str, limit=candidate_k * 2,
+        )
+
+        # Additive score fusion: embed_score + weight * bm25_score.
+        # Both scores are in [0, 1]. Using scores (not ranks) preserves
+        # the large BM25 gap between chapter-title matches and text matches.
+        scores: defaultdict[int, float] = defaultdict(float)
+        for chunk_id, embed_score in embed_results:
+            scores[chunk_id] += embed_score
+        for chunk_id, bm25_score in fts_results:
+            scores[chunk_id] += _FTS_WEIGHT * bm25_score
+
+        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
         results = []
-        for chunk_id, score in raw_results:
+        for chunk_id, fused_score in ranked:
             chunk = self._chunks.get(chunk_id)
             if chunk is None:
                 continue
@@ -89,7 +116,7 @@ class EducationRAG:
                     text=chunk.text,
                     code_blocks=chunk.code_blocks,
                     metadata=chunk.metadata,
-                    score=float(score),
+                    score=float(fused_score),
                     location=location,
                     browser_path=browser_path,
                 )

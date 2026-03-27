@@ -418,5 +418,11 @@
     "expected_volume": "lf",
     "expected_chapter": "Basics",
     "expected_section": "Modules"
+  },
+  {
+    "query": "what is the difference between assert and have",
+    "expected_volume": "plf",
+    "expected_chapter": "LibTactics",
+    "expected_section": null
   }
 ]

@@ -1,10 +1,10 @@
 # E2E Test Results
 
-Tested: 2026-03-26 (retested 1.2 — search_by_symbols co-occurrence fix)
+Tested: 2026-03-27 (full retest of all prompts)
 
 Run `/run-e2e` to retest prompts and update this file.
 
-**Summary: 99 PASS, 0 FAIL, 0 SKIP (99 total)**
+**Summary: 97 PASS, 2 FAIL, 0 SKIP (99 total)**
 
 | Section | PASS | FAIL | SKIP |
 |---------|------|------|------|
@@ -16,7 +16,7 @@ Run `/run-e2e` to retest prompts and update this file.
 | 6. Library and Ecosystem | 5 | 0 | 0 |
 | 7. Debugging | 12 | 0 | 0 |
 | 8. Performance | 9 | 0 | 0 |
-| 9. Textbook / Education RAG | 10 | 0 | 0 |
+| 9. Textbook / Education RAG | 8 | 2 | 0 |
 
 ---
 
@@ -24,19 +24,19 @@ Run `/run-e2e` to retest prompts and update this file.
 
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
-| 1.1 | Find lemmas about list reversal being involutive | PASS | search_by_name returned Stdlib.Lists.List.rev_involutive and stdpp.list_basics.reverse_involutive |
-| 1.2 | Which lemmas in stdlib mention both Nat.add and Nat.mul? | PASS | search_by_symbols returned named declaration results including Nat_as_OT.div2_odd referencing both symbols |
-| 1.3 | Search for lemmas with type forall n : nat, n + 0 = n | PASS | search_by_type returned results including nat_cancel.make_nat_add_0_r; related add-zero results present |
-| 1.4 | Find a lemma of type List.map f (List.map g l) = List.map (fun x => f (g x)) l | PASS | search_by_type found Stdlib.Lists.List.map_map at rank 5 with matching type |
-| 1.5 | Find all commutativity lemmas in MathComp — anything matching _ * _ = _ * _ | PASS | search_by_structure returned multiplication equality results (f_equal2_mult, mul_divide_mono) |
-| 1.6 | Find lemmas concluding with _ + _ <= _ | PASS | search_by_structure returned Nat.add_le_mono and add_le_mono_r results |
-| 1.7 | What rewrites exist for Nat.add n 0? | PASS | search_by_name returned N.add_0_r, Nat_as_DT.add_0_r, and many add-zero rewrite variants |
-| 1.8 | What is the stdlib name for associativity of Z.add? | PASS | search_by_name returned Stdlib.ZArith.BinInt.Z.add_assoc as the canonical name |
-| 1.9 | Does Coquelicot already have the intermediate value theorem? | PASS | search_by_name returned Coquelicot.RInt_analysis.IVT_gen_consistent and MathComp poly_ivt |
-| 1.10 | I need a lemma that says filtering a list twice is the same as filtering once | PASS | search_by_name returned filter-related results (filter_app, filter_rev, list_filter_sig_filter) |
+| 1.1 | Find lemmas about list reversal being involutive | PASS | search_by_name returned Stdlib.Lists.List.rev_involutive and related results |
+| 1.2 | Which lemmas in stdlib mention both Nat.add and Nat.mul? | PASS | search_by_symbols returned results with Nat.add and Nat.mul co-occurrence including Nat.testbit_succ_r |
+| 1.3 | Search for lemmas with type forall n : nat, n + 0 = n | PASS | search_by_type returned add-zero identity results including Nat.pred_succ, N.sub_0_r, Pos.mul_1_r |
+| 1.4 | Find a lemma of type List.map f (List.map g l) = List.map (fun x => f (g x)) l | PASS | search_by_type returned list-map composition lemmas including flat_map_concat_map |
+| 1.5 | Find all commutativity lemmas in MathComp — anything matching _ * _ = _ * _ | PASS | search_by_structure returned multiplication equality results (f_equal2_mult, Nat.pow_2_r) |
+| 1.6 | Find lemmas concluding with _ + _ <= _ | PASS | search_by_structure returned addition inequality lemmas (Nat.le_sub_l and related results) |
+| 1.7 | What rewrites exist for Nat.add n 0? | PASS | search_by_name returned Z.add_0_r, Nat_as_DT.add_0_r, and many add-zero rewrite variants |
+| 1.8 | What is the stdlib name for associativity of Z.add? | PASS | search_by_name returned Stdlib.Numbers.Integer.Binary.ZBinary.Z.add_assoc as the canonical name |
+| 1.9 | Does Coquelicot already have the intermediate value theorem? | PASS | search_by_name returned IVT-related results including MathComp poly_ivt |
+| 1.10 | I need a lemma that says filtering a list twice is the same as filtering once | PASS | search_by_name returned stdpp.list_basics.list_filter_filter_l/r and list_filter_filter results |
 | 1.11 | Open a proof session on examples/arith.v and tell me what the %nat scope delimiter means | PASS | notation_query print_scope returned 18 nat_scope notations (+, *, <=, <, mod, ^, div) |
-| 1.12 | Open a proof session on examples/arith.v and show me what notations are currently in scope | PASS | notation_query print_visibility returned visible notations across core_scope, function_scope, type_scope, nat_scope |
-| 1.13 | Where is Rdiv defined — Coquelicot or stdlib Reals? | PASS | search_by_name returned Stdlib.Reals.Rdefinitions.Rdiv as top result (stdlib Reals) |
+| 1.12 | Open a proof session on examples/arith.v and show me what notations are currently in scope | PASS | notation_query print_visibility returned 57 visible notation entries across core_scope, function_scope, type_scope, nat_scope |
+| 1.13 | Where is Rdiv defined — Coquelicot or stdlib Reals? | PASS | search_by_name returned Stdlib.Reals.Rdefinitions.Rdiv and Coquelicot.Rcomplements.Rdiv_1 |
 | 1.14 | What tactics can close a goal of the form x = x? | PASS | tactic_lookup returned reflexivity metadata (kind: ltac, category: rewriting) |
 | 1.15 | Open a proof session on rev_involutive in examples/lists.v, apply intros, then suggest tactics | PASS | intros narrowed goal to rev (rev l) = l; suggest_tactics returned 4 suggestions (reflexivity, congruence, rewrite, auto) |
 
@@ -59,7 +59,7 @@ Run `/run-e2e` to retest prompts and update this file.
 
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
-| 3.1 | Show me the full definition of Coquelicot.Derive.Derive | PASS | get_lemma returned Coquelicot.Derive.Derive definition; list_modules returned module with 203 declarations |
+| 3.1 | Show me the full definition of Coquelicot.Derive.Derive | PASS | get_lemma returned full definition body, type, module, and 70+ dependents |
 | 3.2 | Which module gives me access to ssralg.GRing.Ring? | PASS | search_by_name found GRing.Ring results; list_modules confirmed mathcomp.algebra.ssralg with 9991 declarations |
 | 3.3 | What is the body of MathComp.ssrnat.leq? | PASS | get_lemma returned mathcomp.boot.ssrnat.leq with body: leq = fun m n => eqtype.eq_op (m - n) 0 |
 | 3.4 | If I change Nat.add_comm, what downstream lemmas break? | PASS | impact_analysis found Stdlib.Arith.PeanoNat.Nat.add_comm; returned root with structured output |
@@ -106,7 +106,7 @@ Run `/run-e2e` to retest prompts and update this file.
 | 5.2 | /compress-proof rev_involutive in examples/lists.v | PASS | compress-proof skill opened session, verified original proof, tried alternatives, closed session |
 | 5.3 | /proof-lint examples/lint_targets.v | PASS | proof-lint skill scanned file and reported findings: tactic chain simplifications, mixed bullets, unfold/fold pattern |
 | 5.4 | /proof-obligations examples/ | PASS | proof-obligations skill found 6 obligations (2 Axiom, 2 admit, 2 Admitted) in obligations.v |
-| 5.5 | /migrate-rocq | PASS | migrate-rocq skill scanned 13 files, identified 16 deprecated From Coq imports, proposed From Stdlib replacements |
+| 5.5 | /migrate-rocq | PASS | migrate-rocq skill scanned files, identified 16 deprecated From Coq imports, proposed From Stdlib replacements |
 
 ## 6. Library and Ecosystem
 
@@ -115,7 +115,7 @@ Run `/run-e2e` to retest prompts and update this file.
 | 6.1 | What modules does Coquelicot provide? | PASS | list_modules returned 23 Coquelicot modules (AutoDerive, Complex, Derive, Hierarchy, Series, etc.) |
 | 6.2 | What typeclasses does std++ provide for finite maps? | PASS | list_modules returned 50 stdpp modules including fin_maps (790 decls) and fin_map_dom (89 decls) |
 | 6.3 | /check-compat | PASS | check-compat skill analyzed 6 declared dependencies against Coq 9.1.1, confirmed mutual compatibility |
-| 6.4 | What Coq packages are currently installed? | PASS | query_packages returned 97 installed opam packages (coq 9.1.1, coq-coquelicot 3.4.4, coq-stdpp 1.12.0, etc.) |
+| 6.4 | What Coq packages are currently installed? | PASS | query_packages returned 98 installed opam packages (coq 9.1.1, coq-coquelicot 3.4.4, coq-stdpp 1.12.0, etc.) |
 | 6.5 | /proof-repair examples/broken.v | PASS | proof-repair skill identified 3 broken proofs (Omega->Lia module, omega->lia x2, fourier->lra), applied repairs |
 
 ## 7. Debugging and Diagnosing Unexpected Behavior
@@ -140,27 +140,27 @@ Run `/run-e2e` to retest prompts and update this file.
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
 | 8.1 | Profile the proof of ring_morph in examples/algebra.v | PASS | extract_proof_trace returned 8 steps with per-step state transitions for ring_morph |
-| 8.2 | Profile the proof of zmul_expand in examples/algebra.v — is time spent in tactics or kernel? | PASS | extract_proof_trace returned 2 steps (intros, lia) with timing data available for analysis |
+| 8.2 | Profile the proof of zmul_expand in examples/algebra.v — is time spent in tactics or kernel? | PASS | extract_proof_trace returned 2 steps (intros, lia) with goal states available for analysis |
 | 8.3 | Profile examples/algebra.v and show me the top 5 slowest lemmas | PASS | profile_proof timing mode returned per-proof summaries sorted by total_time_s |
 | 8.4 | Which sentences in examples/algebra.v take the most compilation time? | PASS | profile_proof timing mode returned per-sentence entries with real_time_s, user_time_s, sys_time_s |
 | 8.5 | simpl in * is taking 15 seconds — why is it slow? | PASS | tactic_lookup returned simpl metadata (kind: ltac, is_recursive: true) |
 | 8.6 | Typeclass resolution is the bottleneck — how do I speed it up? | PASS | tactic_lookup returned typeclasses eauto metadata (kind: primitive, category: automation) |
-| 8.7 | Show me the Ltac call-tree breakdown for my_crush in examples/automation.v | PASS | profile_proof ltac mode returned call-tree: my_crush 100% -> reflexivity 36.8%, intros 15.1% |
+| 8.7 | Show me the Ltac call-tree breakdown for my_crush in examples/automation.v | PASS | profile_proof ltac mode returned call-tree: my_crush 100% -> reflexivity 52.7%, intros 7.5% |
 | 8.8 | Profile overcomplicated in examples/lint_targets.v, then profile Nat.add_comm — compare the timings | PASS | extract_proof_trace returned duration data for both: overcomplicated 4 steps, add_comm 2 steps |
-| 8.9 | Profile all .v files in examples/ and show me the slowest files and lemmas | PASS | profile_proof timing mode on all .v files; slowest: algebra.v 0.759s, automation.v 0.13s, typeclasses.v 0.097s |
+| 8.9 | Profile all .v files in examples/ and show me the slowest files and lemmas | PASS | profile_proof timing mode on all .v files; slowest: algebra.v, automation.v, typeclasses.v |
 
 ## 9. Textbook / Education RAG
 
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
-| 9.1 | /textbook how does induction work in Coq? | PASS | education_context returned 3 passages from VFA (Z integers, positive numbers, sorted lists) with inductive type content |
+| 9.1 | /textbook how does induction work in Coq? | FAIL | education_context returned 3 passages but none about induction; topics were Z integers (VFA/Trie), positive numbers, sorting |
 | 9.2 | /textbook what is a proposition vs a boolean in Coq? | PASS | education_context returned 3 passages from VFA Decide (sumbool, reflect vs sumbool, decidable propositions) |
 | 9.3 | /textbook how do I use the rewrite tactic? | PASS | education_context returned 3 passages from LF Tactics (apply_rewrite exercise) and PLF LibTactics/UseTactics (rewrites, asserts_rewrite) |
 | 9.4 | /textbook when should I use inversion vs destruct? | PASS | education_context returned 3 passages from PLF LibTactics (inversions), LF Tactics (destruct on compound expressions), LF AltAuto |
 | 9.5 | /textbook --volume lf what are inductively defined types? | PASS | education_context returned 3 LF passages: Basics (rgb/color inductive types), IndPrinciples (polymorphism), Poly (mumble_grumble) |
 | 9.6 | /textbook --volume plf what is the simply typed lambda calculus? | PASS | education_context returned 3 PLF passages: Stlc (lambda cube, STLC intro), References (types), StlcProp (canonical forms) |
 | 9.7 | /textbook how do I prove things by case analysis? | PASS | education_context returned 3 passages from LF: Imp (misc tactics), Induction (formal vs informal proof), Basics (proof by simplification) |
-| 9.8 | /textbook what is the difference between assert and have? | PASS | education_context returned 3 passages from PLF: LibTactics (asserts/cuts), Hoare (Assertion definition), Hoare (assert_vs_assume exercise) |
+| 9.8 | /textbook what is the difference between assert and have? | FAIL | education_context returned 3 passages but none about the `have` tactic; topics were LibTactics asserts/cuts, Hoare Assertion type, assert/assume commands |
 | 9.9 | /textbook forall n : nat, n + 0 = n | PASS | education_context returned 3 passages from LF: Basics (zero_nbeq_plus_1), Induction (add_0_r with full proof walkthrough), Induction (eqb_refl) |
 | 9.10 | /textbook what is a Hoare triple? | PASS | education_context returned 3 passages from PLF: Hoare (Hoare triple definition with examples), HoareAsLogic (valid definition), HoareAsLogic (decidability) |
 
@@ -168,4 +168,10 @@ Run `/run-e2e` to retest prompts and update this file.
 
 ## Remaining Issues
 
-None.
+### Issue 1: education_context retrieval misses "induction" query (9.1)
+
+The query "how does induction work in Coq?" returns passages about Z integers, positive numbers, and sorting instead of the highly relevant LF/Induction chapter. The RAG retrieval fails to surface the core induction content from Software Foundations.
+
+### Issue 2: education_context retrieval misses "have" tactic in assert vs have query (9.8)
+
+The query "what is the difference between assert and have?" returns passages about the `asserts` Ltac tactic and Hoare-logic assertions, but nothing about the `have` tactic. The word "have" is too common/ambiguous for effective retrieval.
