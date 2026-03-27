@@ -21,7 +21,7 @@ The core indexing unit representing one Coq/Rocq declaration extracted from a co
 | `constr_tree` | serialized tree | Optional; CSE-normalized expression tree (see [expression-tree.md](expression-tree.md)); null when extraction is unsupported for this kind |
 | `node_count` | positive integer | Required; must be > 0; determines which ranking metrics apply (TED threshold at 50) |
 | `symbol_set` | list of qualified names | Required; JSON-encoded; each entry must be a fully qualified constant, inductive, or constructor name |
-| `has_proof_body` | boolean | Required; true when the declaration has a tactic proof body (`Proof. … Qed.`/`Defined.`), including re-exported declarations whose proof body is in a different source file; false for `:=` definitions, axioms, and declarations without a proof block. Set at index time using the opacity signal from `About` output (primary) with `.v` source file scanning as fallback. |
+| `has_proof_body` | tri-state integer | Required; `0` = no tactic proof body (`:=` definitions, axioms, constructors, inductives); `1` = has a tactic proof body extractable from the declaration's source file; `2` = has a tactic proof body but in a different source file (functor-instantiated via `Module X := Y Z`). Set at index time: declarations whose `About`-reported `declared_line` resolves to a `Module … :=` line receive value `2`; remaining lemma/theorem kinds receive `1`; opacity and `.v` source scanning are fallback signals. |
 
 ### Relationships
 

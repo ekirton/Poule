@@ -55,7 +55,7 @@ The `IndexWriter` manages the write path during offline indexing.
 
 #### insert_declarations(batch)
 
-- REQUIRES: `batch` is a list of declaration row data (up to 1000 items). Each item contains all required fields from the `declarations` entity, including `has_proof_body` (integer 0 or 1).
+- REQUIRES: `batch` is a list of declaration row data (up to 1000 items). Each item contains all required fields from the `declarations` entity, including `has_proof_body` (integer 0, 1, or 2).
 - ENSURES: All declarations in the batch are inserted. Corresponding `declarations_fts` entries are synced. Returns the mapping of declaration name → assigned id.
 
 #### insert_wl_vectors(batch)
@@ -168,11 +168,11 @@ The `IndexReader` manages the read path during online queries.
 #### get_provable_declarations(module_prefix, has_proof_body)
 
 - REQUIRES: Database is open and valid. `module_prefix` is an optional string filter. `has_proof_body` is an optional boolean filter.
-- ENSURES: Returns declarations with `kind IN ('lemma', 'theorem', 'instance', 'definition')`, ordered by `(module, name)`. When `module_prefix` is provided, only declarations whose `module` starts with that prefix are returned. When `has_proof_body` is `true`, only declarations with `has_proof_body = 1` are returned. When `has_proof_body` is `false` or omitted, all matching declarations are returned (backward compatible). Each returned row includes the `has_proof_body` field.
+- ENSURES: Returns declarations with `kind IN ('lemma', 'theorem', 'instance', 'definition')`, ordered by `(module, name)`. When `module_prefix` is provided, only declarations whose `module` starts with that prefix are returned. When `has_proof_body` is `true`, only declarations with `has_proof_body = 1` are returned (exactly 1 — this excludes both `0` and `2`). When `has_proof_body` is `false` or omitted, all matching declarations are returned (backward compatible). Each returned row includes the `has_proof_body` field.
 
-> **Given** an index with 3 declarations: lemma A (has_proof_body=1), definition B (has_proof_body=0), theorem C (has_proof_body=1)
+> **Given** an index with 4 declarations: lemma A (has_proof_body=1), definition B (has_proof_body=0), theorem C (has_proof_body=1), lemma D (has_proof_body=2, functor-instantiated)
 > **When** `get_provable_declarations(has_proof_body=true)` is called
-> **Then** returns [A, C] ordered by (module, name)
+> **Then** returns [A, C] ordered by (module, name) — D is excluded despite being a lemma
 
 > **Given** an index built without has_proof_body annotations (all values are 0)
 > **When** `get_provable_declarations(has_proof_body=true)` is called

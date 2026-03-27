@@ -69,10 +69,10 @@ For each project directory, the system shall detect:
 
 #### Declaration enumeration
 
-The system shall enumerate provable declarations by querying the SQLite search index for declarations with kind in `{lemma, theorem, instance, definition}` and `has_proof_body = 1`.
+The system shall enumerate provable declarations by querying the SQLite search index for declarations with kind in `{lemma, theorem, instance, definition}` and `has_proof_body = 1` (exactly 1, not merely truthy — value `2` denotes functor-instantiated declarations whose proofs are not extractable from the host file).
 
-- REQUIRES: `index_db_path` points to a valid index database. Each declaration in the index has a fully qualified `name`, `module`, `kind`, and `has_proof_body`.
-- ENSURES: Returns only declarations with `has_proof_body = 1`, ordered by `(module, name)` within each source file. Each declaration has a fully qualified name and a `decl_kind`. Source file paths are derived from module paths using `module_to_source_file()`.
+- REQUIRES: `index_db_path` points to a valid index database. Each declaration in the index has a fully qualified `name`, `module`, `kind`, and `has_proof_body` (tri-state: 0, 1, or 2).
+- ENSURES: Returns only declarations with `has_proof_body = 1`, ordered by `(module, name)` within each source file. Each declaration has a fully qualified name and a `decl_kind`. Source file paths are derived from module paths using `module_to_source_file()`. Declarations with `has_proof_body = 2` (functor-instantiated) are excluded.
 - The index is the sole enumeration source. No regex or file-scanning heuristics are used.
 - **Backward compatibility:** If the filtered query returns zero results (indicating an older index without `has_proof_body` annotations), the system shall fall back to unfiltered enumeration (all provable kinds, no `has_proof_body` filter).
 
@@ -91,6 +91,10 @@ The system shall enumerate provable declarations by querying the SQLite search i
 > **Given** an index containing an `Instance` declaration `Coq.Classes.Morphisms.eq_Reflexive` (has_proof_body=1)
 > **When** declarations are enumerated
 > **Then** it is included with `decl_kind = "instance"`
+
+> **Given** an index containing `Interval.Tactic.Private.I1.F'.classify_real` (lemma, has_proof_body=2) — a functor-instantiated declaration
+> **When** declarations are enumerated
+> **Then** it is excluded from the campaign plan (proof body is in another source file)
 
 > **Given** an older index where all declarations have `has_proof_body = 0` (built before this annotation existed)
 > **When** declarations are enumerated

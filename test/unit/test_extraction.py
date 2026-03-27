@@ -3583,6 +3583,118 @@ class TestSymbolFreqUsesFQNs:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+class TestDetectProofBodySignal0ModuleAlias:
+    """Signal 0: module alias line → has_proof_body=2 (§4.4 step 9)."""
+
+    def _make_source(self, tmp_path, lib_name, content):
+        """Helper: create a .v file at user-contrib/<lib_name>/<leaf>.v."""
+        parts = lib_name.split(".")
+        source_dir = tmp_path / "user-contrib" / "/".join(parts[:-1])
+        source_dir.mkdir(parents=True, exist_ok=True)
+        v_file = source_dir / f"{parts[-1]}.v"
+        v_file.write_text(content)
+        return tmp_path / "user-contrib"
+
+    def test_module_alias_returns_2_for_lemma(self, tmp_path):
+        """GIVEN a lemma whose declared_line points to 'Module I1 := FloatIntervalFull F.'
+        WHEN detect_proof_body runs
+        THEN has_proof_body=2 (functor-instantiated, proof in another file).
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Interval.Tactic", (
+            "Require Import Float_full.\n"
+            "Module IntervalTactic (F : FloatOps).\n"
+            "Module I1 := FloatIntervalFull F.\n"
+            "End IntervalTactic.\n"
+        ))
+        result = detect_proof_body(
+            "Interval.Tactic.Private.I1.F'.classify_real", "lemma",
+            opacity=None, declared_line=3,
+            declared_library="Interval.Tactic",
+            lib_root=lib_root,
+        )
+        assert result == 2
+
+    def test_module_alias_returns_2_for_theorem(self, tmp_path):
+        """Module alias detection applies to theorems too."""
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Interval.Tactic", (
+            "Module IT := IntervalTacticAux F I1.\n"
+        ))
+        result = detect_proof_body(
+            "Interval.Tactic.Private.IT1.some_thm", "theorem",
+            opacity=None, declared_line=1,
+            declared_library="Interval.Tactic",
+            lib_root=lib_root,
+        )
+        assert result == 2
+
+    def test_module_alias_returns_2_for_opaque(self, tmp_path):
+        """Signal 0 takes priority over Signal 1 (opacity).
+        Even if opaque, a functor-instantiated declaration is not extractable
+        from the host file.
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Interval.Tactic", (
+            "Module I1 := FloatIntervalFull F.\n"
+        ))
+        result = detect_proof_body(
+            "Interval.Tactic.I1.opaque_lemma", "lemma",
+            opacity="opaque", declared_line=1,
+            declared_library="Interval.Tactic",
+            lib_root=lib_root,
+        )
+        assert result == 2
+
+    def test_module_definition_block_returns_1_not_2(self, tmp_path):
+        """GIVEN declared_line points to 'Module Private.' (a definition block, not alias)
+        WHEN detect_proof_body runs
+        THEN has_proof_body is NOT 2 — only 'Module X :=' triggers signal 0.
+        """
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Interval.Tactic", (
+            "Module Private.\n"
+            "Lemma foo : True.\n"
+            "Proof. exact I. Qed.\n"
+            "End Private.\n"
+        ))
+        result = detect_proof_body(
+            "Interval.Tactic.Private.foo", "lemma",
+            opacity=None, declared_line=1,
+            declared_library="Interval.Tactic",
+            lib_root=lib_root,
+        )
+        assert result != 2  # Should be 1 (via signal 2: kind=lemma)
+
+    def test_no_declared_line_skips_signal_0(self):
+        """Without declared_line, signal 0 is skipped → falls through to later signals."""
+        from Poule.extraction.pipeline import detect_proof_body
+
+        result = detect_proof_body(
+            "Foo.bar", "lemma", opacity=None,
+        )
+        assert result == 1  # Signal 2: kind=lemma
+
+    def test_module_alias_with_leading_whitespace(self, tmp_path):
+        """Module alias lines may have leading whitespace."""
+        from Poule.extraction.pipeline import detect_proof_body
+
+        lib_root = self._make_source(tmp_path, "Interval.Tactic", (
+            "  Module I1 := FloatIntervalFull F.\n"
+        ))
+        result = detect_proof_body(
+            "Interval.Tactic.I1.some_decl", "lemma",
+            opacity=None, declared_line=1,
+            declared_library="Interval.Tactic",
+            lib_root=lib_root,
+        )
+        assert result == 2
+
+
 class TestDetectProofBodySignal1Opacity:
     """Signal 1: opacity='opaque' → has_proof_body=1 (§4.4 step 9)."""
 
