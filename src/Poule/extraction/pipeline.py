@@ -393,12 +393,17 @@ def _resolve_v_path(
     """Resolve the .v source file path from the declared library name."""
     if not declared_library or not lib_root:
         return None
+    # Normalize Corelib → Stdlib (Rocq 9.x alias — spec §4.4 step 9).
+    if declared_library.startswith("Corelib."):
+        declared_library = "Stdlib." + declared_library[len("Corelib."):]
+    elif declared_library == "Corelib":
+        declared_library = "Stdlib"
     # Convert "Stdlib.Arith.PeanoNat" → lib_root / "Stdlib/Arith/PeanoNat.v"
     rel = declared_library.replace(".", "/") + ".v"
     candidate = lib_root / rel
     if candidate.exists():
         return candidate
-    # Also try without the first component (e.g., Corelib.Init.Nat → Init/Nat.v)
+    # Also try without the first component (e.g., Stdlib.Init.Nat → Init/Nat.v)
     parts = declared_library.split(".", 1)
     if len(parts) == 2:
         rel2 = parts[1].replace(".", "/") + ".v"
