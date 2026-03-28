@@ -295,6 +295,7 @@ class ErrorAnalysisReport:
     near_timeout: list[NearTimeoutEntry]
     slowest_successful: list[TimingEntry]
     timeout_threshold: int
+    total_partial: int = 0
 
 
 # ---------------------------------------------------------------------------

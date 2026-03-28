@@ -658,6 +658,7 @@ def _format_error_analysis_json(report) -> str:
         "files_analyzed": report.files_analyzed,
         "total_theorems": report.total_theorems,
         "total_extracted": report.total_extracted,
+        "total_partial": report.total_partial,
         "total_failed": report.total_failed,
         "by_error_kind": report.by_error_kind,
         "by_file": [
@@ -701,11 +702,16 @@ def _format_error_analysis_human(report, *, top_files: int = 15) -> str:
 
     if report.total_theorems > 0:
         ext_pct = report.total_extracted / report.total_theorems * 100
+        partial_pct = report.total_partial / report.total_theorems * 100
         fail_pct = report.total_failed / report.total_theorems * 100
         lines.append(f"  Extracted: {report.total_extracted:>8,} ({ext_pct:.1f}%)")
+        if report.total_partial > 0:
+            lines.append(f"  Partial:   {report.total_partial:>8,} ({partial_pct:.1f}%)")
         lines.append(f"  Failed:    {report.total_failed:>8,} ({fail_pct:.1f}%)")
     else:
         lines.append(f"  Extracted: {report.total_extracted:>8,}")
+        if report.total_partial > 0:
+            lines.append(f"  Partial:   {report.total_partial:>8,}")
         lines.append(f"  Failed:    {report.total_failed:>8,}")
 
     if report.by_error_kind:

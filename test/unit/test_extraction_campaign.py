@@ -1027,6 +1027,63 @@ class TestRunCampaignSummaryStatistics:
                     == fs.theorems_found
                 ), f"Invariant violated for file {fs.source_file}"
 
+    def test_partial_records_counted_as_partial_not_failed(self, tmp_path):
+        """PartialExtractionRecord must increment partial counter, not failed (§4.6)."""
+        from unittest.mock import patch, AsyncMock
+        from Poule.extraction.campaign import run_campaign
+        from Poule.extraction.types import PartialExtractionRecord, ExtractionRecord
+
+        ok_record = ExtractionRecord(
+            schema_version=1, record_type="proof_trace",
+            theorem_name="Test.ok", source_file="Test.v",
+            project_id="proj", total_steps=1, steps=[],
+        )
+        partial_record = PartialExtractionRecord(
+            schema_version=1, record_type="partial_proof_trace",
+            theorem_name="Test.partial", source_file="Test.v",
+            project_id="proj", total_steps=5, completed_steps=3,
+            failure_at_step=3, failure_kind="tactic_failure",
+            failure_message="no applicable tactic", steps=[],
+        )
+
+        call_count = 0
+        async def fake_extract(sm, pid, sf, thm, project_path=""):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return ok_record
+            return partial_record
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "Test.v").write_text(
+            "Theorem ok : True. Proof. exact I. Qed.\n"
+            "Theorem partial : True. Proof. exact I. Qed.\n"
+        )
+        idx = _make_index(tmp_path, [
+            {"name": "Test.ok", "module": "Test", "kind": "theorem"},
+            {"name": "Test.partial", "module": "Test", "kind": "theorem"},
+        ])
+        output = tmp_path / "out.jsonl"
+
+        with patch("Poule.extraction.campaign.extract_single_proof", side_effect=fake_extract):
+            summary = asyncio.run(run_campaign(
+                [str(proj)], str(output), {
+                    "index_db_path": idx,
+                    "session_manager": AsyncMock(),
+                },
+            ))
+
+        assert summary.total_extracted == 1
+        assert summary.total_partial == 1
+        assert summary.total_failed == 0
+        # Invariant still holds
+        assert (
+            summary.total_extracted + summary.total_partial + summary.total_failed
+            + summary.total_no_proof_body + summary.total_skipped
+            == summary.total_theorems_found
+        )
+
     def test_per_project_breakdown_present(self, tmp_path):
         """Summary includes per-project breakdown."""
         from Poule.extraction.campaign import run_campaign

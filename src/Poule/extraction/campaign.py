@@ -558,7 +558,7 @@ async def extract_single_proof(
     source_file: str,
     theorem_name: str,
     project_path: str = "",
-) -> Union[ExtractionRecord, ExtractionError]:
+) -> Union[ExtractionRecord, PartialExtractionRecord, ExtractionError]:
     """Extract a single proof trace, returning a record or error.
 
     The session is always closed in a finally block.
@@ -767,7 +767,7 @@ async def run_campaign(
         pf[source_file] = pf.get(source_file, 0) + 1
         ps = project_file_stats.setdefault(project_id, {})
         if source_file not in ps:
-            ps[source_file] = {"extracted": 0, "failed": 0, "no_proof_body": 0}
+            ps[source_file] = {"extracted": 0, "partial": 0, "failed": 0, "no_proof_body": 0}
 
     # Also track files with no theorems for per-file summary.
     for proj in plan.projects:
@@ -779,7 +779,7 @@ async def run_campaign(
                 pf[rel] = 0
             ps = project_file_stats.setdefault(proj.project_id, {})
             if rel not in ps:
-                ps[rel] = {"extracted": 0, "failed": 0, "no_proof_body": 0}
+                ps[rel] = {"extracted": 0, "partial": 0, "failed": 0, "no_proof_body": 0}
 
     # Emit campaign metadata.
     metadata = CampaignMetadata(
@@ -804,6 +804,7 @@ async def run_campaign(
     # Extract targets.
     interrupted = False
     extracted_count = 0
+    partial_count = 0
     failed_count = 0
     no_proof_body_count = 0
     idx = 0
@@ -865,6 +866,9 @@ async def run_campaign(
                     elif isinstance(result, ExtractionError) and result.error_kind == "no_proof_body":
                         fs["no_proof_body"] += 1
                         no_proof_body_count += 1
+                    elif isinstance(result, PartialExtractionRecord):
+                        fs["partial"] += 1
+                        partial_count += 1
                     else:
                         fs["failed"] += 1
                         failed_count += 1
@@ -885,6 +889,9 @@ async def run_campaign(
                         elif isinstance(result, ExtractionError) and result.error_kind == "no_proof_body":
                             fs["no_proof_body"] += 1
                             no_proof_body_count += 1
+                        elif isinstance(result, PartialExtractionRecord):
+                            fs["partial"] += 1
+                            partial_count += 1
                         else:
                             fs["failed"] += 1
                             failed_count += 1
@@ -896,7 +903,8 @@ async def run_campaign(
                 if idx % 100 < len(thms):
                     print(
                         f"  Progress: {idx}/{total_targets}"
-                        f" ({extracted_count} ok, {failed_count} err,"
+                        f" ({extracted_count} ok, {partial_count} partial,"
+                        f" {failed_count} err,"
                         f" {no_proof_body_count} no body)",
                         file=sys.stderr,
                     )
@@ -931,6 +939,9 @@ async def run_campaign(
             elif isinstance(result, ExtractionError) and result.error_kind == "no_proof_body":
                 fs["no_proof_body"] += 1
                 no_proof_body_count += 1
+            elif isinstance(result, PartialExtractionRecord):
+                fs["partial"] += 1
+                partial_count += 1
             else:
                 fs["failed"] += 1
                 failed_count += 1
@@ -938,7 +949,8 @@ async def run_campaign(
             if idx % 100 == 0:
                 print(
                     f"  Progress: {idx}/{total_targets}"
-                    f" ({extracted_count} ok, {failed_count} err,"
+                    f" ({extracted_count} ok, {partial_count} partial,"
+                    f" {failed_count} err,"
                     f" {no_proof_body_count} no body)",
                     file=sys.stderr,
                 )
@@ -947,6 +959,7 @@ async def run_campaign(
     per_project: list[ProjectSummary] = []
     total_found = 0
     total_extracted = 0
+    total_partial = 0
     total_failed = 0
     total_no_proof_body = 0
     total_skipped = plan.skipped_count
@@ -959,16 +972,18 @@ async def run_campaign(
         per_file: list[FileSummary] = []
         proj_found = 0
         proj_extracted = 0
+        proj_partial = 0
         proj_failed = 0
         proj_no_proof_body = 0
 
         for sf in sorted(file_found.keys()):
             found = file_found[sf]
-            stats = file_stats.get(sf, {"extracted": 0, "failed": 0, "no_proof_body": 0})
+            stats = file_stats.get(sf, {"extracted": 0, "partial": 0, "failed": 0, "no_proof_body": 0})
             extracted = stats["extracted"]
+            partial = stats["partial"]
             failed = stats["failed"]
             npb = stats["no_proof_body"]
-            skipped = found - extracted - failed - npb
+            skipped = found - extracted - partial - failed - npb
             if skipped < 0:
                 skipped = 0
 
@@ -976,6 +991,7 @@ async def run_campaign(
                 source_file=sf,
                 theorems_found=found,
                 extracted=extracted,
+                partial=partial,
                 failed=failed,
                 no_proof_body=npb,
                 skipped=skipped,
@@ -983,10 +999,11 @@ async def run_campaign(
 
             proj_found += found
             proj_extracted += extracted
+            proj_partial += partial
             proj_failed += failed
             proj_no_proof_body += npb
 
-        proj_skipped = proj_found - proj_extracted - proj_failed - proj_no_proof_body
+        proj_skipped = proj_found - proj_extracted - proj_partial - proj_failed - proj_no_proof_body
         if proj_skipped < 0:
             proj_skipped = 0
 
@@ -994,6 +1011,7 @@ async def run_campaign(
             project_id=pid,
             theorems_found=proj_found,
             extracted=proj_extracted,
+            partial=proj_partial,
             failed=proj_failed,
             no_proof_body=proj_no_proof_body,
             skipped=proj_skipped,
@@ -1002,11 +1020,12 @@ async def run_campaign(
 
         total_found += proj_found
         total_extracted += proj_extracted
+        total_partial += proj_partial
         total_failed += proj_failed
         total_no_proof_body += proj_no_proof_body
 
     # Adjust total_skipped to maintain the invariant.
-    total_skipped = total_found - total_extracted - total_failed - total_no_proof_body
+    total_skipped = total_found - total_extracted - total_partial - total_failed - total_no_proof_body
     if total_skipped < 0:
         total_skipped = 0
 
@@ -1015,6 +1034,7 @@ async def run_campaign(
         record_type="extraction_summary",
         total_theorems_found=total_found,
         total_extracted=total_extracted,
+        total_partial=total_partial,
         total_failed=total_failed,
         total_no_proof_body=total_no_proof_body,
         total_skipped=total_skipped,

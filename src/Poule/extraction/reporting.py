@@ -250,33 +250,39 @@ def analyze_errors(
     bounded timing list — memory is independent of total record count (§6/§8).
     """
     total_extracted = 0
+    total_partial = 0
     total_failed = 0
     error_kind_counts: Counter[str] = Counter()
     file_error_details: defaultdict[str, Counter[str]] = defaultdict(Counter)
     timing_entries: list[TimingEntry] = []
+
+    def _collect_timing(rec):
+        total_ms = 0
+        has_timing = False
+        for step in rec.get("steps", []):
+            dur = step.get("duration_ms")
+            if dur is not None:
+                total_ms += dur
+                has_timing = True
+        if has_timing:
+            total_s = total_ms / 1000.0
+            timing_entries.append(
+                TimingEntry(
+                    theorem_name=rec.get("theorem_name", ""),
+                    source_file=rec.get("source_file", ""),
+                    total_duration_s=total_s,
+                )
+            )
 
     for path in paths:
         for rec in _iter_jsonl(path):
             record_type = rec.get("record_type")
             if record_type == "proof_trace":
                 total_extracted += 1
-                # Collect timing data if available
-                total_ms = 0
-                has_timing = False
-                for step in rec.get("steps", []):
-                    dur = step.get("duration_ms")
-                    if dur is not None:
-                        total_ms += dur
-                        has_timing = True
-                if has_timing:
-                    total_s = total_ms / 1000.0
-                    timing_entries.append(
-                        TimingEntry(
-                            theorem_name=rec.get("theorem_name", ""),
-                            source_file=rec.get("source_file", ""),
-                            total_duration_s=total_s,
-                        )
-                    )
+                _collect_timing(rec)
+            elif record_type == "partial_proof_trace":
+                total_partial += 1
+                _collect_timing(rec)
             elif record_type == "extraction_error":
                 total_failed += 1
                 kind = rec.get("error_kind", "unknown")
@@ -318,7 +324,7 @@ def analyze_errors(
 
     return ErrorAnalysisReport(
         files_analyzed=len(paths),
-        total_theorems=total_extracted + total_failed,
+        total_theorems=total_extracted + total_partial + total_failed,
         total_extracted=total_extracted,
         total_failed=total_failed,
         by_error_kind=dict(error_kind_counts),
@@ -326,6 +332,7 @@ def analyze_errors(
         near_timeout=near_timeout_entries,
         slowest_successful=slowest,
         timeout_threshold=timeout_threshold,
+        total_partial=total_partial,
     )
 
 
