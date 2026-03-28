@@ -82,8 +82,8 @@ Build a closed-vocabulary tokenizer that assigns every Coq identifier its own to
 # Build vocabulary from search index + extracted training data
 poule build-vocabulary \
   --db index.db \
-  --data training-data.jsonl \
-  --output coq-vocabulary.json
+  --output coq-vocabulary.json \
+  training-data.jsonl
 ```
 
 The vocabulary is constructed from two sources:
@@ -101,20 +101,20 @@ Train a bi-encoder retrieval model from the extracted data. Requires a GPU (any 
 ```bash
 # Train with closed vocabulary
 poule train \
-  --data stdlib.jsonl mathcomp.jsonl \
   --vocabulary coq-vocabulary.json \
   --db index.db \
-  --output model.pt
+  --output model.pt \
+  stdlib.jsonl mathcomp.jsonl
 
 # With custom hyperparameters
 poule train \
-  --data training-data.jsonl \
   --vocabulary coq-vocabulary.json \
   --db index.db \
   --output model.pt \
   --batch-size 256 \
   --learning-rate 2e-5 \
-  --max-epochs 20
+  --epochs 20 \
+  training-data.jsonl
 ```
 
 Training details:
@@ -241,15 +241,15 @@ poule validate-training-data training-data.jsonl
 # 3. Build vocabulary (scans index + training data, runs instantly)
 poule build-vocabulary \
   --db index.db \
-  --data training-data.jsonl \
-  --output coq-vocabulary.json
+  --output coq-vocabulary.json \
+  training-data.jsonl
 
 # 4. Train model (on a GPU machine)
 poule train \
-  --data training-data.jsonl \
   --vocabulary coq-vocabulary.json \
   --db index.db \
-  --output model.pt
+  --output model.pt \
+  training-data.jsonl
 
 # 5. Optimize RRF fusion parameters
 # Phase 1: symbol-only baseline
