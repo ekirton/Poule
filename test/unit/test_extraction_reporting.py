@@ -119,6 +119,46 @@ def _make_timed_extraction_record(
     }
 
 
+def _make_partial_record(
+    *,
+    theorem_name: str = "Test.partial_theorem",
+    source_file: str = "Test/Module.v",
+    project_id: str = "test-project",
+    total_steps: int = 5,
+    completed_steps: int = 3,
+    failure_at_step: int = 3,
+    failure_kind: str = "tactic_failure",
+    failure_message: str = "no applicable tactic",
+    step_durations_ms: list[int] | None = None,
+) -> dict:
+    """Build a minimal PartialExtractionRecord dict for test fixtures."""
+    steps = []
+    durations = step_durations_ms or [100] * (completed_steps + 1)
+    for i in range(completed_steps + 1):
+        step = {
+            "step_index": i,
+            "tactic": "" if i == 0 else "auto.",
+            "goals": [{"type": f"g{i}"}],
+            "premises": [],
+        }
+        if i < len(durations):
+            step["duration_ms"] = durations[i]
+        steps.append(step)
+    return {
+        "schema_version": 1,
+        "record_type": "partial_proof_trace",
+        "theorem_name": theorem_name,
+        "source_file": source_file,
+        "project_id": project_id,
+        "total_steps": total_steps,
+        "completed_steps": completed_steps,
+        "failure_at_step": failure_at_step,
+        "failure_kind": failure_kind,
+        "failure_message": failure_message,
+        "steps": steps,
+    }
+
+
 def _write_jsonl(path: Path, records: list[dict]) -> Path:
     """Write records as JSON Lines to *path* and return the path."""
     with open(path, "w") as f:
@@ -1003,6 +1043,66 @@ class TestAnalyzeErrorsBasicCounts:
         report = analyze_errors(paths)
 
         assert report.files_analyzed == 3
+
+
+class TestAnalyzeErrorsPartialRecords:
+    """§4.5 partial_proof_trace records counted as partial, not failed or extracted."""
+
+    def test_partial_counted_in_total_partial(self, tmp_path):
+        """partial_proof_trace records increment total_partial."""
+        from Poule.extraction.reporting import analyze_errors
+
+        records = [
+            _make_extraction_record(theorem_name="A.ok"),
+            _make_partial_record(theorem_name="A.partial"),
+            _make_extraction_error(theorem_name="A.fail", error_kind="timeout"),
+        ]
+        path = _write_jsonl(tmp_path / "output.jsonl", records)
+
+        report = analyze_errors([path])
+
+        assert report.total_extracted == 1
+        assert report.total_partial == 1
+        assert report.total_failed == 1
+        assert report.total_theorems == 3
+
+    def test_partial_not_counted_as_extracted_or_failed(self, tmp_path):
+        """partial_proof_trace records do not inflate extracted or failed counts."""
+        from Poule.extraction.reporting import analyze_errors
+
+        records = [
+            _make_partial_record(theorem_name="A.p1"),
+            _make_partial_record(theorem_name="A.p2"),
+            _make_partial_record(theorem_name="A.p3"),
+        ]
+        path = _write_jsonl(tmp_path / "output.jsonl", records)
+
+        report = analyze_errors([path])
+
+        assert report.total_extracted == 0
+        assert report.total_partial == 3
+        assert report.total_failed == 0
+        assert report.total_theorems == 3
+
+    def test_partial_timing_collected(self, tmp_path):
+        """Timing data from partial records is collected for analysis."""
+        from Poule.extraction.reporting import analyze_errors
+
+        records = [
+            _make_partial_record(
+                theorem_name="A.slow_partial",
+                step_durations_ms=[100, 200, 300, 400],
+                completed_steps=3,
+            ),
+        ]
+        path = _write_jsonl(tmp_path / "output.jsonl", records)
+
+        report = analyze_errors([path])
+
+        assert report.total_partial == 1
+        # Timing should be collected from the steps
+        assert len(report.slowest_successful) == 1
+        assert report.slowest_successful[0].theorem_name == "A.slow_partial"
 
 
 class TestAnalyzeErrorsByKind:

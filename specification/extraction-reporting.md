@@ -223,9 +223,9 @@ Two proofs matching both criteria are considered semantic duplicates.
 - REQUIRES: `paths` is a non-empty list of valid JSON Lines extraction output file paths. `timeout_threshold` is a positive integer (seconds); defaults to 60.
 - ENSURES: Reads all records from each file. Separates records by `record_type`. Aggregates error records by `error_kind` and by `source_file`. Computes timing analysis for successful proof traces. Returns an ErrorAnalysisReport.
 
-> **Given** extraction output files containing 10,000 proof_trace records and 577 extraction_error records
+> **Given** extraction output files containing 10,000 proof_trace records, 150 partial_proof_trace records, and 577 extraction_error records
 > **When** `analyze_errors` is called
-> **Then** an ErrorAnalysisReport is returned with total_theorems=10577, total_extracted=10000, total_failed=577
+> **Then** an ErrorAnalysisReport is returned with total_theorems=10727, total_extracted=10000, total_partial=150, total_failed=577
 
 #### Record classification
 
@@ -234,10 +234,11 @@ The function classifies records by `record_type`:
 | `record_type` | Classification |
 |----------------|---------------|
 | `"proof_trace"` | Counted as extracted; timing data collected if present |
+| `"partial_proof_trace"` | Counted as partial; timing data collected if present |
 | `"extraction_error"` | Counted as failed; aggregated by error_kind and source_file |
 | Any other value | Skipped (not counted in totals) |
 
-- ENSURES: `total_theorems = total_extracted + total_failed`. Records with unrecognized `record_type` do not affect totals.
+- ENSURES: `total_theorems = total_extracted + total_partial + total_failed`. Records with unrecognized `record_type` do not affect totals.
 
 #### Error aggregation by error_kind
 
