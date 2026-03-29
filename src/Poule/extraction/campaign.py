@@ -299,6 +299,7 @@ async def _extract_one_on_backend(
     project_id: str,
     source_file: str,
     theorem_name: str,
+    resolver: "ProofTermResolver | None" = None,
 ) -> Union[ExtractionRecord, PartialExtractionRecord, ExtractionError]:
     """Extract a single proof trace from an already-loaded backend.
 
@@ -324,6 +325,22 @@ async def _extract_one_on_backend(
     total_steps = len(original_script)
     original_states = getattr(backend, "_original_states", [])
 
+    # Resolve per-step premises via proof term diffing (if resolver available)
+    resolved_premises: list[list[dict[str, str]]] | None = None
+    if resolver is not None:
+        try:
+            # Extract the initial goal type for entering proof mode in coqtop
+            initial_goal_type = None
+            initial_goals = getattr(initial_state, "goals", [])
+            if initial_goals:
+                initial_goal_type = getattr(initial_goals[0], "type", None)
+            resolved_premises = await resolver.resolve_proof_premises(
+                theorem_name, original_script,
+                goal_type=initial_goal_type,
+            )
+        except Exception:
+            logger.debug("Premise resolution failed for %s", theorem_name)
+
     # Step 0: initial state
     goals_0, focused_0 = _convert_proof_state(initial_state)
     steps: list[ExtractionStep] = [ExtractionStep(
@@ -347,15 +364,22 @@ async def _extract_one_on_backend(
 
         goals_i, focused_i = _convert_proof_state(state)
 
-        # Premises for this step
+        # Premises for this step — from proof term diffing if available
         ext_premises: list[ExtPremise] = []
-        try:
-            raw = await backend.get_premises_at_step(i)
+        if resolved_premises is not None and (i - 1) < len(resolved_premises):
             ext_premises = [
-                ExtPremise(name=p["name"], kind=p["kind"]) for p in raw
+                ExtPremise(name=p["name"], kind=p.get("kind", "lemma"))
+                for p in resolved_premises[i - 1]
             ]
-        except Exception:
-            pass
+        else:
+            # Fallback: petanque/premises (returns accessible set, not used set)
+            try:
+                raw = await backend.get_premises_at_step(i)
+                ext_premises = [
+                    ExtPremise(name=p["name"], kind=p["kind"]) for p in raw
+                ]
+            except Exception:
+                pass
 
         steps.append(ExtractionStep(
             step_index=i, tactic=original_script[i - 1], goals=goals_i,
@@ -422,8 +446,11 @@ async def _extract_file_group(
     When *load_paths* is provided, each ``(directory, prefix)`` pair is
     passed to the backend factory as ``-R`` flags so bare imports resolve.
     """
+    from Poule.session.premise_resolution import ProofTermResolver
+
     abs_file = str(Path(project_path) / source_file) if project_path else source_file
     backend = None
+    resolver: ProofTermResolver | None = None
     # Track how many theorems have been yielded for "remaining" calculations.
     yielded = 0
 
@@ -455,6 +482,15 @@ async def _extract_file_group(
                 )
             return
 
+        # Spawn coqtop resolver for proof-term-based premise resolution
+        try:
+            resolver = ProofTermResolver()
+            await resolver.start(load_paths=load_paths)
+            await resolver.load_file(abs_file, "")
+        except Exception as exc:
+            logger.debug("Failed to start premise resolver: %s", exc)
+            resolver = None
+
         # Post-load RSS check: warn if type-checking alone exceeds threshold.
         if rss_threshold is not None and backend is not None:
             rss = getattr(backend, "get_rss_bytes", lambda: 0)()
@@ -471,6 +507,7 @@ async def _extract_file_group(
             try:
                 result = await _extract_one_on_backend(
                     backend, project_id, source_file, thm,
+                    resolver=resolver,
                 )
                 yield result
                 yielded += 1
@@ -531,6 +568,11 @@ async def _extract_file_group(
                         backend = None
                         break
     finally:
+        if resolver is not None:
+            try:
+                await resolver.shutdown()
+            except Exception:
+                pass
         if backend is not None:
             try:
                 await backend.shutdown()
@@ -726,6 +768,55 @@ def _record_to_dict(record) -> dict:
     return asdict(record)
 
 
+def _write_result_compact(outfile, result) -> None:
+    """Write an extraction result in compact training data format.
+
+    ExtractionRecord/PartialExtractionRecord → compact "p" and "g" records.
+    ExtractionError → passed through unchanged.
+    """
+    from Poule.neural.training.data import serialize_goals
+
+    if isinstance(result, (ExtractionRecord, PartialExtractionRecord)):
+        source_file = result.source_file
+        steps = result.steps
+
+        # Extract pairs and track covered state texts
+        covered_states: set[str] = set()
+        for k in range(1, len(steps)):
+            prev_goals = [
+                {"type": g.type, "hypotheses": [
+                    {"name": h.name, "type": h.type} for h in g.hypotheses
+                ]} for g in steps[k - 1].goals
+            ]
+            premises = [p.name for p in steps[k].premises]
+            if not premises:
+                continue
+            state_text = serialize_goals(prev_goals)
+            covered_states.add(state_text)
+            outfile.write(json.dumps(
+                {"t": "p", "f": source_file, "s": state_text, "p": premises},
+                separators=(",", ":"), ensure_ascii=False,
+            ) + "\n")
+
+        # Supplementary goal states for vocabulary builder
+        for step in steps:
+            if step.goals:
+                goal_dicts = [
+                    {"type": g.type, "hypotheses": [
+                        {"name": h.name, "type": h.type} for h in g.hypotheses
+                    ]} for g in step.goals
+                ]
+                state_text = serialize_goals(goal_dicts)
+                if state_text and state_text not in covered_states:
+                    covered_states.add(state_text)
+                    outfile.write(json.dumps(
+                        {"t": "g", "s": state_text},
+                        separators=(",", ":"), ensure_ascii=False,
+                    ) + "\n")
+    elif isinstance(result, ExtractionError):
+        outfile.write(json.dumps(_record_to_dict(result), default=str) + "\n")
+
+
 async def run_campaign(
     project_dirs: list[str],
     output_path: str,
@@ -857,7 +948,7 @@ async def run_campaign(
                 print(f"  [{idx + 1}/{total_targets}] {sf}", file=sys.stderr)
                 for result in results:
                     idx += 1
-                    outfile.write(json.dumps(_record_to_dict(result), default=str) + "\n")
+                    _write_result_compact(outfile, result)
                     outfile.flush()
                     fs = project_file_stats[pid][sf]
                     if isinstance(result, ExtractionRecord):
@@ -880,7 +971,7 @@ async def run_campaign(
                 print(f"  [{idx}/{total_targets}] {sf} ({len(thms)} theorems)", file=sys.stderr)
                 try:
                     async for result in _make_group_gen(pid, sf, thms):
-                        outfile.write(json.dumps(_record_to_dict(result), default=str) + "\n")
+                        _write_result_compact(outfile, result)
                         outfile.flush()
                         fs = project_file_stats[pid][sf]
                         if isinstance(result, ExtractionRecord):
@@ -929,7 +1020,7 @@ async def run_campaign(
                 interrupted = True
                 break
 
-            outfile.write(json.dumps(_record_to_dict(result), default=str) + "\n")
+            _write_result_compact(outfile, result)
             outfile.flush()
 
             fs = project_file_stats[project_id][source_file]

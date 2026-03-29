@@ -35,8 +35,8 @@ usage() {
     echo "" >&2
     echo "Libraries: stdlib, mathcomp, stdpp, flocq, coquelicot, coqinterval" >&2
     echo "" >&2
-    echo "Note: Libraries that do not install .v source files (e.g.," >&2
-    echo "Coquelicot, CoqInterval) are automatically skipped." >&2
+    echo "Note: Libraries that do not install .v source files are" >&2
+    echo "automatically skipped." >&2
     exit 1
 }
 
@@ -182,7 +182,7 @@ EXTRACTED=0
 SKIPPED_NO_SRC=0
 
 for lib in "${LIB_ARRAY[@]}"; do
-    output_file="${OUTPUT_DIR}/${lib}.jsonl"
+    output_file="${OUTPUT_DIR}/training-${lib}.jsonl"
     lib_path="${LIB_PATHS[$lib]:-}"
 
     # Skip libraries without .v source files
@@ -207,9 +207,13 @@ for lib in "${LIB_ARRAY[@]}"; do
         fi
     fi
 
-    INDEX_DB="${OUTPUT_DIR}/index.db"
+    INDEX_DB="${OUTPUT_DIR}/index-${lib}.db"
     if [[ ! -f "$INDEX_DB" ]]; then
-        echo "ERROR: Index database not found at ${INDEX_DB}" >&2
+        # Fall back to merged index
+        INDEX_DB="${OUTPUT_DIR}/index.db"
+    fi
+    if [[ ! -f "$INDEX_DB" ]]; then
+        echo "ERROR: Index database not found for ${lib}" >&2
         echo "Build the index first before running extraction." >&2
         RESULTS[$lib]="FAILED (no index)"
         FAILED=1
@@ -244,7 +248,7 @@ echo ""
 total_proofs=0
 total_failed=0
 for lib in "${LIB_ARRAY[@]}"; do
-    output_file="${OUTPUT_DIR}/${lib}.jsonl"
+    output_file="${OUTPUT_DIR}/training-${lib}.jsonl"
     if [[ -f "$output_file" ]]; then
         # Read counts from the extraction_summary (last line)
         counts=$(tail -1 "$output_file" 2>/dev/null | python3 -c "
