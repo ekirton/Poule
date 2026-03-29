@@ -764,3 +764,81 @@ class TestResolveStepPremises:
 
         result = resolve_step_premises(1, set(), "")
         assert result == []
+
+
+class TestExtractPreludeUpToProof:
+    """Tests for _extract_prelude_up_to_proof helper."""
+
+    def test_empty_proof_name_returns_content_before_first_proof(self, tmp_path):
+        """When proof_name is empty, return content before the first theorem."""
+        from Poule.session.premise_resolution import _extract_prelude_up_to_proof
+
+        coq_file = tmp_path / "test.v"
+        coq_file.write_text(
+            "Require Import Nat.\n"
+            "Open Scope nat_scope.\n"
+            "\n"
+            "Lemma foo : 1 + 1 = 2.\n"
+            "Proof. reflexivity. Qed.\n"
+            "\n"
+            "Lemma bar : 2 + 2 = 4.\n"
+            "Proof. reflexivity. Qed.\n"
+        )
+        result = _extract_prelude_up_to_proof(str(coq_file), "")
+        assert "Require Import Nat." in result
+        assert "Open Scope nat_scope." in result
+        assert "Lemma foo" not in result
+        assert "Lemma bar" not in result
+
+    def test_empty_proof_name_no_proofs_returns_full_file(self, tmp_path):
+        """When proof_name is empty and no proofs exist, return full file."""
+        from Poule.session.premise_resolution import _extract_prelude_up_to_proof
+
+        coq_file = tmp_path / "test.v"
+        coq_file.write_text("Require Import Nat.\nOpen Scope nat_scope.\n")
+        result = _extract_prelude_up_to_proof(str(coq_file), "")
+        assert "Require Import Nat." in result
+        assert "Open Scope nat_scope." in result
+
+    def test_named_proof_returns_content_before_that_proof(self, tmp_path):
+        """When proof_name matches, return content before that proof."""
+        from Poule.session.premise_resolution import _extract_prelude_up_to_proof
+
+        coq_file = tmp_path / "test.v"
+        coq_file.write_text(
+            "Require Import Nat.\n"
+            "\n"
+            "Lemma foo : 1 + 1 = 2.\n"
+            "Proof. reflexivity. Qed.\n"
+            "\n"
+            "Lemma bar : 2 + 2 = 4.\n"
+            "Proof. reflexivity. Qed.\n"
+        )
+        result = _extract_prelude_up_to_proof(str(coq_file), "bar")
+        assert "Require Import Nat." in result
+        assert "Lemma foo" in result
+        assert "Lemma bar" not in result
+
+    def test_nonexistent_file_returns_empty(self):
+        """Nonexistent file returns empty string."""
+        from Poule.session.premise_resolution import _extract_prelude_up_to_proof
+
+        result = _extract_prelude_up_to_proof("/nonexistent/file.v", "foo")
+        assert result == ""
+
+    def test_large_file_empty_proof_name_skips_theorem_bodies(self, tmp_path):
+        """For a large file with many theorems, empty proof_name loads
+        only imports — not the theorem bodies."""
+        from Poule.session.premise_resolution import _extract_prelude_up_to_proof
+
+        lines = ["Require Import Nat.\n", "Require Import Bool.\n", "\n"]
+        for i in range(100):
+            lines.append(f"Lemma lemma_{i} : True.\n")
+            lines.append("Proof. exact I. Qed.\n\n")
+        coq_file = tmp_path / "big.v"
+        coq_file.write_text("".join(lines))
+
+        result = _extract_prelude_up_to_proof(str(coq_file), "")
+        assert "Require Import Nat." in result
+        assert "lemma_0" not in result
+        assert "lemma_99" not in result

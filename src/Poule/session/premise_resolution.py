@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -213,31 +214,50 @@ class ProofTermResolver:
             self._proc = None
 
     async def _send_and_read(self, command: str) -> str:
-        """Send a command to coqtop and read output until sentinel."""
+        """Send a command to coqtop and read output until sentinel.
+
+        Writes to stdin without awaiting drain(), then reads stdout.
+        The event loop flushes the stdin write buffer while we await
+        readline(), preventing pipe deadlocks on large commands.
+        """
         if self._proc is None or self._proc.stdin is None:
             return ""
-        # Send command + sentinel
         sentinel_cmd = f"Check {_SENTINEL}.\n"
         if not command.endswith("\n"):
             command = command + "\n"
         self._proc.stdin.write(
             (command + sentinel_cmd).encode("utf-8")
         )
-        await self._proc.stdin.drain()
+        # Do NOT await drain() — the event loop flushes stdin while we
+        # read stdout below, preventing pipe deadlocks on large commands.
         return await self._read_until_sentinel()
 
-    async def _read_until_sentinel(self, timeout: float = 30.0) -> str:
+    async def _read_until_sentinel(
+        self, timeout: float = 30.0, max_wait: float = 300.0,
+    ) -> str:
         """Read coqtop stdout until the sentinel appears.
 
         coqtop prefixes output with prompts like 'Rocq < ' or 'name < '.
         We strip these prefixes and collect the actual content.
+
+        Args:
+            timeout: Per-readline timeout in seconds.
+            max_wait: Maximum total wall-clock time in seconds. Prevents
+                infinite loops when coqtop produces slow but steady output.
         """
         output_lines: list[str] = []
         stdout = self._proc.stdout
+        deadline = time.monotonic() + max_wait
         try:
             while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    logger.warning(
+                        "coqtop read exceeded max_wait of %.0fs", max_wait,
+                    )
+                    break
                 line_bytes = await asyncio.wait_for(
-                    stdout.readline(), timeout=timeout,
+                    stdout.readline(), timeout=min(timeout, remaining),
                 )
                 if not line_bytes:
                     break
@@ -258,7 +278,7 @@ class ProofTermResolver:
                 stripped = re.sub(r"^[A-Za-z_][A-Za-z0-9_.']* < ", "", line)
                 output_lines.append(stripped)
         except asyncio.TimeoutError:
-            pass
+            logger.warning("coqtop read timed out after %.0fs", timeout)
         # Strip trailing sentinel preamble
         while output_lines and (
             "Toplevel input" in output_lines[-1]
@@ -282,11 +302,23 @@ _PROOF_START_RE = re.compile(
 
 
 def _extract_prelude_up_to_proof(file_path: str, proof_name: str) -> str:
-    """Extract file content up to (but not including) the target proof."""
+    """Extract file content up to (but not including) the target proof.
+
+    When proof_name is empty, returns content up to the first proof
+    definition (imports and definitions only). This avoids sending
+    entire large files to coqtop.
+    """
     try:
         text = Path(file_path).read_text(encoding="utf-8", errors="replace")
     except (OSError, FileNotFoundError):
         return ""
+
+    if not proof_name:
+        # No specific proof — return content before the first proof definition
+        first_match = _PROOF_START_RE.search(text)
+        if first_match:
+            return text[:first_match.start()].rstrip()
+        return text.rstrip()
 
     for m in _PROOF_START_RE.finditer(text):
         name = m.group(1).rstrip(".")
