@@ -334,10 +334,17 @@ async def _extract_one_on_backend(
             initial_goals = getattr(initial_state, "goals", [])
             if initial_goals:
                 initial_goal_type = getattr(initial_goals[0], "type", None)
-            resolved_premises = await resolver.resolve_proof_premises(
-                theorem_name, original_script,
-                goal_type=initial_goal_type,
+            async with asyncio.timeout(120):
+                resolved_premises = await resolver.resolve_proof_premises(
+                    theorem_name, original_script,
+                    goal_type=initial_goal_type,
+                )
+        except TimeoutError:
+            logger.warning(
+                "Premise resolution timed out for %s; "
+                "shutting down resolver", theorem_name,
             )
+            await resolver.shutdown()
         except Exception:
             logger.debug("Premise resolution failed for %s", theorem_name)
 
@@ -462,7 +469,12 @@ async def _extract_file_group(
             factory_kwargs["load_paths"] = load_paths
         b = await backend_factory(abs_file, **factory_kwargs)
         try:
-            await b.load_file(abs_file)
+            # Total timeout for load_file: the per-message watchdog only
+            # resets on each coq-lsp message, so a file that type-checks
+            # slowly but sends periodic diagnostics can hang forever.
+            load_timeout = watchdog_timeout or 1800
+            async with asyncio.timeout(load_timeout):
+                await b.load_file(abs_file)
         except Exception:
             await b.shutdown()
             raise
@@ -483,12 +495,22 @@ async def _extract_file_group(
             return
 
         # Spawn coqtop resolver for proof-term-based premise resolution
+        resolver: ProofTermResolver | None = None
         try:
-            resolver = ProofTermResolver()
-            await resolver.start(load_paths=load_paths)
-            await resolver.load_file(abs_file, "")
+            async with asyncio.timeout(120):
+                resolver = ProofTermResolver()
+                await resolver.start(load_paths=load_paths)
+                await resolver.load_file(abs_file, "")
+        except TimeoutError:
+            logger.warning(
+                "Premise resolver timed out loading %s; "
+                "continuing without proof-term resolution", source_file,
+            )
+            if resolver is not None:
+                await resolver.shutdown()
+            resolver = None
         except Exception as exc:
-            logger.debug("Failed to start premise resolver: %s", exc)
+            logger.warning("Failed to start premise resolver for %s: %s", source_file, exc)
             resolver = None
 
         # Post-load RSS check: warn if type-checking alone exceeds threshold.
@@ -504,6 +526,13 @@ async def _extract_file_group(
                 )
 
         for thm_idx, thm in enumerate(theorem_names):
+            # Disable dead resolver (killed after timeout on earlier theorem)
+            if resolver is not None and resolver._proc is None:
+                logger.info(
+                    "Resolver dead; disabling for remaining theorems in %s",
+                    source_file,
+                )
+                resolver = None
             try:
                 result = await _extract_one_on_backend(
                     backend, project_id, source_file, thm,
@@ -932,37 +961,64 @@ async def run_campaign(
 
         if workers > 1:
             # Parallel file processing with bounded concurrency.
+            # File groups run concurrently (up to `workers`), results are
+            # written in plan order as consecutive groups complete.
+            print(
+                f"  Using {workers} parallel workers for "
+                f"{len(file_groups)} file groups",
+                file=sys.stderr,
+            )
             sem = asyncio.Semaphore(workers)
+            groups_done = 0
+            total_groups = len(file_groups)
 
-            async def _bounded(pid, sf, thms):
+            async def _bounded(group_idx, pid, sf, thms):
+                nonlocal groups_done
                 async with sem:
-                    return await _collect_group(pid, sf, thms)
+                    results = await _collect_group(pid, sf, thms)
+                    groups_done += 1
+                    if groups_done % 20 == 0 or groups_done == total_groups:
+                        print(
+                            f"  File groups: {groups_done}/{total_groups} "
+                            f"completed",
+                            file=sys.stderr,
+                        )
+                    return group_idx, results
 
-            # Process all file groups concurrently, write results in plan order.
             tasks = [
-                asyncio.ensure_future(_bounded(pid, sf, thms))
-                for pid, sf, thms in file_groups
+                asyncio.ensure_future(_bounded(i, pid, sf, thms))
+                for i, (pid, sf, thms) in enumerate(file_groups)
             ]
-            group_results = await asyncio.gather(*tasks)
-            for (pid, sf, thms), results in zip(file_groups, group_results):
-                print(f"  [{idx + 1}/{total_targets}] {sf}", file=sys.stderr)
-                for result in results:
-                    idx += 1
-                    _write_result_compact(outfile, result)
-                    outfile.flush()
-                    fs = project_file_stats[pid][sf]
-                    if isinstance(result, ExtractionRecord):
-                        fs["extracted"] += 1
-                        extracted_count += 1
-                    elif isinstance(result, ExtractionError) and result.error_kind == "no_proof_body":
-                        fs["no_proof_body"] += 1
-                        no_proof_body_count += 1
-                    elif isinstance(result, PartialExtractionRecord):
-                        fs["partial"] += 1
-                        partial_count += 1
-                    else:
-                        fs["failed"] += 1
-                        failed_count += 1
+
+            # Collect results and write in plan order as they complete.
+            pending_results: dict[int, list] = {}
+            next_write = 0
+
+            for coro in asyncio.as_completed(tasks):
+                group_idx, results = await coro
+                pending_results[group_idx] = results
+
+                # Flush all consecutive completed groups
+                while next_write in pending_results:
+                    pid, sf, thms = file_groups[next_write]
+                    for result in pending_results.pop(next_write):
+                        idx += 1
+                        _write_result_compact(outfile, result)
+                        outfile.flush()
+                        fs = project_file_stats[pid][sf]
+                        if isinstance(result, ExtractionRecord):
+                            fs["extracted"] += 1
+                            extracted_count += 1
+                        elif isinstance(result, ExtractionError) and result.error_kind == "no_proof_body":
+                            fs["no_proof_body"] += 1
+                            no_proof_body_count += 1
+                        elif isinstance(result, PartialExtractionRecord):
+                            fs["partial"] += 1
+                            partial_count += 1
+                        else:
+                            fs["failed"] += 1
+                            failed_count += 1
+                    next_write += 1
         else:
             # Sequential file processing (default): stream results to
             # keep memory bounded by a single proof trace (§NFR).
