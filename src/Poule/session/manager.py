@@ -120,7 +120,7 @@ class _SessionState:
     created_at: datetime
     last_active_at: datetime
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    coqtop_proc: Optional[Any] = None  # asyncio.subprocess.Process for vernacular sessions
+    coqtop_proc: Optional[Any] = None  # Legacy: unused since coqtop backend migration
 
 
 class SessionManager:
@@ -207,6 +207,7 @@ class SessionManager:
             raise SessionError(SESSION_NOT_FOUND, session_id)
         if ss.state == "active" and ss.coq_backend is not None:
             await ss.coq_backend.shutdown()
+        # Legacy coqtop_proc cleanup (no longer spawned separately)
         if ss.coqtop_proc is not None:
             try:
                 ss.coqtop_proc.stdin.close()  # type: ignore[union-attr]
@@ -774,35 +775,26 @@ class SessionManager:
     ) -> str:
         """Send a vernacular command to a session and return the output.
 
-        Args:
-            session_id: Target session.
-            command: Vernacular command string.
-            prefer_coqtop: If True and the session is backed by coq-lsp,
-                lazily spawn a coqtop process for this command.  coq-lsp
-                cannot capture output of Print/Check/About, so callers
-                that need introspection output should set this flag.
+        Routes through the session's CoqBackend (coqtop), which natively
+        supports vernacular output capture. The prefer_coqtop parameter
+        is retained for backward compatibility but has no effect since
+        the backend IS coqtop.
         """
         ss = await self.lookup_session(session_id)
 
         async with ss.lock:
-            if prefer_coqtop and ss.coqtop_proc is None and ss.coq_backend is not None:
-                try:
-                    await self._ensure_coqtop(ss)
-                except (OSError, FileNotFoundError):
-                    logger.warning("coqtop not available, falling back to coq-lsp")
-                    return await ss.coq_backend.execute_vernacular(command)
+            # Route through the backend's submit_command (coqtop)
+            if ss.coq_backend is not None:
+                return await ss.coq_backend.submit_command(command)
 
+            # Legacy fallback: separate coqtop subprocess
             proc = ss.coqtop_proc
             if proc is None:
-                # Fall back to coq_backend if available
-                if ss.coq_backend is not None:
-                    return await ss.coq_backend.execute_vernacular(command)
                 raise SessionError(
                     BACKEND_CRASHED,
                     "Session has no interactive backend",
                 )
 
-            # Send the user command followed by a sentinel
             cmd_text = command.rstrip()
             if not cmd_text.endswith("."):
                 cmd_text += "."
@@ -821,25 +813,20 @@ class SessionManager:
         return list(ss.original_script)
 
     async def submit_vernacular(self, session_id: str, vernacular: str) -> str:
-        """Send a vernacular introspection command, preferring coqtop for output capture.
-
-        Used by coq_query handler.  coq-lsp cannot capture Print/Check/About
-        output, so this method prefers coqtop when available.
-        """
-        return await self.send_command(session_id, vernacular, prefer_coqtop=True)
+        """Send a vernacular introspection command via the backend."""
+        return await self.send_command(session_id, vernacular)
 
     async def execute_vernacular(self, session_id: str, command: str) -> str:
         """Alias for send_command. Used by poule.typeclass.debugging."""
         return await self.send_command(session_id, command)
 
     async def submit_command(self, session_id: str, command: str) -> str:
-        """Send a vernacular command, routing through coqtop for output capture.
+        """Send a vernacular command via the backend.
 
-        Spec §4.4: submit_command routes through a coqtop subprocess
-        (not the session's CoqBackend) because coq-lsp cannot capture
-        vernacular output. See §4.4.1.
+        Spec §4.4: submit_command routes through the session's CoqBackend
+        (coqtop), which natively supports vernacular output capture.
         """
-        return await self.send_command(session_id, command, prefer_coqtop=True)
+        return await self.send_command(session_id, command)
 
     async def coq_query(self, session_id: str, command: str) -> str:
         """Alias for send_command. Used by poule.universe modules."""
