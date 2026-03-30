@@ -3,6 +3,8 @@
 .claude/worktrees/
 .claude/sdd-layer
 .claude/sdd-blast-radius
+sdd-layer
+sdd-blast-radius
 
 # macOS
 .DS_Store
