@@ -77,7 +77,7 @@ Stor.  Coq   (no     │      Stor.      │        │
   ▲    Procs          │                 ▼        ▼
   │    (per-          │            Proof Session Manager
   │     ses.)         │                  │
-  │                   │                  │ coq-lsp / SerAPI
+  │                   │                  │ coqtop subprocess
   │                   │                  ▼
   │ Writes during     │            Coq Backend Processes
   │ indexing          │            (per-session)
