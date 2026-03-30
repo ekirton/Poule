@@ -223,21 +223,11 @@ Training data files use a compact JSONL format with two record types. Each line 
 
 Records with `"record_type"` (e.g., `campaign_metadata`, `extraction_summary`, `extraction_error`) are passed through unchanged for provenance.
 
-#### convert_training_data(jsonl_paths, output_path)
-
-- REQUIRES: `jsonl_paths` is a non-empty list of paths to full proof-trace JSONL files (as produced by the extraction pipeline). `output_path` is a writable path.
-- ENSURES: Reads each JSONL file, extracts training pairs and supplementary goal states, writes compact format to `output_path`. Non-proof records (`campaign_metadata`, `extraction_summary`, `extraction_error`) are passed through unchanged. Returns a report with counts of pairs, goal-states, and pass-through records written.
-
-For each proof-trace record:
-1. Extract pairs using the same logic as §4.1 pair extraction
-2. Write each pair as a `"p"` record
-3. For each step in the record, serialize goals. If the state text was not already emitted as part of a pair for this record, write a `"g"` record
-
 ### 4.1 TrainingDataLoader
 
 #### load(jsonl_paths, index_db_path)
 
-- REQUIRES: `jsonl_paths` is a non-empty list of paths to compact training data JSONL files (as produced by `convert_training_data` or the extraction pipeline). `index_db_path` points to a valid index database containing the premise corpus.
+- REQUIRES: `jsonl_paths` is a non-empty list of paths to compact training data JSONL files (as produced by the extraction pipeline). `index_db_path` points to a valid index database containing the premise corpus.
 - ENSURES: Returns a `TrainingDataset` containing all valid `(proof_state_text, premises_used_names)` pairs from `"p"` records, the premise corpus (from the index database), and train/validation/test splits.
 
 #### Pair extraction

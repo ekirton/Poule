@@ -28,7 +28,6 @@ import pytest
 from Poule.neural.training.data import (
     TrainingDataLoader,
     TrainingDataset,
-    convert_training_data,
     serialize_goals,
 )
 from Poule.neural.training.negatives import sample_hard_negatives
@@ -1814,14 +1813,48 @@ class TestCoqTokenizerIntegration:
 
 
 def _write_full_and_convert(tmp_path, records, name="data"):
-    """Write full JSONL records and convert to compact format.
+    """Convert full proof-trace records to compact JSONL inline.
 
-    Returns the compact JSONL path for use with TrainingDataLoader.load().
+    Extracts training pairs and goal states from ExtractionRecord dicts,
+    writes them as compact "p" and "g" records. Returns the JSONL path.
     """
-    full_path = tmp_path / f"{name}_full.jsonl"
     compact_path = tmp_path / f"{name}.jsonl"
-    _write_jsonl(full_path, records)
-    convert_training_data([full_path], compact_path)
+    with open(compact_path, "w") as f:
+        for record in records:
+            rt = record.get("record_type")
+            if rt in ("campaign_metadata", "extraction_error", "extraction_summary"):
+                f.write(json.dumps(record) + "\n")
+                continue
+            if rt not in ("proof_trace", "partial_proof_trace", None):
+                f.write(json.dumps(record) + "\n")
+                continue
+            steps = record.get("steps", [])
+            source_file = record.get("source_file", "")
+            covered: set[str] = set()
+            for k in range(1, len(steps)):
+                prev_goals = steps[k - 1].get("goals", [])
+                raw_premises = steps[k].get("premises", [])
+                premises = []
+                for p in raw_premises:
+                    if isinstance(p, dict):
+                        if p.get("kind") != "hypothesis":
+                            premises.append(p.get("name", ""))
+                    elif isinstance(p, str):
+                        premises.append(p)
+                if not premises:
+                    continue
+                state_text = serialize_goals(prev_goals)
+                covered.add(state_text)
+                f.write(json.dumps(
+                    {"t": "p", "f": source_file, "s": state_text, "p": premises},
+                ) + "\n")
+            for step in steps:
+                goals = step.get("goals", [])
+                if goals:
+                    state_text = serialize_goals(goals)
+                    if state_text and state_text not in covered:
+                        covered.add(state_text)
+                        f.write(json.dumps({"t": "g", "s": state_text}) + "\n")
     return compact_path
 
 
@@ -1838,83 +1871,6 @@ def _write_compact_jsonl(path, pairs, goals=None):
                 {"t": "g", "s": state_text},
                 ensure_ascii=False,
             ) + "\n")
-
-
-class TestConvertTrainingData:
-    """spec §4.0.5: convert_training_data extracts pairs from full JSONL."""
-
-    def test_extracts_pairs(self, tmp_path):
-        """Pairs are extracted from proof trace records."""
-        record = _make_simple_proof("file_a.v", "A", [
-            ("apply H", "B", [("lem1", "lemma")]),
-        ])
-        full_path = tmp_path / "full.jsonl"
-        _write_jsonl(full_path, [record])
-        out_path = tmp_path / "compact.jsonl"
-
-        report = convert_training_data([full_path], out_path)
-
-        assert report["pairs"] >= 1
-        lines = out_path.read_text().strip().split("\n")
-        pair_lines = [json.loads(l) for l in lines if json.loads(l).get("t") == "p"]
-        assert len(pair_lines) == 1
-        assert pair_lines[0]["f"] == "file_a.v"
-        assert pair_lines[0]["p"] == ["lem1"]
-
-    def test_supplementary_goal_states(self, tmp_path):
-        """Final step goals not in any pair are written as 'g' records."""
-        record = _make_simple_proof("file_a.v", "A", [
-            ("apply H", "B", [("lem1", "lemma")]),
-        ])
-        full_path = tmp_path / "full.jsonl"
-        _write_jsonl(full_path, [record])
-        out_path = tmp_path / "compact.jsonl"
-
-        convert_training_data([full_path], out_path)
-
-        lines = out_path.read_text().strip().split("\n")
-        goal_lines = [json.loads(l) for l in lines if json.loads(l).get("t") == "g"]
-        # The last step's goal "B" is not covered by any pair's state_text
-        assert any(g["s"] == "B" for g in goal_lines)
-
-    def test_passthrough_metadata(self, tmp_path):
-        """campaign_metadata and extraction_summary are passed through."""
-        metadata = {"record_type": "campaign_metadata", "tool": "test"}
-        summary = {"record_type": "extraction_summary", "total": 1}
-        record = _make_simple_proof("file_a.v", "A", [
-            ("apply H", "B", [("lem1", "lemma")]),
-        ])
-        full_path = tmp_path / "full.jsonl"
-        _write_jsonl(full_path, [metadata, record, summary])
-        out_path = tmp_path / "compact.jsonl"
-
-        convert_training_data([full_path], out_path)
-
-        lines = [json.loads(l) for l in out_path.read_text().strip().split("\n")]
-        meta_lines = [l for l in lines if l.get("record_type") == "campaign_metadata"]
-        summ_lines = [l for l in lines if l.get("record_type") == "extraction_summary"]
-        assert len(meta_lines) == 1
-        assert len(summ_lines) == 1
-
-    def test_filters_hypotheses(self, tmp_path):
-        """Hypothesis-kind premises are excluded from pairs."""
-        steps = [
-            _make_step(0, None, [_make_goal("A")]),
-            _make_step(1, "apply", [_make_goal("B")], [
-                _make_premise("H", "hypothesis"),
-                _make_premise("lem1", "lemma"),
-            ]),
-        ]
-        record = _make_extraction_record("file_a.v", steps)
-        full_path = tmp_path / "full.jsonl"
-        _write_jsonl(full_path, [record])
-        out_path = tmp_path / "compact.jsonl"
-
-        convert_training_data([full_path], out_path)
-
-        lines = [json.loads(l) for l in out_path.read_text().strip().split("\n")]
-        pair_lines = [l for l in lines if l.get("t") == "p"]
-        assert pair_lines[0]["p"] == ["lem1"]
 
 
 class TestLoadCompactFormat:
@@ -1982,29 +1938,6 @@ class TestLoadCompactFormat:
 
         assert "lem1" in dataset.premise_corpus
         assert dataset.premise_corpus["lem1"] == "forall n, n = n"
-
-
-class TestConvertThenLoad:
-    """Round-trip: convert full JSONL to compact, then load."""
-
-    def test_round_trip_preserves_pairs(self, tmp_path):
-        """Converting then loading produces the same pairs as direct extraction."""
-        record = _make_simple_proof("file_a.v", "A", [
-            ("apply H", "B", [("lem1", "lemma")]),
-            ("exact H2", "C", [("lem2", "lemma")]),
-        ])
-        full_path = tmp_path / "full.jsonl"
-        _write_jsonl(full_path, [record])
-        compact_path = tmp_path / "compact.jsonl"
-
-        convert_training_data([full_path], compact_path)
-
-        db_path = tmp_path / "index.db"
-        _make_minimal_index_db(db_path, [(1, "lem1", "s", "M")])
-        dataset = TrainingDataLoader.load([compact_path], db_path)
-
-        total = len(dataset.train) + len(dataset.val) + len(dataset.test)
-        assert total == 2
 
 
 class TestVocabularyBuilderCompactFormat:
