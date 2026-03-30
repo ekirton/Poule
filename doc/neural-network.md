@@ -154,6 +154,10 @@ m - n + n = m
 - **Proof state** (before the tactic): the goal `n + (m - n) = m` with hypotheses `n m : nat`, `H : n <= m`
 - **Premises used** (by the tactic): `["Nat.add_comm"]`
 
+**Compact training data format.** The extraction pipeline writes training data in a compact JSONL format: `"p"` records store `(source_file, state_text, used_premises)` training pairs, and `"g"` records store supplementary goal states for vocabulary construction. Non-proof records (campaign metadata, extraction errors, summaries) are included unchanged. This avoids the 180 GB full proof-trace JSONL that earlier versions produced (each step recorded up to 16K accessible premises).
+
+**Memory-efficient loading.** The data loader interns all premise name strings (`sys.intern()`) to avoid duplicating the ~22K unique names across ~27M references, reducing memory from ~2.7 GB to <1 MB. A `SQLitePremiseCorpus` replaces the in-memory premise corpus dict, keeping only names in RAM and fetching statement text from the database on demand (saving ~500 MB+ of UCS-2 strings). After JSONL parsing, `malloc_trim` returns freed memory to the OS.
+
 **Data quality.** The extraction pipeline produces a campaign metadata record (Coq version, project commits, tool version) and an extraction summary with counts. The `validate-training-data` command checks for: >10% empty-premise steps, malformed fields, fewer than 5,000 pairs, fewer than 1,000 unique premises, and any single premise exceeding 5% of all occurrences. A minimum of 5,000 pairs is required for training; the Stdlib alone provides approximately 4,800. The six target libraries combined yield approximately 8,300 pairs.
 
 ### 3.2 Data Splitting
@@ -232,16 +236,17 @@ where the candidate set *C*_*ij* = {*p*_*ij*} ∪ *N*_*i* ∪ {*p*_*kl* : *k* �
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Batch size | 256 | Provides sufficient in-batch negatives for contrastive learning |
-| Learning rate | 2 × 10⁻⁵ | Standard for CodeBERT fine-tuning |
+| Batch size | 128 | Effective batch via gradient accumulation (micro-batch 32) |
+| Learning rate | 5 × 10⁻⁵ | Standard for CodeBERT fine-tuning |
 | Weight decay | 10⁻² | AdamW regularization |
 | Temperature τ | 0.05 | Sharp discrimination; matches LeanHammer |
 | Hard negatives per state | 3 | Matches LeanHammer's *B*⁻ = 3 |
-| Max sequence length | 512 tokens | Balances coverage with compute |
+| Max positives per pair | 16 | Caps premise count to bound activation memory |
+| Max sequence length | 256 tokens | Sufficient for Coq proof states and premises |
 | Max epochs | 20 | With early stopping |
 | Early stopping patience | 3 | Halt when validation Recall@32 plateaus |
 
-Training uses mixed-precision (FP16) on GPU with gradient accumulation when the effective batch size exceeds GPU memory capacity.
+Training uses mixed-precision (FP16) on CUDA GPUs with gradient accumulation (micro-batch size 32). Premise encoding is performed without gradient tracking — the shared-weight encoder learns from state-side gradients — and chunked into batches of 64 to bound peak activation memory.
 
 ### 3.6 Evaluation
 
@@ -261,7 +266,7 @@ The trained PyTorch checkpoint is converted to INT8 ONNX for CPU inference via a
 2. **Quantize** via ONNX Runtime dynamic INT8 quantization, reducing model size from ~400MB to ~100MB
 3. **Validate** by encoding 100 random inputs through both models, failing if max cosine distance ≥ 0.02
 
-The quantized model runs at <10ms per encoding on CPU, enabling sub-second retrieval for interactive use. At startup, premise embeddings are loaded into a contiguous in-memory matrix (~150MB for 50K declarations). Retrieval is then a matrix multiplication followed by top-*k* selection.
+The quantized model runs at <10ms per encoding on CPU, enabling sub-second retrieval for interactive use. At startup, premise embeddings are loaded into a FAISS `IndexFlatIP` index from a `.faiss` sidecar file for exact inner product search. A dual storage model separates the write path (SQLite `embeddings` table stores raw vectors during indexing) from the read path (`.faiss` sidecar generated at finalization). The sidecar can be regenerated from SQLite without re-encoding, supporting migration from pre-FAISS databases. Retrieval is then a FAISS inner product search followed by top-*k* selection.
 
 ### 3.8 Integration with Hybrid Retrieval
 

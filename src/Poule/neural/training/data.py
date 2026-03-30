@@ -1,9 +1,7 @@
 """Training data loading: JSONL parsing, pair extraction, file-level split.
 
-Supports two JSONL formats:
-- Compact format (spec §4.0.5): "p" (pair) and "g" (goal-state) records,
-  produced by convert_training_data() or the extraction pipeline.
-- Full proof-trace format (legacy): ExtractionRecord with nested steps.
+Reads compact training data JSONL (spec §4.0.5): "p" (pair) and "g"
+(goal-state) records produced by the extraction pipeline.
 
 Pair extraction follows specification/neural-training.md §4.1.
 """
@@ -130,115 +128,6 @@ def serialize_goals(goals: list[dict]) -> str:
         parts.append("\n".join(lines))
 
     return "\n\n".join(parts)
-
-
-def _extract_pairs_from_record(record):
-    """Extract (source_file, state_text, premises) triples from a proof trace."""
-    source_file = record.get("source_file", "")
-    steps = record.get("steps", [])
-    pairs = []
-
-    for k in range(1, len(steps)):
-        prev_step = steps[k - 1]
-        curr_step = steps[k]
-
-        raw_premises = curr_step.get("premises", [])
-        premises = []
-        for p in raw_premises:
-            if isinstance(p, dict):
-                if p.get("kind") != "hypothesis":
-                    premises.append(p.get("name", ""))
-            elif isinstance(p, str):
-                premises.append(p)
-
-        if not premises:
-            continue
-
-        prev_goals = prev_step.get("goals", [])
-        state_text = serialize_goals(prev_goals)
-        pairs.append((source_file, state_text, premises))
-
-    return pairs
-
-
-# ---------------------------------------------------------------------------
-# Compact format conversion (spec §4.0.5)
-# ---------------------------------------------------------------------------
-
-
-def convert_training_data(
-    jsonl_paths: list[Path], output_path: Path
-) -> dict:
-    """Convert full proof-trace JSONL to compact training data format.
-
-    spec §4.0.5: Extracts training pairs and supplementary goal states.
-    Non-proof records (campaign_metadata, extraction_summary, extraction_error)
-    are passed through unchanged.
-
-    Returns a dict with counts: {pairs, goals, other}.
-    """
-    pairs_written = 0
-    goals_written = 0
-    other_written = 0
-
-    with open(output_path, "w", encoding="utf-8") as out:
-        for path in jsonl_paths:
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        record = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-
-                    rt = record.get("record_type")
-
-                    # Pass through metadata, errors, summary unchanged
-                    if rt in (
-                        "campaign_metadata", "extraction_error",
-                        "extraction_summary",
-                    ):
-                        out.write(line + "\n")
-                        other_written += 1
-                        continue
-
-                    # Skip unknown record types
-                    if rt not in ("proof_trace", "partial_proof_trace", None):
-                        out.write(line + "\n")
-                        other_written += 1
-                        continue
-
-                    # Extract pairs
-                    pairs = _extract_pairs_from_record(record)
-                    covered_states: set[str] = set()
-                    for source_file, state_text, premises in pairs:
-                        covered_states.add(state_text)
-                        out.write(json.dumps(
-                            {"t": "p", "f": source_file,
-                             "s": state_text, "p": premises},
-                            separators=(",", ":"), ensure_ascii=False,
-                        ) + "\n")
-                        pairs_written += 1
-
-                    # Supplementary goal states for vocabulary builder
-                    steps = record.get("steps", [])
-                    for step in steps:
-                        goals = step.get("goals", [])
-                        if goals:
-                            state_text = serialize_goals(goals)
-                            if state_text and state_text not in covered_states:
-                                covered_states.add(state_text)
-                                out.write(json.dumps(
-                                    {"t": "g", "s": state_text},
-                                    separators=(",", ":"), ensure_ascii=False,
-                                ) + "\n")
-                                goals_written += 1
-
-                    del record, steps, pairs
-
-    return {"pairs": pairs_written, "goals": goals_written, "other": other_written}
 
 
 # ---------------------------------------------------------------------------

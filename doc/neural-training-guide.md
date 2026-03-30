@@ -59,12 +59,19 @@ Each line in the output is a self-contained JSON object. The stream structure is
 
 Target success rates: stdlib ≥ 95%, MathComp ≥ 90%.
 
+The extraction pipeline writes **compact training data** directly. Each output line is one of:
+- `"p"` records: `(source_file, state_text, used_premises)` training pairs
+- `"g"` records: supplementary goal states for vocabulary construction
+- Pass-through records: campaign metadata, extraction errors, summaries
+
+This compact format avoids the 180 GB full proof-trace JSONL that earlier versions produced (each step recorded up to 16K accessible premises).
+
 ## Step 2: Validate training data
 
 Check extracted data for quality issues before committing GPU time.
 
 ```bash
-poule validate-training-data stdlib.jsonl mathcomp.jsonl
+poule validate-training-data training-data.jsonl
 ```
 
 The validator reports:
@@ -72,7 +79,7 @@ The validator reports:
 - Unique premise count and premise frequency distribution (top 10)
 - Warnings for: >10% empty premises, malformed fields, <5,000 pairs, <1,000 unique premises, any premise >5% of all occurrences
 
-The training pipeline constructs pairs by pairing the goals from step k-1 (state before the tactic) with the global premises from step k (filtering out local hypotheses). A minimum of 5,000 pairs is needed; the stdlib alone provides ~4,800. The six target libraries combined yield ~8,300 pairs.
+A minimum of 5,000 pairs is needed; the stdlib alone provides ~4,800. The six target libraries combined yield ~8,300 pairs.
 
 ## Step 3: Build the vocabulary
 
@@ -115,7 +122,7 @@ poule train \
   --vocabulary coq-vocabulary.json \
   --db index.db \
   --output model.pt \
-  stdlib.jsonl mathcomp.jsonl
+  training-data.jsonl
 
 # With custom hyperparameters
 poule train \
@@ -147,6 +154,7 @@ Training details:
 - **Hard negatives**: 3 per proof state, sampled from accessible-but-unused premises (falls back to random corpus sampling if dependency graph unavailable)
 - **Split**: Deterministic file-level split — position % 10 == 8 → validation, == 9 → test, rest → training. Prevents data leakage from related proofs in the same file
 - **Early stopping**: Halts when validation Recall@32 fails to improve for 3 consecutive epochs
+- **Memory optimizations**: Premise names interned via `sys.intern()` (27M references to ~22K unique strings); premise corpus backed by SQLite (statements fetched on demand, not held in RAM); positives capped at 16 per pair; premise encoding chunked in batches of 64 without gradient tracking
 
 Estimated wall time for a **single training run** on M2 Pro (32GB, MPS backend, FP32):
 
@@ -240,11 +248,12 @@ When the search index is rebuilt with a model checkpoint and vocabulary present,
 1. Load the INT8 ONNX encoder and vocabulary
 2. Encode each declaration's statement → 768-dim vector
 3. Batch-insert into the `embeddings` table (batches of 64, ~500ms each)
-4. Write the model hash to `index_meta` for consistency checking
+4. Generate a `.faiss` sidecar file (FAISS `IndexFlatIP`) at finalization
+5. Write the model hash to `index_meta` for consistency checking
 
 For 50K declarations on CPU: ~7 minutes. The embedding pass is atomic — failure discards the entire index.
 
-At server startup, embeddings are loaded into a contiguous in-memory matrix (~150MB for 50K declarations). The neural channel is available when: (1) the model checkpoint exists, (2) the vocabulary file exists, (3) the `embeddings` table has rows, and (4) the stored model hash matches the current checkpoint. If any condition fails, search operates with symbolic channels only — no error, no degradation.
+At server startup, embeddings are loaded from the `.faiss` sidecar file into a FAISS `IndexFlatIP` index for exact inner product search. The sidecar can be regenerated from the SQLite `embeddings` table without re-encoding. The neural channel is available when: (1) the model checkpoint exists, (2) the vocabulary file exists, (3) the FAISS index (or `embeddings` table) has entries, and (4) the stored model hash matches the current checkpoint. If any condition fails, search operates with symbolic channels only — no error, no degradation.
 
 ## End-to-end example: training the canonical model
 
