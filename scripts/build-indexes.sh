@@ -49,49 +49,6 @@ mkdir -p "$OUTPUT_DIR"
 
 IFS=',' read -ra LIB_ARRAY <<< "$LIBRARIES"
 
-# --- Seed from GitHub Releases if no index files exist ---
-# On a fresh container there are no index-*.db files.  Download them
-# from the published releases so that only libraries whose versions have
-# actually changed need to be rebuilt from scratch.
-
-has_indexes=false
-for lib in "${LIB_ARRAY[@]}"; do
-    if [[ -f "${OUTPUT_DIR}/index-${lib}.db" ]]; then
-        has_indexes=true
-        break
-    fi
-done
-
-if [[ "$has_indexes" == false ]]; then
-    echo "No existing index files found. Downloading from GitHub Releases..." >&2
-
-    TAG_LIBRARIES="index-libraries"
-    TAG_MERGED="index-merged"
-
-    if gh release view "$TAG_LIBRARIES" &>/dev/null; then
-        for lib in "${LIB_ARRAY[@]}"; do
-            asset="index-${lib}.db"
-            echo "  Downloading ${asset}..." >&2
-            if ! gh release download "$TAG_LIBRARIES" -p "$asset" -D "$OUTPUT_DIR" --clobber 2>/dev/null; then
-                echo "  Warning: failed to download ${asset}, will build from scratch." >&2
-            fi
-        done
-    else
-        echo "  No ${TAG_LIBRARIES} release found. Will build all from scratch." >&2
-    fi
-
-    if gh release view "$TAG_MERGED" &>/dev/null; then
-        echo "  Downloading index.db..." >&2
-        if ! gh release download "$TAG_MERGED" -p "index.db" -D "$OUTPUT_DIR" --clobber 2>/dev/null; then
-            echo "  Warning: failed to download index.db, will regenerate after build." >&2
-        fi
-    else
-        echo "  No ${TAG_MERGED} release found. Will generate after build." >&2
-    fi
-
-    echo "" >&2
-fi
-
 # --- Map library identifiers to opam package names ---
 
 declare -A OPAM_PACKAGES=(

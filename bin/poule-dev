@@ -237,6 +237,8 @@ fi
 DATA_DIR="$CONTAINER_HOME/data"
 mkdir -p "$DATA_DIR"
 
+PROD_IMAGE="ghcr.io/ekirton/poule"
+
 if [ ! -f "$DATA_DIR/index.db" ]; then
     echo ""
     if [ -f "$PROJECT_DIR/index.db" ]; then
@@ -244,24 +246,25 @@ if [ ! -f "$DATA_DIR/index.db" ]; then
         cp "$PROJECT_DIR/index.db" "$DATA_DIR/index.db"
         echo "Index copied successfully."
     else
-        echo "No local index.db found — downloading from latest GitHub release..."
-        if docker run --rm \
-            -v "$PROJECT_DIR:/poule" \
-            -v "$DATA_DIR:/data" \
-            --entrypoint sh \
-            "$DEV_IMAGE" \
-            -c 'uv run --project /poule python -m Poule.cli download-index --libraries-dir /data'; then
-            echo "Index downloaded successfully."
+        echo "No local index.db found — copying from production image..."
+        if docker image inspect "$PROD_IMAGE" >/dev/null 2>&1 || docker pull --platform linux/amd64 "$PROD_IMAGE" 2>/dev/null; then
+            TEMP_CID=$(docker create --platform linux/amd64 "$PROD_IMAGE" true)
+            docker cp "$TEMP_CID:/data/index.db" "$DATA_DIR/index.db" 2>/dev/null || true
+            docker rm "$TEMP_CID" >/dev/null
+            if [ -f "$DATA_DIR/index.db" ]; then
+                echo "Index copied successfully."
+            else
+                echo "Warning: Failed to copy index.db from production image."
+            fi
         else
-            echo "Warning: Index download failed. You can retry later from inside the container:"
-            echo "  uv run --project /poule python -m Poule.cli download-index --libraries-dir ~/data"
+            echo "Warning: Could not access production image. Index will be unavailable."
+            echo "  Pull the image manually: docker pull $PROD_IMAGE"
         fi
     fi
     echo ""
 fi
 
 # Copy education RAG database and model files from production image if missing
-PROD_IMAGE="ghcr.io/ekirton/poule"
 if [ ! -f "$DATA_DIR/education.db" ]; then
     echo ""
     echo "Education database not found — copying from production image..."
