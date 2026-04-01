@@ -184,6 +184,92 @@ class RetrievalEvaluator:
         )
 
     @staticmethod
+    def evaluate_onnx(
+        model_path: Path,
+        test_data: list[tuple[str, list[str]]],
+        index_db_path: Path,
+        vocabulary_path: Path | None = None,
+    ) -> EvaluationReport:
+        """Evaluate a quantized ONNX model on test data.
+
+        Uses NeuralEncoder (ONNX Runtime) instead of PyTorch, avoiding
+        the need to download CodeBERT or load torch.
+        """
+        import numpy as np
+
+        from Poule.neural.encoder import NeuralEncoder
+        from Poule.neural.training.data import SQLitePremiseCorpus
+
+        encoder = NeuralEncoder.load(Path(model_path), vocabulary_path)
+
+        corpus = SQLitePremiseCorpus(index_db_path)
+        premise_names = list(corpus.keys())
+
+        # Encode all premises
+        _CHUNK = 256
+        all_embs = []
+        for start in range(0, len(premise_names), _CHUNK):
+            chunk_names = premise_names[start:start + _CHUNK]
+            chunk_texts = corpus.get_batch(chunk_names)
+            embs = [encoder.encode(t) for t in chunk_texts]
+            all_embs.extend(embs)
+        premise_embs = np.stack(all_embs)  # [N, dim]
+        del all_embs
+
+        hits_at_1 = 0
+        hits_at_10 = 0
+        hits_at_32 = 0
+        reciprocal_ranks: list[float] = []
+        total_premises = 0
+        total_latency_ms = 0.0
+
+        for state_text, positive_names in test_data:
+            positive_set = set(positive_names)
+            total_premises += len(positive_set)
+
+            t0 = time.perf_counter()
+            state_emb = encoder.encode(state_text)  # [dim]
+            scores = premise_embs @ state_emb  # [N]
+            sorted_indices = np.argsort(scores)[::-1]
+            t1 = time.perf_counter()
+            total_latency_ms += (t1 - t0) * 1000.0
+
+            first_rank = None
+            for rank, idx in enumerate(sorted_indices):
+                if premise_names[idx] in positive_set:
+                    first_rank = rank + 1
+                    break
+
+            if first_rank is not None:
+                reciprocal_ranks.append(1.0 / first_rank)
+                if first_rank <= 1:
+                    hits_at_1 += 1
+                if first_rank <= 10:
+                    hits_at_10 += 1
+                if first_rank <= 32:
+                    hits_at_32 += 1
+            else:
+                reciprocal_ranks.append(0.0)
+
+        n = len(test_data)
+        if n == 0:
+            return EvaluationReport(
+                recall_at_1=0.0, recall_at_10=0.0, recall_at_32=0.0,
+                mrr=0.0, test_count=0,
+                mean_premises_per_state=0.0, mean_query_latency_ms=0.0,
+            )
+
+        return EvaluationReport(
+            recall_at_1=hits_at_1 / n,
+            recall_at_10=hits_at_10 / n,
+            recall_at_32=hits_at_32 / n,
+            mrr=sum(reciprocal_ranks) / n,
+            test_count=n,
+            mean_premises_per_state=total_premises / n,
+            mean_query_latency_ms=total_latency_ms / n,
+        )
+
+    @staticmethod
     def compare(
         checkpoint_path: Path,
         test_data: list[tuple[str, list[str]]],
