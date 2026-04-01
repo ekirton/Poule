@@ -16,19 +16,22 @@ set -euo pipefail
 
 LIBRARIES="stdlib mathcomp stdpp flocq coquelicot coqinterval"
 INPUT_DIR="/data"
-MODEL_PATH=""
+MODEL_PATH="/data/neural-premise-selector.onnx"
+VOCAB_PATH="/data/coq-vocabulary.json"
 TAG_LIBRARIES="index-libraries"
 TAG_MERGED="index-merged"
 
 usage() {
-    echo "Usage: $0 [--model MODEL_PATH]"
+    echo "Usage: $0 [--model MODEL_PATH] [--vocab VOCAB_PATH] [--no-model]"
     echo
     echo "Publish index databases as two GitHub Releases:"
     echo "  ${TAG_LIBRARIES}  — per-library index-*.db files + manifest"
-    echo "  ${TAG_MERGED}     — merged index.db + manifest (+ optional ONNX model)"
+    echo "  ${TAG_MERGED}     — merged index.db + manifest + ONNX model + vocabulary"
     echo
     echo "Options:"
-    echo "  --model MODEL_PATH   Also upload an ONNX model file (to merged release)"
+    echo "  --model MODEL_PATH   ONNX model file (default: $MODEL_PATH)"
+    echo "  --vocab VOCAB_PATH   Vocabulary JSON file (default: $VOCAB_PATH)"
+    echo "  --no-model           Skip uploading model and vocabulary"
     exit 1
 }
 
@@ -41,6 +44,19 @@ while [[ $# -gt 0 ]]; do
             fi
             MODEL_PATH="$2"
             shift 2
+            ;;
+        --vocab)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --vocab requires a path argument." >&2
+                usage
+            fi
+            VOCAB_PATH="$2"
+            shift 2
+            ;;
+        --no-model)
+            MODEL_PATH=""
+            VOCAB_PATH=""
+            shift
             ;;
         --help|-h)
             usage
@@ -145,6 +161,11 @@ else:
 
 if [[ -n "$MODEL_PATH" && ! -f "$MODEL_PATH" ]]; then
     echo "Error: ${MODEL_PATH} does not exist." >&2
+    exit 1
+fi
+
+if [[ -n "$VOCAB_PATH" && ! -f "$VOCAB_PATH" ]]; then
+    echo "Error: ${VOCAB_PATH} does not exist." >&2
     exit 1
 fi
 
@@ -338,6 +359,11 @@ fi
 if [[ -n "$MODEL_PATH" ]]; then
     cp "$MODEL_PATH" "$merged_upload_dir/neural-premise-selector.onnx"
     merged_assets+=("$merged_upload_dir/neural-premise-selector.onnx")
+fi
+
+if [[ -n "$VOCAB_PATH" ]]; then
+    cp "$VOCAB_PATH" "$merged_upload_dir/coq-vocabulary.json"
+    merged_assets+=("$merged_upload_dir/coq-vocabulary.json")
 fi
 
 gh release create "$TAG_MERGED" \
