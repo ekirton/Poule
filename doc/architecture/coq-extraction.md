@@ -289,7 +289,7 @@ After resolution, the `symbol_set` column in `declarations` and the `symbol_freq
 
 ## Backend Memory Management
 
-Each `Require Import` permanently loads a module and its transitive dependencies into the coq-lsp process. Memory can only be reclaimed by restarting the process. The pipeline monitors the coq-lsp child process's RSS (via `/proc/<pid>/status`) and restarts it when RSS exceeds a configurable threshold (default 5 GiB, overridable via `POULE_LSP_RSS_LIMIT`).
+Each `Require Import` permanently loads a module and its transitive dependencies into the coq-lsp process. Memory can only be reclaimed by restarting the process. The pipeline monitors the total RSS of the coq-lsp process group (coq-lsp plus all rocqworker children) and restarts it when RSS exceeds a configurable threshold (default 5 GiB, overridable via `POULE_LSP_RSS_LIMIT`).
 
 RSS checks occur at three points in the pipeline:
 

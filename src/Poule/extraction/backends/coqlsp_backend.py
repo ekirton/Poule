@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -22,6 +23,36 @@ from typing import Any, NamedTuple
 from Poule.extraction.errors import BackendCrashError, ExtractionError
 
 logger = logging.getLogger(__name__)
+
+
+def _sum_rocqworker_rss() -> int:
+    """Return total RSS in bytes of all rocqworker processes on the system.
+
+    The extraction pipeline runs a single coq-lsp backend at a time,
+    so all rocqworker processes belong to the current session.
+    """
+    total = 0
+    try:
+        proc_entries = os.listdir("/proc")
+    except OSError:
+        return 0
+    for entry in proc_entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/cmdline", "rb") as f:
+                cmdline = f.read()
+            if b"rocqworker" not in cmdline:
+                continue
+            with open(f"/proc/{entry}/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        total += int(line.split()[1]) * 1024  # kB → bytes
+                        break
+        except (OSError, ValueError, IndexError):
+            continue
+    return total
+
 
 # Regex for parsing ``Search`` output.
 # Each result looks like ``name : type_signature`` where the type signature
@@ -292,6 +323,7 @@ class CoqLspBackend:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=self._stderr_file,
+                start_new_session=True,
             )
         except FileNotFoundError as exc:
             raise ExtractionError(
@@ -313,7 +345,10 @@ class CoqLspBackend:
         self._send_notification("initialized", {})
 
     def stop(self) -> None:
-        """Shut down ``coq-lsp`` with the LSP shutdown/exit sequence."""
+        """Shut down ``coq-lsp`` with the LSP shutdown/exit sequence.
+
+        Kills session processes to prevent orphaned rocqworkers.
+        """
         if self._proc is None:
             return
         try:
@@ -321,9 +356,11 @@ class CoqLspBackend:
             self._send_notification("exit", {})
             self._proc.wait(timeout=5)
         except Exception:
-            self._proc.kill()
+            self._kill_session_processes()
             self._proc.wait(timeout=5)
         finally:
+            # Ensure no rocqworkers survive even after a clean exit.
+            self._kill_session_processes()
             self._proc = None
             if self._stderr_file is not None:
                 try:
@@ -333,36 +370,66 @@ class CoqLspBackend:
                 self._stderr_file = None
             self._notification_buffer.clear()
 
-    def _get_child_rss_bytes(self) -> int:
-        """Return total RSS in bytes for coq-lsp and all its descendants.
+    def _kill_session_processes(self) -> None:
+        """Kill coq-lsp and all rocqworker processes.
 
-        Walks ``/proc/<pid>/task/../children`` recursively to capture
-        rocqworker sub-processes that coq-lsp spawns internally.
+        Rocq double-forks rocqworker processes, severing all observable
+        procfs links (PGID, env vars, SID, pipe inodes) between coq-lsp
+        and its workers.  Because the extraction pipeline runs a single
+        backend at a time, all rocqworker processes belong to this
+        session and can be killed unconditionally.  Also attempts
+        ``os.killpg`` as a belt-and-suspenders measure.
+        """
+        if self._proc is None or self._proc.pid is None:
+            return
+        coq_pid = self._proc.pid
+        # Belt-and-suspenders: try PGID kill first (fast, catches any
+        # processes that do share the group).
+        try:
+            os.killpg(coq_pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            try:
+                self._proc.kill()
+            except ProcessLookupError:
+                pass
+        # Kill all rocqworker processes — they all belong to this
+        # single-backend pipeline.
+        try:
+            proc_entries = os.listdir("/proc")
+        except OSError:
+            return
+        for entry in proc_entries:
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/cmdline", "rb") as f:
+                    cmdline = f.read()
+                if b"rocqworker" in cmdline:
+                    os.kill(int(entry), signal.SIGKILL)
+            except (OSError, ValueError):
+                continue
+
+    def _get_child_rss_bytes(self) -> int:
+        """Return total RSS in bytes for coq-lsp plus all rocqworkers.
+
+        The extraction pipeline runs a single coq-lsp backend at a time,
+        so all rocqworker processes belong to this session.  Sums the
+        coq-lsp process's own RSS plus all rocqworker RSS.
         """
         if self._proc is None or self._proc.pid is None:
             return 0
-
-        def _descendant_pids(pid: int) -> list[int]:
-            """Return *pid* plus all descendant PIDs via /proc children files."""
-            pids = [pid]
-            try:
-                with open(f"/proc/{pid}/task/{pid}/children") as f:
-                    for child_pid in f.read().split():
-                        pids.extend(_descendant_pids(int(child_pid)))
-            except (OSError, ValueError):
-                pass
-            return pids
-
+        # coq-lsp's own RSS
         total = 0
-        for pid in _descendant_pids(self._proc.pid):
-            try:
-                with open(f"/proc/{pid}/status") as f:
-                    for line in f:
-                        if line.startswith("VmRSS:"):
-                            total += int(line.split()[1]) * 1024  # kB → bytes
-                            break
-            except (OSError, ValueError):
-                pass
+        try:
+            with open(f"/proc/{self._proc.pid}/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        total += int(line.split()[1]) * 1024
+                        break
+        except (OSError, ValueError, IndexError):
+            pass
+        # All rocqworker RSS
+        total += _sum_rocqworker_rss()
         return total
 
     def __enter__(self) -> CoqLspBackend:

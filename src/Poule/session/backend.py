@@ -14,6 +14,8 @@ import json
 import logging
 import os
 import re
+import signal
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -24,6 +26,40 @@ from Poule.session.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _session_rss(coq_pid: int) -> int:
+    """Sum RSS (bytes) of coq-lsp and all rocqworker processes.
+
+    Rocq's double-fork severs all observable procfs links (PGID, env
+    vars, SID, pipe inodes) between coq-lsp and its workers.  The
+    caller is responsible for ensuring only one coq-lsp backend runs
+    at a time so that all rocqworker processes belong to it.
+    """
+    if not coq_pid:
+        return 0
+    total = 0
+    try:
+        proc_entries = os.listdir("/proc")
+    except OSError:
+        return 0
+    for entry in proc_entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/cmdline", "rb") as f:
+                cmdline = f.read()
+            if b"coq-lsp" not in cmdline and b"rocqworker" not in cmdline:
+                continue
+            with open(f"/proc/{entry}/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        total += int(line.split()[1]) * 1024  # kB → bytes
+                        break
+        except (OSError, ValueError, IndexError):
+            continue
+    return total
+
 
 # Regex to split a proof body into individual tactic sentences (fallback).
 # A Coq sentence ends with a period followed by whitespace or end-of-string.
@@ -46,6 +82,7 @@ class CoqProofBackend:
         self,
         proc: asyncio.subprocess.Process,
         watchdog_timeout: Optional[float] = None,
+        session_id: str = "",
     ) -> None:
         self._proc = proc
         self._next_id = 0
@@ -55,6 +92,7 @@ class CoqProofBackend:
         self._shut_down = False
         self.original_script: list[str] = []
         self._watchdog_timeout = watchdog_timeout
+        self._session_id = session_id
 
         # Petanque state management
         self._petanque_state: Optional[int] = None  # current state token
@@ -552,36 +590,13 @@ class CoqProofBackend:
         self._petanque_state = self._state_stack.pop()
 
     def get_rss_bytes(self) -> int:
-        """Return total RSS in bytes for coq-lsp and all its descendants.
+        """Return total RSS in bytes for coq-lsp and all rocqworkers.
 
-        Walks ``/proc/<pid>/task/../children`` recursively to capture
-        rocqworker sub-processes that coq-lsp spawns internally.
         Returns 0 on non-Linux platforms or if the process is not running.
         """
         if self._proc.pid is None:
             return 0
-
-        def _descendant_pids(pid: int) -> list[int]:
-            pids = [pid]
-            try:
-                with open(f"/proc/{pid}/task/{pid}/children") as f:
-                    for child_pid in f.read().split():
-                        pids.extend(_descendant_pids(int(child_pid)))
-            except (OSError, ValueError):
-                pass
-            return pids
-
-        total = 0
-        for pid in _descendant_pids(self._proc.pid):
-            try:
-                with open(f"/proc/{pid}/status") as f:
-                    for line in f:
-                        if line.startswith("VmRSS:"):
-                            total += int(line.split()[1]) * 1024  # kB → bytes
-                            break
-            except (OSError, ValueError):
-                pass
-        return total
+        return _session_rss(self._proc.pid)
 
     async def get_premises_at_step(self, step: int) -> list[dict[str, str]]:
         """Return premises available at the given proof step.
@@ -656,6 +671,7 @@ class CoqProofBackend:
         self._shut_down = True
 
         if self._proc.returncode is not None:
+            self._kill_session_processes()
             return
 
         try:
@@ -664,14 +680,55 @@ class CoqProofBackend:
             try:
                 await asyncio.wait_for(self._proc.wait(), timeout=5)
             except asyncio.TimeoutError:
-                self._proc.kill()
+                self._kill_session_processes()
                 await self._proc.wait()
         except Exception:
             try:
-                self._proc.kill()
+                self._kill_session_processes()
                 await self._proc.wait()
             except Exception:
                 pass
+        finally:
+            # Ensure orphaned rocqworkers are killed even after a clean
+            # LSP shutdown — double-forked workers outlive coq-lsp.
+            # Spec §4.12: cleanup shall execute in the finally block.
+            self._kill_session_processes()
+
+    def _kill_session_processes(self) -> None:
+        """Kill coq-lsp and all rocqworker processes.
+
+        Rocq double-forks rocqworker processes, severing all observable
+        procfs links (PGID, env vars, SID, pipe inodes) between coq-lsp
+        and its workers.  All rocqworker processes are killed
+        unconditionally.  Also attempts ``os.killpg`` as a
+        belt-and-suspenders measure.
+        """
+        if self._proc.pid is None:
+            return
+        coq_pid = self._proc.pid
+        # Belt-and-suspenders: try PGID kill first.
+        try:
+            os.killpg(coq_pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            try:
+                self._proc.kill()
+            except ProcessLookupError:
+                pass
+        # Kill all rocqworker processes.
+        try:
+            proc_entries = os.listdir("/proc")
+        except OSError:
+            return
+        for entry in proc_entries:
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/cmdline", "rb") as f:
+                    cmdline = f.read()
+                if b"rocqworker" in cmdline:
+                    os.kill(int(entry), signal.SIGKILL)
+            except (OSError, ValueError):
+                continue
 
 
 # ------------------------------------------------------------------
@@ -692,6 +749,7 @@ async def create_coq_backend(
     tuple is passed as a ``-R`` flag to coq-lsp so that bare
     ``Require Import`` directives resolve correctly.
     """
+    session_id = uuid.uuid4().hex
     cmd: list[str] = ["coq-lsp"]
     for directory, prefix in (load_paths or []):
         cmd.extend(["-R", f"{directory},{prefix}"])
@@ -701,13 +759,16 @@ async def create_coq_backend(
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
         )
     except FileNotFoundError as exc:
         raise FileNotFoundError(
             f"coq-lsp not found on PATH: {exc}"
         ) from exc
 
-    backend = CoqProofBackend(proc, watchdog_timeout=watchdog_timeout)
+    backend = CoqProofBackend(
+        proc, watchdog_timeout=watchdog_timeout, session_id=session_id,
+    )
 
     # LSP initialize handshake
     await backend._send_request(

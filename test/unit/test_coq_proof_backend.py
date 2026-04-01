@@ -445,6 +445,29 @@ class TestShutdown:
         await backend.shutdown()
         await backend.shutdown()  # Second call should be no-op
 
+    async def test_shutdown_kills_session_processes_on_clean_exit(self, tmp_path):
+        """Spec §4.12 / extraction §4.12: session cleanup runs in finally block.
+
+        Even when coq-lsp exits cleanly via LSP shutdown/exit, the backend
+        must still scan /proc and kill orphaned rocqworker processes.  This
+        test verifies _kill_session_processes is called on the clean path.
+        """
+        create = _import_create_coq_backend()
+        v_file = tmp_path / "test.v"
+        v_file.write_text("Lemma trivial : True. Proof. exact I. Qed.\n")
+
+        backend = await create(str(v_file))
+        await backend.load_file(str(v_file))
+
+        with patch.object(
+            type(backend), "_kill_session_processes", wraps=backend._kill_session_processes
+        ) as mock_kill:
+            await backend.shutdown()
+            assert mock_kill.call_count >= 1, (
+                "_kill_session_processes must be called even on clean shutdown "
+                "to kill orphaned double-forked rocqworkers"
+            )
+
 
 # ===========================================================================
 # 8. ProofState translation (§4.3)

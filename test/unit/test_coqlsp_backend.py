@@ -280,6 +280,7 @@ class TestInitialization:
 
         with patch("subprocess.Popen") as mock_popen:
             proc = Mock()
+            proc.pid = 54321
             proc.stdin = server.stdin
             proc.stdout = server.stdout
             proc.stderr = io.BytesIO(b"")
@@ -297,7 +298,8 @@ class TestInitialization:
         assert written[1]["method"] == "initialized"
         assert "id" not in written[1]
 
-        backend.stop()
+        with patch("os.killpg"):
+            backend.stop()
 
     def test_start_passes_process_id(self):
         from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
@@ -310,6 +312,7 @@ class TestInitialization:
 
         with patch("subprocess.Popen") as mock_popen:
             proc = Mock()
+            proc.pid = 54322
             proc.stdin = server.stdin
             proc.stdout = server.stdout
             proc.stderr = io.BytesIO(b"")
@@ -322,7 +325,8 @@ class TestInitialization:
         written = server.get_written_messages()
         assert written[0]["params"]["processId"] == os.getpid()
 
-        backend.stop()
+        with patch("os.killpg"):
+            backend.stop()
 
     def test_start_spawns_coq_lsp_subprocess(self):
         from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
@@ -335,6 +339,7 @@ class TestInitialization:
 
         with patch("subprocess.Popen") as mock_popen:
             proc = Mock()
+            proc.pid = 54323
             proc.stdin = server.stdin
             proc.stdout = server.stdout
             proc.stderr = io.BytesIO(b"")
@@ -348,7 +353,8 @@ class TestInitialization:
         cmd = mock_popen.call_args[0][0]
         assert "coq-lsp" in cmd[0]
 
-        backend.stop()
+        with patch("os.killpg"):
+            backend.stop()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -371,6 +377,7 @@ class TestDetectVersion:
 
         with patch("subprocess.Popen") as mock_popen:
             proc = Mock()
+            proc.pid = 54324
             proc.stdin = server.stdin
             proc.stdout = server.stdout
             proc.stderr = io.BytesIO(b"")
@@ -384,7 +391,8 @@ class TestDetectVersion:
         # Should extract "9.1.1" from "0.2.2+9.1.1"
         assert "9.1" in version
 
-        backend.stop()
+        with patch("os.killpg"):
+            backend.stop()
 
     def test_fallback_to_coqc_version(self):
         """When serverInfo has no Coq version, falls back to coqc --version."""
@@ -398,6 +406,7 @@ class TestDetectVersion:
 
         with patch("subprocess.Popen") as mock_popen:
             proc = Mock()
+            proc.pid = 54325
             proc.stdin = server.stdin
             proc.stdout = server.stdout
             proc.stderr = io.BytesIO(b"")
@@ -415,7 +424,8 @@ class TestDetectVersion:
 
         assert "9.1" in version
 
-        backend.stop()
+        with patch("os.killpg"):
+            backend.stop()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1590,6 +1600,7 @@ class TestLifecycle:
         server = FakeLspServer(messages=[shutdown_response])
 
         backend._proc = Mock()
+        backend._proc.pid = 54326
         backend._proc.stdin = server.stdin
         backend._proc.stdin.write = server.stdin.write
         backend._proc.stdin.flush = server.stdin.flush
@@ -1599,8 +1610,10 @@ class TestLifecycle:
         backend._next_id = 0
         backend._notification_buffer = []
         backend._stderr_file = None
+        backend._session_id = ""
 
-        backend.stop()
+        with patch("os.killpg"):
+            backend.stop()
 
         written = server.get_written_messages()
         methods = [m["method"] for m in written]
@@ -1619,8 +1632,9 @@ class TestLifecycle:
         shutdown_response = _make_response(2, None)
         server = FakeLspServer(messages=[init_response, shutdown_response])
 
-        with patch("subprocess.Popen") as mock_popen:
+        with patch("subprocess.Popen") as mock_popen, patch("os.killpg"):
             proc = Mock()
+            proc.pid = 54327
             proc.stdin = server.stdin
             proc.stdout = server.stdout
             proc.stderr = io.BytesIO(b"")
@@ -1657,6 +1671,7 @@ class TestLifecycle:
 
         with patch("subprocess.Popen") as mock_popen:
             proc = Mock()
+            proc.pid = 54328
             proc.stdin = server.stdin
             proc.stdout = server.stdout
             proc.stderr = io.BytesIO(b"")
@@ -1669,7 +1684,8 @@ class TestLifecycle:
 
         # Popen called only once
         mock_popen.assert_called_once()
-        backend.stop()
+        with patch("os.killpg"):
+            backend.stop()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2689,4 +2705,214 @@ class TestLocate:
 
         assert len(queries_issued) == 1
         assert 'Locate "+".' in queries_issued[0]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Session-based process isolation (spec §4.12)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestProcessCleanup:
+    """Process cleanup and RSS monitoring for coq-lsp and rocqworkers (spec §4.12).
+
+    The extraction pipeline runs a single coq-lsp backend at a time.
+    Rocq double-forks rocqworkers, severing all procfs links (PGID, env
+    vars, SID, pipe inodes).  All rocqworker processes are killed
+    unconditionally on cleanup, and all are counted in RSS monitoring.
+    """
+
+    def test_start_creates_new_session(self):
+        """start() spawns coq-lsp with start_new_session=True (spec §4.12)."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        init_response = _make_response(1, {
+            "capabilities": {},
+            "serverInfo": {"name": "coq-lsp", "version": "0.2.2+9.1.1"},
+        })
+        server = FakeLspServer(messages=[init_response])
+
+        with patch("subprocess.Popen") as mock_popen:
+            proc = Mock()
+            proc.stdin = server.stdin
+            proc.stdout = server.stdout
+            proc.poll.return_value = None
+            mock_popen.return_value = proc
+
+            backend = CoqLspBackend()
+            backend.start()
+
+            _, kwargs = mock_popen.call_args
+            assert kwargs.get("start_new_session") is True
+
+    def test_stop_kills_all_rocqworkers(self):
+        """stop() kills all rocqworker processes unconditionally (spec §4.12)."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = Mock()
+        backend._proc.pid = 12345
+        backend._proc.poll.return_value = None
+        backend._proc.wait.return_value = 0
+        backend._notification_buffer = []
+        backend._stderr_file = None
+        backend._next_id = 0
+
+        shutdown_response = _make_response(1, None)
+        server = FakeLspServer(messages=[shutdown_response])
+        backend._proc.stdin = server.stdin
+        backend._proc.stdout = server.stdout
+
+        killed_pids = []
+
+        def fake_listdir(path):
+            if path == "/proc":
+                return ["12345", "12346", "12347"]
+            raise OSError
+
+        def fake_open(path, *args, **kwargs):
+            import io as _io
+
+            if path == "/proc/12346/cmdline":
+                return _io.BytesIO(b"rocqworker\x00--kind=repl\x00")
+            if path == "/proc/12347/cmdline":
+                return _io.BytesIO(b"bash\x00")
+            raise OSError(f"no such file: {path}")
+
+        def fake_kill(pid, sig):
+            killed_pids.append(pid)
+
+        with (
+            patch("os.killpg"),
+            patch("os.listdir", side_effect=fake_listdir),
+            patch("builtins.open", side_effect=fake_open),
+            patch("os.kill", side_effect=fake_kill),
+        ):
+            backend.stop()
+
+        assert 12346 in killed_pids
+        assert 12347 not in killed_pids
+
+    def test_rss_sums_coqlsp_and_all_rocqworkers(self):
+        """_get_child_rss_bytes sums coq-lsp + all rocqworker RSS."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = Mock()
+        backend._proc.pid = 5000
+
+        file_contents = {
+            "/proc/5000/cmdline": b"coq-lsp\x00",
+            "/proc/5000/status": "Name:\tcoq-lsp\nVmRSS:\t2097152 kB\n",
+            "/proc/5001/cmdline": b"rocqworker\x00--kind=repl\x00",
+            "/proc/5001/status": "Name:\trocqworker\nVmRSS:\t1048576 kB\n",
+            "/proc/6000/cmdline": b"bash\x00",
+        }
+
+        def fake_listdir(path):
+            if path == "/proc":
+                return ["5000", "5001", "6000", "self", "meminfo"]
+            raise OSError("not /proc")
+
+        def fake_open(path, *args, **kwargs):
+            import io as _io
+
+            if path in file_contents:
+                content = file_contents[path]
+                if isinstance(content, bytes):
+                    return _io.BytesIO(content)
+                return _io.StringIO(content)
+            raise OSError(f"no such file: {path}")
+
+        with (
+            patch("os.listdir", side_effect=fake_listdir),
+            patch("builtins.open", side_effect=fake_open),
+        ):
+            rss = backend._get_child_rss_bytes()
+
+        # 2 GiB + 1 GiB = 3 GiB
+        expected = (2097152 + 1048576) * 1024
+        assert rss == expected
+
+    def test_rss_excludes_non_rocq_processes(self):
+        """_get_child_rss_bytes ignores non-coq/rocqworker processes."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = Mock()
+        backend._proc.pid = 5000
+
+        file_contents = {
+            "/proc/5000/cmdline": b"coq-lsp\x00",
+            "/proc/5000/status": "VmRSS:\t100000 kB\n",
+            "/proc/5001/cmdline": b"bash\x00",
+        }
+
+        def fake_listdir(path):
+            if path == "/proc":
+                return ["5000", "5001"]
+            raise OSError
+
+        def fake_open(path, *args, **kwargs):
+            import io as _io
+
+            if path in file_contents:
+                content = file_contents[path]
+                if isinstance(content, bytes):
+                    return _io.BytesIO(content)
+                return _io.StringIO(content)
+            raise OSError(f"no such file: {path}")
+
+        with (
+            patch("os.listdir", side_effect=fake_listdir),
+            patch("builtins.open", side_effect=fake_open),
+        ):
+            rss = backend._get_child_rss_bytes()
+
+        # Only coq-lsp counted, bash process excluded
+        assert rss == 100000 * 1024
+
+    def test_rss_returns_zero_when_proc_is_none(self):
+        """_get_child_rss_bytes returns 0 when no process is running."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = None
+
+        assert backend._get_child_rss_bytes() == 0
+
+    def test_rss_ignores_vanished_processes(self):
+        """_get_child_rss_bytes handles processes that vanish during scan."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = Mock()
+        backend._proc.pid = 7000
+
+        file_contents = {
+            "/proc/7000/cmdline": b"coq-lsp\x00",
+            "/proc/7000/status": "VmRSS:\t512000 kB\n",
+        }
+
+        def fake_listdir(path):
+            if path == "/proc":
+                return ["7000", "7001"]
+            raise OSError
+
+        def fake_open(path, *args, **kwargs):
+            import io as _io
+
+            if path in file_contents:
+                content = file_contents[path]
+                if isinstance(content, bytes):
+                    return _io.BytesIO(content)
+                return _io.StringIO(content)
+            raise OSError("No such process")
+
+        with (
+            patch("os.listdir", side_effect=fake_listdir),
+            patch("builtins.open", side_effect=fake_open),
+        ):
+            rss = backend._get_child_rss_bytes()
+
+        assert rss == 512000 * 1024
 
