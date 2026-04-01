@@ -174,11 +174,11 @@ Before evaluating the combined pipeline, optimize the RRF smoothing constant *k*
 
 ```bash
 # Phase 1: Symbol-only — optimize k and weights for structural, MePo, FTS channels
-poule tune-rrf --db index.db training-data.jsonl --output-dir rrf-sym --n-trials 30
+poule tune-rrf --db index.db --output-dir rrf-sym --n-trials 30 training-data.jsonl
 
-# Phase 3: Combined — optimize k and weights for all 4 channels (requires trained model)
-poule tune-rrf --db index.db training-data.jsonl --output-dir rrf-combined \
-  --n-trials 50 --checkpoint model.pt
+# Phase 2: Combined — optimize k and weights for all 4 channels (requires trained model)
+poule tune-rrf --db index.db --output-dir rrf-combined \
+  --n-trials 50 --checkpoint model.pt training-data.jsonl
 ```
 
 Each phase pre-computes all channel ranked lists once, then sweeps parameters via Optuna — each trial is sub-second. The optimizer uses the validation split (position mod 10 == 8) and reports:
