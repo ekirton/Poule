@@ -1920,6 +1920,55 @@ class TestExtractFileGroupShutdown:
 
         backend1.shutdown.assert_called_once()
 
+    def test_resolver_shutdown_called_on_normal_exit(self):
+        """ProofTermResolver is shut down in the finally block after
+        successful extraction (§4.3)."""
+        from unittest.mock import patch
+        from Poule.extraction.campaign import _extract_file_group
+
+        backend = _make_mock_backend(proofs={"thm": ["auto."]})
+        factory = AsyncMock(return_value=backend)
+
+        mock_resolver = AsyncMock()
+        mock_resolver.start = AsyncMock()
+        mock_resolver.load_file = AsyncMock()
+        mock_resolver.resolve_proof_term_deps = AsyncMock(return_value=[])
+        mock_resolver.shutdown = AsyncMock()
+
+        with patch(
+            "Poule.session.premise_resolution.ProofTermResolver",
+            return_value=mock_resolver,
+        ):
+            asyncio.run(_collect(_extract_file_group(
+                factory, 600, "proj", "test.v", ["thm"], "/path",
+            )))
+
+        mock_resolver.shutdown.assert_called_once()
+
+    def test_resolver_shutdown_called_after_backend_crash(self):
+        """ProofTermResolver is shut down even when the backend crashes
+        and restart fails (§4.3)."""
+        from unittest.mock import patch
+        from Poule.extraction.campaign import _extract_file_group
+
+        backend = _make_mock_backend(crash_on="thm")
+        factory = AsyncMock(side_effect=[backend, RuntimeError("spawn failed")])
+
+        mock_resolver = AsyncMock()
+        mock_resolver.start = AsyncMock()
+        mock_resolver.load_file = AsyncMock()
+        mock_resolver.shutdown = AsyncMock()
+
+        with patch(
+            "Poule.session.premise_resolution.ProofTermResolver",
+            return_value=mock_resolver,
+        ):
+            asyncio.run(_collect(_extract_file_group(
+                factory, 600, "proj", "f.v", ["thm"], "/p",
+            )))
+
+        mock_resolver.shutdown.assert_called_once()
+
 
 class TestRunCampaignFileGrouped:
     """run_campaign uses file-grouped extraction when backend_factory is

@@ -612,6 +612,11 @@ async def _extract_file_group(
                         backend = None
                         break
     finally:
+        if resolver is not None:
+            try:
+                await resolver.shutdown()
+            except Exception:
+                pass
         if backend is not None:
             try:
                 await backend.shutdown()
