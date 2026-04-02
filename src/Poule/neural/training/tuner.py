@@ -24,8 +24,9 @@ logger = logging.getLogger(__name__)
 
 # spec §4.8: tunable hyperparameters with sampling ranges
 TUNABLE_HYPERPARAMS: dict[str, dict[str, Any]] = {
+    "num_hidden_layers": {"choices": [4, 6, 8, 12]},
     "learning_rate": {"low": 1e-6, "high": 1e-4, "log": True},
-    "batch_size": {"choices": [32, 64, 128]},
+    "batch_size": {"choices": [16, 32, 64]},
     "weight_decay": {"low": 1e-4, "high": 1e-1, "log": True},
     "class_weight_alpha": {"low": 0.0, "high": 1.0},
 }
@@ -109,6 +110,10 @@ class HyperparameterTuner:
         def objective(trial):
             # Sample hyperparameters from search space
             hp = {
+                "num_hidden_layers": trial.suggest_categorical(
+                    "num_hidden_layers",
+                    TUNABLE_HYPERPARAMS["num_hidden_layers"]["choices"],
+                ),
                 "learning_rate": trial.suggest_float(
                     "learning_rate",
                     TUNABLE_HYPERPARAMS["learning_rate"]["low"],

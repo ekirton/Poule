@@ -225,18 +225,48 @@ where `alpha` controls the strength of rebalancing (default 0.5; tunable via HPO
 ```
 Input: input_ids [B, 512], attention_mask [B, 512]
   |
-  |-- CodeBERT encoder (12 layers, 768 hidden, 12 heads)
+  |-- CodeBERT encoder (num_hidden_layers layers, 768 hidden, 12 heads)
   |-- Mean pooling (attention-masked)
   |-- nn.Linear(768, num_classes)
   |-- Output: logits [B, num_classes]
 ```
 
-Single forward pass per batch. No premise encoding, no contrastive pairs, no hard negatives.
+Default `num_hidden_layers` is 6 (layer-dropped from CodeBERT's 12). Single forward pass per batch. No premise encoding, no contrastive pairs, no hard negatives.
+
+#### Layer Dropping Initialization
+
+New models are initialized with 6 transformer layers copied from every other layer of CodeBERT-base (layers 0, 2, 4, 6, 8, 10). This follows the DistilBERT approach (Sanh et al., 2019): halving the encoder preserves pretrained structural knowledge while reducing transformer parameters from ~85M to ~42M.
+
+Rationale: Shwartz-Ziv et al. (2023) found that larger architectures overfit on class-imbalanced data. With an imbalance ratio of 26,950:1 and 86% of tactic families having ≤5 examples, a 12-layer encoder is unnecessarily large. CodeBERT's pretraining on six programming languages captures structural patterns (scoping, types, function application) that transfer to Coq — layer dropping preserves this knowledge more efficiently than training from scratch.
+
+Initialization procedure:
+1. Load full CodeBERT-base (12 layers) from HuggingFace.
+2. Select layers at even indices: 0, 2, 4, 6, 8, 10.
+3. Build a new `RobertaModel` with `num_hidden_layers=6`.
+4. Copy the selected layers into the new model's encoder.
+5. Copy all non-layer weights (embeddings, pooler) unchanged.
+6. Replace the embedding layer with the custom vocabulary (same as current procedure).
+
+The layer count is configurable via `num_hidden_layers`. Values of 4, 6, 8, and 12 are supported. For values less than 12, layers are selected at evenly spaced indices from the 12-layer source.
+
+#### Knowledge Distillation (Backup)
+
+If layer dropping alone does not meet accuracy targets, the 6-layer model can be trained with knowledge distillation from a fine-tuned 12-layer teacher:
+
+```
+L = α · CE(student_logits, labels) + (1 - α) · T² · KL(student_logits / T, teacher_logits / T)
+```
+
+- T (temperature): softens the teacher's output distribution, exposing inter-class relationships (e.g., `apply` and `exact` are more similar than `apply` and `intros`). Typical values: 3–5.
+- α: balances hard-label loss (correct answer) vs. soft-label loss (teacher's distribution). Typical value: 0.5.
+
+This requires two training runs: (1) fine-tune the full 12-layer CodeBERT on Coq tactic prediction, (2) train the 6-layer student against the teacher's soft targets. The distillation path is not implemented in the initial version — it is documented here as the escalation strategy if layer dropping underperforms.
 
 ### Hyperparameters
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
+| Num hidden layers | 6 | Layer-dropped from CodeBERT-12; smaller model for imbalanced data (Shwartz-Ziv et al., 2023) |
 | Batch size | 64 | Larger batches not needed (no in-batch negatives) |
 | Learning rate | 2e-5 | Standard for BERT fine-tuning |
 | Weight decay | 1e-2 | Standard AdamW |
@@ -277,11 +307,13 @@ Architecturally identical to the PyTorch version:
 
 ```
 Input: input_ids [B, seq_len], attention_mask [B, seq_len]  (mx.array)
-  |-- mlx.nn.TransformerEncoder (12 layers, 768 hidden, 12 heads)
+  |-- mlx.nn.TransformerEncoder (num_hidden_layers layers, 768 hidden, 12 heads)
   |-- Mean pooling (attention-masked)
   |-- mlx.nn.Linear(768, num_classes)
   |-- Output: logits [B, num_classes] (mx.array)
 ```
+
+Default `num_hidden_layers` is 6 (matching PyTorch). Layer dropping initialization applies the same layer selection from CodeBERT weights converted to MLX arrays.
 
 ### MLX Training Loop
 
@@ -308,8 +340,9 @@ Optuna with TPE sampler, maximizing validation accuracy@5.
 
 | Parameter | Type | Range | Default |
 |-----------|------|-------|---------|
+| Num hidden layers | Categorical | {4, 6, 8, 12} | 6 |
 | Learning rate | Log-uniform | [1e-6, 1e-4] | 2e-5 |
-| Batch size | Categorical | {32, 64, 128} | 64 |
+| Batch size | Categorical | {16, 32, 64} | 64 |
 | Weight decay | Log-uniform | [1e-4, 1e-1] | 1e-2 |
 | Class weight alpha | Uniform | [0.0, 1.0] | 0.5 |
 

@@ -15,6 +15,15 @@ import torch.nn as nn
 from transformers import AutoModel
 
 
+def _layer_indices(num_hidden_layers: int) -> list[int]:
+    """Compute evenly spaced layer indices for layer dropping.
+
+    Selects ``num_hidden_layers`` layers from a 12-layer source at
+    evenly spaced positions: ``[i * 12 // num_hidden_layers for i ...]``.
+    """
+    return [i * 12 // num_hidden_layers for i in range(num_hidden_layers)]
+
+
 class TacticClassifier(nn.Module):
     """CodeBERT encoder with mean pooling and classification head.
 
@@ -26,10 +35,22 @@ class TacticClassifier(nn.Module):
         model_name: str = "microsoft/codebert-base",
         num_classes: int = 1,
         vocab_size: int | None = None,
+        num_hidden_layers: int = 6,
     ):
         super().__init__()
         self.num_classes = num_classes
-        self.encoder = AutoModel.from_pretrained(model_name)
+        encoder = AutoModel.from_pretrained(model_name)
+
+        # Layer dropping: select a subset of transformer layers
+        if num_hidden_layers < 12:
+            indices = _layer_indices(num_hidden_layers)
+            new_layers = torch.nn.ModuleList(
+                [encoder.encoder.layer[i] for i in indices]
+            )
+            encoder.encoder.layer = new_layers
+            encoder.config.num_hidden_layers = num_hidden_layers
+
+        self.encoder = encoder
 
         # Replace embedding layer if a custom vocab size is provided
         if vocab_size is not None:
@@ -54,14 +75,17 @@ class TacticClassifier(nn.Module):
         """Instantiate a TacticClassifier from a checkpoint dict.
 
         Builds the encoder from a RoBERTa config (no network access),
-        infers vocab_size from the embedding weight shape, and loads
-        weights with strict=False to tolerate missing keys (e.g. pooler
-        weights absent from MLX-converted checkpoints).
+        infers vocab_size from the embedding weight shape, reads
+        num_hidden_layers from the checkpoint (defaults to 12 for
+        backward compatibility), and loads weights with strict=False
+        to tolerate missing keys (e.g. pooler weights absent from
+        MLX-converted checkpoints).
         """
         from transformers import RobertaConfig, RobertaModel
 
         state_dict = checkpoint["model_state_dict"]
         num_classes = checkpoint["num_classes"]
+        num_hidden_layers = checkpoint.get("num_hidden_layers", 12)
 
         emb_key = "encoder.embeddings.word_embeddings.weight"
         vocab_size = state_dict[emb_key].shape[0] if emb_key in state_dict else None
@@ -69,7 +93,7 @@ class TacticClassifier(nn.Module):
         config = RobertaConfig(
             vocab_size=vocab_size or 50265,
             hidden_size=768,
-            num_hidden_layers=12,
+            num_hidden_layers=num_hidden_layers,
             num_attention_heads=12,
             intermediate_size=3072,
             max_position_embeddings=514,
@@ -135,6 +159,7 @@ class TacticClassifier(nn.Module):
         checkpoint: dict[str, Any] = {
             "model_state_dict": self.state_dict(),
             "num_classes": self.num_classes,
+            "num_hidden_layers": self.encoder.config.num_hidden_layers,
             "label_map": label_map,
         }
         if extra:

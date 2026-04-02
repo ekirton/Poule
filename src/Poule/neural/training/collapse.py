@@ -67,6 +67,12 @@ def normalize_tactic_family(tactic_text: str) -> str:
     if not first_token:
         return "other"
 
+    # Strip SSReflect intro pattern operator: move=> → move
+    if first_token.endswith("=>"):
+        first_token = first_token[:-2]
+    if not first_token:
+        return "other"
+
     # Lowercase
     family = first_token.lower()
 

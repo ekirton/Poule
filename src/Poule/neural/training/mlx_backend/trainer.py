@@ -97,9 +97,11 @@ class MLXTrainer:
         # Load tokenizer
         tokenizer = CoqTokenizer(str(vocabulary_path))
 
+        num_hidden_layers = hp.get("num_hidden_layers", 6)
         model = MLXTacticClassifier(
             vocab_size=tokenizer.vocab_size,
             num_classes=num_classes,
+            num_layers=num_hidden_layers,
         )
         mx.eval(model.parameters())
 

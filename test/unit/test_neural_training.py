@@ -203,10 +203,13 @@ class TestExtractTacticFamily:
         assert extract_tactic_family("move H.") == "move"
 
     def test_ssreflect_move_with_arrow(self):
-        """SSReflect: 'move=>' is a single token -- rstrip strips trailing punct only."""
-        # "move=>" has no .,;: at end so family is "move=>"
+        """SSReflect: 'move=>' collapses to 'move' by stripping '=>'."""
         result = extract_tactic_family("move=> H.")
-        assert result == "move=>"
+        assert result == "move"
+
+    def test_ssreflect_case_with_arrow(self):
+        """SSReflect: 'case=>' collapses to 'case' by stripping '=>'."""
+        assert extract_tactic_family("case=> []") == "case"
 
     def test_compound_tactic_semicolon(self):
         """Compound tactics: first segment before ';' is used."""
@@ -535,6 +538,70 @@ class TestLoadCompactFormat:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 6b. TacticClassifier — Layer Dropping
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestLayerDropping:
+    """spec §4.3: Layer dropping initialization from CodeBERT-12."""
+
+    def test_default_num_hidden_layers_is_6(self):
+        """spec §4.3: Default num_hidden_layers is 6."""
+        assert DEFAULT_HYPERPARAMS["num_hidden_layers"] == 6
+
+    def test_layer_indices_for_6_layers(self):
+        """spec §4.3: Given num_hidden_layers=6, layers [0,2,4,6,8,10] are selected."""
+        from Poule.neural.training.model import _layer_indices
+        assert _layer_indices(6) == [0, 2, 4, 6, 8, 10]
+
+    def test_layer_indices_for_4_layers(self):
+        """spec §4.3: Given num_hidden_layers=4, layers [0,3,6,9] are selected."""
+        from Poule.neural.training.model import _layer_indices
+        assert _layer_indices(4) == [0, 3, 6, 9]
+
+    def test_layer_indices_for_8_layers(self):
+        """spec §4.3: Given num_hidden_layers=8, 8 evenly spaced layers selected."""
+        from Poule.neural.training.model import _layer_indices
+        indices = _layer_indices(8)
+        assert len(indices) == 8
+        assert indices[0] == 0
+        assert all(0 <= i < 12 for i in indices)
+
+    def test_layer_indices_for_12_layers(self):
+        """spec §4.3: Given num_hidden_layers=12, all layers selected (no dropping)."""
+        from Poule.neural.training.model import _layer_indices
+        assert _layer_indices(12) == list(range(12))
+
+    def test_from_checkpoint_reads_num_hidden_layers(self, tmp_path):
+        """spec §4.3: from_checkpoint reads num_hidden_layers from checkpoint."""
+        from Poule.neural.training.model import TacticClassifier
+
+        checkpoint = {
+            "model_state_dict": {},
+            "num_classes": 5,
+            "num_hidden_layers": 6,
+        }
+        # We can't fully reconstruct without real weights, but we can verify
+        # the checkpoint field is read. Use a mock to avoid loading weights.
+        with patch.object(TacticClassifier, "load_state_dict"):
+            model = TacticClassifier.from_checkpoint(checkpoint)
+            assert model.encoder.config.num_hidden_layers == 6
+
+    def test_from_checkpoint_defaults_to_12_for_old_checkpoints(self, tmp_path):
+        """spec §4.3: Old checkpoints without num_hidden_layers default to 12."""
+        from Poule.neural.training.model import TacticClassifier
+
+        checkpoint = {
+            "model_state_dict": {},
+            "num_classes": 5,
+            # No num_hidden_layers key — old checkpoint
+        }
+        with patch.object(TacticClassifier, "load_state_dict"):
+            model = TacticClassifier.from_checkpoint(checkpoint)
+            assert model.encoder.config.num_hidden_layers == 12
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 7. TacticClassifierTrainer — Hyperparameters
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -545,6 +612,7 @@ class TestTacticClassifierTrainerHyperparams:
     def test_default_hyperparameters(self):
         """spec §4.3: Verify default hyperparameter values."""
         trainer = TacticClassifierTrainer()
+        assert trainer.hyperparams["num_hidden_layers"] == 6
         assert trainer.hyperparams["batch_size"] == 64
         assert trainer.hyperparams["learning_rate"] == 2e-5
         assert trainer.hyperparams["weight_decay"] == 1e-2
@@ -622,11 +690,13 @@ class TestCheckpointFormat:
 
     def test_checkpoint_contains_required_fields(self, tmp_path):
         """spec §4.3: Checkpoint shall include model state, epoch, label_map,
-        best_accuracy_5, and hyperparameters."""
+        best_accuracy_5, num_hidden_layers, and hyperparameters."""
         from Poule.neural.training.trainer import save_checkpoint, load_checkpoint
 
         checkpoint_data = {
             "model_state_dict": {"layer.weight": np.zeros(10)},
+            "num_classes": 3,
+            "num_hidden_layers": 6,
             "epoch": 12,
             "best_accuracy_5": 0.85,
             "label_map": {"intros": 0, "apply": 1, "other": 2},
@@ -637,6 +707,7 @@ class TestCheckpointFormat:
         loaded = load_checkpoint(path)
 
         assert "model_state_dict" in loaded
+        assert loaded["num_hidden_layers"] == 6
         assert loaded["epoch"] == 12
         assert abs(loaded["best_accuracy_5"] - 0.85) < 1e-6
         assert loaded["label_map"] == {"intros": 0, "apply": 1, "other": 2}

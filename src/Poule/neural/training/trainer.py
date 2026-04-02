@@ -21,6 +21,7 @@ from Poule.neural.training.errors import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_HYPERPARAMS = {
+    "num_hidden_layers": 6,
     "batch_size": 64,
     "learning_rate": 2e-5,
     "weight_decay": 1e-2,
@@ -280,13 +281,18 @@ class TacticClassifierTrainer:
         # Build model
         from Poule.neural.training.vocabulary import CoqTokenizer
 
+        num_hidden_layers = hp.get("num_hidden_layers", 6)
         if isinstance(tokenizer, CoqTokenizer):
             model = TacticClassifier(
                 num_classes=num_classes,
                 vocab_size=tokenizer.vocab_size,
+                num_hidden_layers=num_hidden_layers,
             )
         else:
-            model = TacticClassifier(num_classes=num_classes)
+            model = TacticClassifier(
+                num_classes=num_classes,
+                num_hidden_layers=num_hidden_layers,
+            )
 
         # Free transient allocations from model loading before
         # the optimizer doubles the memory footprint.
@@ -415,6 +421,8 @@ class TacticClassifierTrainer:
                         "model_state_dict": {
                             k: v.cpu() for k, v in model.state_dict().items()
                         },
+                        "num_classes": num_classes,
+                        "num_hidden_layers": num_hidden_layers,
                         "hyperparams": hp,
                         "label_map": label_map,
                         "vocabulary_path": str(vocabulary_path) if vocabulary_path else None,
@@ -437,6 +445,8 @@ class TacticClassifierTrainer:
                 "model_state_dict": {
                     k: v.cpu() for k, v in model.state_dict().items()
                 },
+                "num_classes": num_classes,
+                "num_hidden_layers": num_hidden_layers,
                 "hyperparams": hp,
                 "label_map": label_map,
                 "vocabulary_path": str(vocabulary_path) if vocabulary_path else None,

@@ -50,7 +50,7 @@ class MLXTacticClassifier(nn.Module):
         self,
         vocab_size: int,
         num_classes: int,
-        num_layers: int = 12,
+        num_layers: int = 6,
         hidden_size: int = 768,
         num_heads: int = 12,
         max_seq_length: int = 514,
@@ -162,10 +162,12 @@ class MLXTacticClassifier(nn.Module):
             ).astype(np.float32)
         self.embedding.weight = mx.array(emb_np)
 
-        # Copy transformer layers
-        for i in range(min(num_layers, len(pt_state) // 16)):
-            prefix = f"encoder.layer.{i}"
-            layer = self.layers[i]
+        # Copy transformer layers (with layer dropping)
+        from Poule.neural.training.model import _layer_indices
+        source_indices = _layer_indices(num_layers)
+        for dst_i, src_i in enumerate(source_indices):
+            prefix = f"encoder.layer.{src_i}"
+            layer = self.layers[dst_i]
 
             def _copy(src_key: str, dst_param_name: str) -> mx.array:
                 return mx.array(pt_state[src_key].detach().numpy())

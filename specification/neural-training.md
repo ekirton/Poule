@@ -252,8 +252,9 @@ Extends `extract_tactic_family` with additional normalization rules for compound
 5. Split on `;` and take the first segment (compound tactic handling).
 6. Take the first whitespace-delimited token.
 7. Strip trailing punctuation (`.`, `;`, `:`, `?`, `-`).
-8. Lowercase.
-9. Apply alias mapping (same as `extract_tactic_family`: `intro` → `intros`, `Proof` → `intros`, `now` → `auto`).
+8. Strip SSReflect intro pattern operator: if the token ends with `=>`, remove it. This collapses `move=>` → `move`, `case=>` → `case`, etc.
+9. Lowercase.
+10. Apply alias mapping (same as `extract_tactic_family`: `intro` → `intros`, `Proof` → `intros`, `now` → `auto`).
 
 - REQUIRES: `tactic_text` is a string (may be empty).
 - ENSURES: Returns a lowercase string representing the normalized tactic family, or `"other"` if the input is empty or produces an empty result after normalization.
@@ -447,7 +448,7 @@ All steps from the same file go into the same split.
 #### train(dataset, output_path, vocabulary_path, hyperparams, epoch_callback)
 
 - REQUIRES: `dataset` is a `TacticDataset` with at least 1,000 training steps (after sampling, if applied). `output_path` is a writable path. `vocabulary_path` points to a valid vocabulary JSON file (as produced by `VocabularyBuilder.build`). `hyperparams` has defaults as specified below. `sample` is `None` or a float in (0.0, 1.0]. `epoch_callback` is `None` or a callable `(epoch: int, val_accuracy: float) -> None`.
-- ENSURES: When `sample` is not `None`, randomly sub-samples the training split to `ceil(len(dataset.train) * sample)` steps before training begins (validation and test splits are not affected). Constructs a `CoqTokenizer` from `vocabulary_path`. Creates a `TacticClassifier` model with an embedding layer sized to the vocabulary and a classification head sized to `dataset.num_classes`. Copies overlapping pretrained embeddings from CodeBERT for tokens that appear in both vocabularies (digits, punctuation, common words). Initializes remaining embeddings randomly (σ=0.02). Trains using class-weighted cross-entropy loss. Saves the best checkpoint (by validation accuracy@5) to `output_path`. The checkpoint includes the vocabulary path and label map for reproducibility. Prints training metrics (loss, validation accuracy@1, validation accuracy@5) after each epoch. When `epoch_callback` is not `None`, invokes it after each epoch's validation with the epoch number and validation accuracy@5; if the callback raises an exception, the training loop terminates and the exception propagates to the caller.
+- ENSURES: When `sample` is not `None`, randomly sub-samples the training split to `ceil(len(dataset.train) * sample)` steps before training begins (validation and test splits are not affected). Constructs a `CoqTokenizer` from `vocabulary_path`. Creates a `TacticClassifier` model with `num_hidden_layers` transformer layers (default 6, layer-dropped from CodeBERT's 12 layers), an embedding layer sized to the vocabulary, and a classification head sized to `dataset.num_classes`. Copies overlapping pretrained embeddings from CodeBERT for tokens that appear in both vocabularies (digits, punctuation, common words). Initializes remaining embeddings randomly (σ=0.02). Trains using class-weighted cross-entropy loss. Saves the best checkpoint (by validation accuracy@5) to `output_path`. The checkpoint includes `num_hidden_layers`, the vocabulary path, and label map for reproducibility. Prints training metrics (loss, validation accuracy@1, validation accuracy@5) after each epoch. When `epoch_callback` is not `None`, invokes it after each epoch's validation with the epoch number and validation accuracy@5; if the callback raises an exception, the training loop terminates and the exception propagates to the caller.
 - On training completion: saves final checkpoint alongside best checkpoint.
 - On GPU OOM: raises `TrainingResourceError` with message suggesting batch size reduction.
 - When `vocabulary_path` is `None`: falls back to CodeBERT's default tokenizer and embedding layer (backward compatibility).
@@ -456,6 +457,7 @@ All steps from the same file go into the same split.
 
 | Parameter | Default | Constraint |
 |-----------|---------|-----------|
+| `num_hidden_layers` | 6 | Must be in {4, 6, 8, 12} |
 | `batch_size` | 64 | Must be positive |
 | `learning_rate` | 2e-5 | Must be positive |
 | `weight_decay` | 1e-2 | Must be non-negative |
@@ -470,20 +472,49 @@ All steps from the same file go into the same split.
 ```
 Input: input_ids [B, 512], attention_mask [B, 512]
   |
-  |-- CodeBERT encoder (12 layers, 768 hidden, 12 heads)
+  |-- CodeBERT encoder (num_hidden_layers layers, 768 hidden, 12 heads)
   |-- Mean pooling (attention-masked)
   |-- nn.Linear(768, num_classes)
   |-- Output: logits [B, num_classes]
 ```
 
-Single forward pass per batch. No premise encoding, no contrastive pairs, no hard negatives.
+Default `num_hidden_layers` is 6. Single forward pass per batch. No premise encoding, no contrastive pairs, no hard negatives.
+
+#### Construction
+
+`TacticClassifier(model_name, num_classes, vocab_size, num_hidden_layers=6)`
+
+- REQUIRES: `model_name` is a valid HuggingFace model name (default: `"microsoft/codebert-base"`). `num_classes` is a positive integer. `vocab_size` is `None` or a positive integer. `num_hidden_layers` is in {4, 6, 8, 12}.
+- ENSURES: Loads the pretrained model, then applies layer dropping if `num_hidden_layers` < 12. Layer dropping selects `num_hidden_layers` layers at evenly spaced indices from the 12-layer source: `indices = [i * 12 // num_hidden_layers for i in range(num_hidden_layers)]`. Builds a new encoder with only the selected layers. Updates the model config's `num_hidden_layers`. When `vocab_size` is not `None`, replaces the embedding layer (same procedure as before). Creates the classification head `nn.Linear(768, num_classes)`.
+- When `num_hidden_layers` is 12: no layer dropping; loads all pretrained layers (backward compatible).
+
+> **Given** `num_hidden_layers=6`
+> **When** `TacticClassifier` is constructed
+> **Then** layer indices [0, 2, 4, 6, 8, 10] are selected from CodeBERT's 12 layers
+
+> **Given** `num_hidden_layers=4`
+> **When** `TacticClassifier` is constructed
+> **Then** layer indices [0, 3, 6, 9] are selected from CodeBERT's 12 layers
+
+#### from_checkpoint(checkpoint)
+
+- REQUIRES: `checkpoint` is a dict containing `model_state_dict`, `num_classes`, and optionally `num_hidden_layers`.
+- ENSURES: Reads `num_hidden_layers` from the checkpoint (default 12 for backward compatibility with existing checkpoints). Builds a `RobertaModel` with the specified layer count. Loads weights with `strict=False`.
+
+> **Given** a checkpoint saved with `num_hidden_layers=6`
+> **When** `from_checkpoint` reconstructs the model
+> **Then** the encoder has 6 transformer layers
+
+> **Given** a checkpoint saved before layer dropping was introduced (no `num_hidden_layers` key)
+> **When** `from_checkpoint` reconstructs the model
+> **Then** the encoder has 12 transformer layers (backward compatible)
 
 #### forward(input_ids, attention_mask)
 
 - REQUIRES: `input_ids` is a tensor of shape `[B, seq_len]`. `attention_mask` is a tensor of shape `[B, seq_len]` with values 0 or 1.
 - ENSURES: Returns logits of shape `[B, num_classes]`.
   1. Token embeddings: `embedding(input_ids)` → `[B, seq_len, 768]`
-  2. Transformer encoding (12 layers)
+  2. Transformer encoding (`num_hidden_layers` layers)
   3. Mean pooling: `sum(output * mask.unsqueeze(-1)) / sum(mask).unsqueeze(-1)` per sequence
   4. Linear projection: `nn.Linear(768, num_classes)` → `[B, num_classes]`
 
@@ -511,7 +542,7 @@ where `alpha` is `class_weight_alpha` (default 0.5). When `alpha=0`, all weights
 
 The closed vocabulary replaces CodeBERT's 50,265-token vocabulary with ~150K tokens. The TacticClassifier model reinitializes its embedding layer:
 
-1. Load CodeBERT's transformer layers (1-12) with pretrained weights.
+1. Load CodeBERT and apply layer dropping (selecting `num_hidden_layers` layers from the 12-layer source).
 2. Create `nn.Embedding(vocab_size, 768)`.
 3. Copy pretrained embeddings for overlapping tokens (digits, punctuation, common words).
 4. Initialize Coq-specific tokens randomly (sigma=0.02).
@@ -528,6 +559,8 @@ After each epoch, compute accuracy@5 on the validation split. If validation accu
 
 The checkpoint shall include:
 - Model state dict (encoder weights, classification head, including the custom embedding layer when using closed vocabulary)
+- `num_classes` (int) — number of tactic family classes
+- `num_hidden_layers` (int) — number of transformer layers in the encoder (4, 6, 8, or 12)
 - Optimizer state dict
 - Epoch number
 - Best validation accuracy@5
@@ -594,8 +627,8 @@ When `accuracy_at_5 < 0.80`, the report shall include a warning: `"Model does no
 
 #### quantize(checkpoint_path, output_path)
 
-- REQUIRES: `checkpoint_path` points to a valid PyTorch training checkpoint (containing `label_map` and `vocabulary_path`). `output_path` is a writable path.
-- ENSURES: Reads `vocabulary_path` and `label_map` from the checkpoint. Reconstructs the model with the custom vocab size and `num_classes` from the label map. Exports the model to ONNX (opset 17+). Output shape: `[B, num_classes]`. Applies dynamic INT8 quantization. Validates quantization quality. Writes the INT8 ONNX model to `output_path`. Also writes `tactic-labels.json` alongside the ONNX model.
+- REQUIRES: `checkpoint_path` points to a valid PyTorch training checkpoint (containing `label_map`, `vocabulary_path`, and optionally `num_hidden_layers`). `output_path` is a writable path.
+- ENSURES: Reads `vocabulary_path`, `label_map`, and `num_hidden_layers` (default 12 for backward compatibility) from the checkpoint. Reconstructs the model with the custom vocab size, `num_classes` from the label map, and the correct layer count. Exports the model to ONNX (opset 17+). Output shape: `[B, num_classes]`. Applies dynamic INT8 quantization. Validates quantization quality. Writes the INT8 ONNX model to `output_path`. Also writes `tactic-labels.json` alongside the ONNX model.
 
 **ONNX export:**
 - Input names: `input_ids` (shape `[B, seq_len]`), `attention_mask` (shape `[B, seq_len]`)
@@ -664,8 +697,9 @@ Automated hyperparameter optimization using Optuna to maximize validation accura
 
 | Parameter | Sampling type | Range | Default |
 |-----------|--------------|-------|---------|
+| `num_hidden_layers` | Categorical | {4, 6, 8, 12} | 6 |
 | `learning_rate` | Log-uniform | [1e-6, 1e-4] | 2e-5 |
-| `batch_size` | Categorical | {32, 64, 128} | 64 |
+| `batch_size` | Categorical | {16, 32, 64} | 64 |
 | `weight_decay` | Log-uniform | [1e-4, 1e-1] | 1e-2 |
 | `class_weight_alpha` | Uniform | [0.0, 1.0] | 0.5 |
 
@@ -736,9 +770,9 @@ MLX port of the tactic classifier model, architecturally identical to the PyTorc
 
 #### Construction
 
-`MLXTacticClassifier(vocab_size, num_classes, num_layers=12, hidden_size=768, num_heads=12)`
+`MLXTacticClassifier(vocab_size, num_classes, num_layers=6, hidden_size=768, num_heads=12)`
 
-- REQUIRES: `vocab_size` is a positive integer matching the closed vocabulary size. `num_classes` is a positive integer matching the number of tactic families.
+- REQUIRES: `vocab_size` is a positive integer matching the closed vocabulary size. `num_classes` is a positive integer matching the number of tactic families. `num_layers` is in {4, 6, 8, 12}.
 - ENSURES: Creates an `mlx.nn.Module` with:
   - `mlx.nn.Embedding(vocab_size, hidden_size)` — token embedding layer
   - Transformer encoder with `num_layers` `mlx.nn.TransformerEncoderLayer` blocks, each with `hidden_size` hidden dimension and `num_heads` attention heads
@@ -751,14 +785,15 @@ MLX port of the tactic classifier model, architecturally identical to the PyTorc
 - ENSURES: Returns logits of shape `[B, num_classes]`.
   1. Token embeddings: `embedding(input_ids)` → `[B, seq_len, 768]`
   2. Add positional embeddings
-  3. Transformer encoding (12 layers)
+  3. Transformer encoding (`num_layers` layers)
   4. Mean pooling: `sum(output * mask) / sum(mask)` per sequence
   5. Linear projection: `linear(pooled)` → `[B, num_classes]`
 
 #### load_codebert_weights(pytorch_model_name="microsoft/codebert-base")
 
 - REQUIRES: `transformers` and `torch` are installed. `pytorch_model_name` is a valid HuggingFace model name.
-- ENSURES: Loads CodeBERT weights from HuggingFace, converts each parameter `torch.Tensor` → `numpy` → `mx.array`, maps parameter names from HuggingFace convention to MLX convention, and loads into the model. The embedding layer is replaced with one sized to `vocab_size`: overlapping tokens get copied pretrained vectors, new tokens are initialized from `N(0, 0.02)`. The classification head `Linear(768, num_classes)` is initialized randomly (not from CodeBERT).
+- ENSURES: Loads CodeBERT weights from HuggingFace, applies layer dropping (selecting `num_layers` layers at evenly spaced indices from the 12-layer source, same index computation as PyTorch `TacticClassifier`), converts each parameter `torch.Tensor` → `numpy` → `mx.array`, maps parameter names from HuggingFace convention to MLX convention, and loads into the model. The embedding layer is replaced with one sized to `vocab_size`: overlapping tokens get copied pretrained vectors, new tokens are initialized from `N(0, 0.02)`. The classification head `Linear(768, num_classes)` is initialized randomly (not from CodeBERT).
+- When `num_layers` is 12: all layers are loaded (no dropping).
 - When `transformers` is not installed: raises `ImportError` with message `"transformers is required for CodeBERT weight initialization"`.
 
 **Parameter name mapping (HuggingFace → MLX):**
@@ -837,7 +872,7 @@ Checkpoints are saved as a directory:
 ```
 <output_dir>/
 ├── model.safetensors       # MLX model weights (mx.save_safetensors)
-├── config.json             # {"vocab_size": int, "num_classes": int, "num_layers": 12, "hidden_size": 768, "num_heads": 12}
+├── config.json             # {"vocab_size": int, "num_classes": int, "num_layers": 6, "hidden_size": 768, "num_heads": 12}
 ├── hyperparams.json        # Training hyperparameters used
 ├── label_map.json          # Tactic family name → class index mapping
 ├── vocabulary_path.txt     # Path to vocabulary JSON (single line)
