@@ -95,13 +95,9 @@ class TacticEvaluator:
                 batch_texts = texts[start : start + batch_size]
                 batch_labels = labels[start : start + batch_size]
 
-                tokens = self.tokenizer(
-                    batch_texts,
-                    padding=True,
-                    truncation=True,
-                    max_length=512,
-                    return_tensors="pt",
-                )
+                from Poule.neural.training.trainer import _tokenize_batch
+
+                tokens = _tokenize_batch(self.tokenizer, batch_texts, 512)
                 logits = self.model(
                     tokens["input_ids"].to(self.device),
                     tokens["attention_mask"].to(self.device),

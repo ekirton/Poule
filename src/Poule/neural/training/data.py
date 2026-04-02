@@ -58,6 +58,10 @@ def extract_tactic_family(tactic_text: str) -> str:
     # Strip trailing punctuation
     first_token = first_token.rstrip(".,;:")
 
+    # Strip SSReflect intro pattern operator: move=> → move
+    if first_token.endswith("=>"):
+        first_token = first_token[:-2]
+
     # Lowercase
     family = first_token.lower()
 
