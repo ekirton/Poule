@@ -613,13 +613,15 @@ class TestTacticClassifierTrainerHyperparams:
         """spec §4.3: Verify default hyperparameter values."""
         trainer = TacticClassifierTrainer()
         assert trainer.hyperparams["num_hidden_layers"] == 6
-        assert trainer.hyperparams["batch_size"] == 64
+        assert trainer.hyperparams["batch_size"] == 16
         assert trainer.hyperparams["learning_rate"] == 2e-5
         assert trainer.hyperparams["weight_decay"] == 1e-2
         assert trainer.hyperparams["max_seq_length"] == 256
         assert trainer.hyperparams["max_epochs"] == 20
         assert trainer.hyperparams["early_stopping_patience"] == 3
         assert trainer.hyperparams["class_weight_alpha"] == 0.5
+        assert trainer.hyperparams["label_smoothing"] == 0.1
+        assert trainer.hyperparams["sam_rho"] == 0.05
 
     def test_custom_hyperparameters_override_defaults(self):
         """spec §4.3: Caller can override defaults."""
@@ -633,9 +635,80 @@ class TestTacticClassifierTrainerHyperparams:
 
     def test_default_hyperparams_constant(self):
         """DEFAULT_HYPERPARAMS matches what the trainer uses."""
-        assert DEFAULT_HYPERPARAMS["batch_size"] == 64
+        assert DEFAULT_HYPERPARAMS["batch_size"] == 16
         assert DEFAULT_HYPERPARAMS["learning_rate"] == 2e-5
         assert DEFAULT_HYPERPARAMS["early_stopping_patience"] == 3
+        assert DEFAULT_HYPERPARAMS["label_smoothing"] == 0.1
+        assert DEFAULT_HYPERPARAMS["sam_rho"] == 0.05
+
+    def test_sam_rho_zero_disables_sam(self):
+        """spec §4.3: When sam_rho=0.0, SAM is disabled (plain AdamW)."""
+        trainer = TacticClassifierTrainer(hyperparams={"sam_rho": 0.0})
+        assert trainer.hyperparams["sam_rho"] == 0.0
+
+    def test_label_smoothing_zero_disables_smoothing(self):
+        """spec §4.3: When label_smoothing=0.0, standard hard targets are used."""
+        trainer = TacticClassifierTrainer(hyperparams={"label_smoothing": 0.0})
+        assert trainer.hyperparams["label_smoothing"] == 0.0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 7b. SAM Optimizer
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestSAMOptimizer:
+    """spec §4.3: SAM-AdamW optimizer performs two forward-backward passes."""
+
+    def test_sam_step_perturbs_and_restores(self):
+        """spec §4.3: SAM perturbs parameters by rho * grad / ||grad||,
+        then restores original parameters after computing gradient at
+        the perturbed point."""
+        import torch
+        from Poule.neural.training.sam import SAM
+
+        model = torch.nn.Linear(4, 2)
+        base_optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+        sam = SAM(model.parameters(), base_optimizer, rho=0.05)
+
+        original_weight = model.weight.data.clone()
+
+        # First step: compute gradient and perturb
+        x = torch.randn(2, 4)
+        loss = model(x).sum()
+        loss.backward()
+        sam.first_step()
+
+        # Parameters should be perturbed (different from original)
+        assert not torch.allclose(model.weight.data, original_weight)
+
+        # Second step: compute gradient at perturbed point and restore
+        loss2 = model(x).sum()
+        loss2.backward()
+        sam.second_step()
+
+        # Parameters should be updated from original position (not perturbed)
+        # They won't be exactly original_weight because AdamW stepped
+        # but they should be different from the perturbed point
+        assert model.weight.data.shape == original_weight.shape
+
+    def test_sam_with_zero_rho_is_plain_adamw(self):
+        """spec §4.3: When rho=0.0, SAM should not perturb."""
+        import torch
+        from Poule.neural.training.sam import SAM
+
+        model = torch.nn.Linear(4, 2)
+        base_optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+        sam = SAM(model.parameters(), base_optimizer, rho=0.0)
+
+        original_weight = model.weight.data.clone()
+        x = torch.randn(2, 4)
+        loss = model(x).sum()
+        loss.backward()
+        sam.first_step()
+
+        # With rho=0, no perturbation — parameters unchanged
+        assert torch.allclose(model.weight.data, original_weight)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

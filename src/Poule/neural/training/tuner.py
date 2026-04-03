@@ -29,6 +29,8 @@ TUNABLE_HYPERPARAMS: dict[str, dict[str, Any]] = {
     "batch_size": {"choices": [16, 32, 64]},
     "weight_decay": {"low": 1e-4, "high": 1e-1, "log": True},
     "class_weight_alpha": {"low": 0.0, "high": 1.0},
+    "label_smoothing": {"low": 0.0, "high": 0.3},
+    "sam_rho": {"low": 0.01, "high": 0.2, "log": True},
 }
 
 
@@ -134,6 +136,17 @@ class HyperparameterTuner:
                     "class_weight_alpha",
                     TUNABLE_HYPERPARAMS["class_weight_alpha"]["low"],
                     TUNABLE_HYPERPARAMS["class_weight_alpha"]["high"],
+                ),
+                "label_smoothing": trial.suggest_float(
+                    "label_smoothing",
+                    TUNABLE_HYPERPARAMS["label_smoothing"]["low"],
+                    TUNABLE_HYPERPARAMS["label_smoothing"]["high"],
+                ),
+                "sam_rho": trial.suggest_float(
+                    "sam_rho",
+                    TUNABLE_HYPERPARAMS["sam_rho"]["low"],
+                    TUNABLE_HYPERPARAMS["sam_rho"]["high"],
+                    log=TUNABLE_HYPERPARAMS["sam_rho"].get("log", False),
                 ),
             }
 

@@ -206,10 +206,10 @@ Identical to the previous design: file-level split, deterministic by position mo
 
 ## Training
 
-### Objective: Class-Weighted Cross-Entropy
+### Objective: Class-Weighted Cross-Entropy with Label Smoothing
 
 ```
-loss = CrossEntropyLoss(weight=class_weights)(logits, labels)
+loss = CrossEntropyLoss(weight=class_weights, label_smoothing=label_smoothing)(logits, labels)
 ```
 
 Class weights are computed from inverse frequency to handle the long-tailed tactic distribution:
@@ -219,6 +219,20 @@ weight[c] = (total_samples / (num_classes * count[c])) ^ alpha
 ```
 
 where `alpha` controls the strength of rebalancing (default 0.5; tunable via HPO).
+
+Label smoothing replaces hard targets y=1 with y = 1 - ε + ε/K, where K is the number of classes and ε is the smoothing parameter (default 0.1). This prevents overconfident predictions and acts as a regularizer, especially for minority classes that are prone to overfitting due to limited examples. Shwartz-Ziv et al. (2023) confirm that label smoothing is "greatly amplified on imbalanced data."
+
+### Optimizer: SAM-AdamW
+
+Sharpness-Aware Minimization (SAM) with AdamW as the base optimizer. SAM seeks parameters that lie in flat loss neighborhoods rather than sharp minima, improving generalization — especially for minority classes whose loss landscape is poorly sampled.
+
+The SAM update has two steps per batch:
+1. **Perturbation**: compute gradient g, take an ascent step of size ρ in the gradient direction to find the worst-case neighborhood point.
+2. **Descent**: compute gradient at the perturbed point, then take a standard AdamW step using this gradient.
+
+This doubles the cost per batch (two forward-backward passes), but Shwartz-Ziv et al. found it significantly improves tail-class accuracy. The perturbation radius ρ (default 0.05) is tunable via HPO.
+
+SAM is applied only to the PyTorch backend. The MLX backend continues to use plain AdamW (SAM support in MLX is not available).
 
 ### Model Architecture
 
@@ -267,10 +281,12 @@ This requires two training runs: (1) fine-tune the full 12-layer CodeBERT on Coq
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
 | Num hidden layers | 6 | Layer-dropped from CodeBERT-12; smaller model for imbalanced data (Shwartz-Ziv et al., 2023) |
-| Batch size | 64 | Larger batches not needed (no in-batch negatives) |
+| Batch size | 16 | Smaller batches improve tail-class generalization under severe imbalance (Shwartz-Ziv et al., 2023) |
 | Learning rate | 2e-5 | Standard for BERT fine-tuning |
 | Weight decay | 1e-2 | Standard AdamW |
 | Class weight alpha | 0.5 | Moderate inverse-frequency rebalancing |
+| Label smoothing | 0.1 | Prevents overfitting on minority classes (Shwartz-Ziv et al., 2023) |
+| SAM rho | 0.05 | SAM perturbation radius; improves tail-class generalization |
 | Max sequence length | 512 tokens | Standard |
 | Training epochs | 20 | Early stopping on validation accuracy@5 |
 | Early stopping patience | 3 epochs | Stop if accuracy@5 does not improve |
@@ -342,9 +358,11 @@ Optuna with TPE sampler, maximizing validation accuracy@5.
 |-----------|------|-------|---------|
 | Num hidden layers | Categorical | {4, 6, 8, 12} | 6 |
 | Learning rate | Log-uniform | [1e-6, 1e-4] | 2e-5 |
-| Batch size | Categorical | {16, 32, 64} | 64 |
+| Batch size | Categorical | {16, 32, 64} | 16 |
 | Weight decay | Log-uniform | [1e-4, 1e-1] | 1e-2 |
 | Class weight alpha | Uniform | [0.0, 1.0] | 0.5 |
+| Label smoothing | Uniform | [0.0, 0.3] | 0.1 |
+| SAM rho | Log-uniform | [0.01, 0.2] | 0.05 |
 
 ### Pruning
 
