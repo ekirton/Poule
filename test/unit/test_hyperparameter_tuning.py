@@ -217,6 +217,7 @@ class TestTunableHyperparams:
         expected = {
             "num_hidden_layers", "learning_rate", "batch_size",
             "weight_decay", "class_weight_alpha",
+            "label_smoothing", "sam_rho",
         }
         assert set(TUNABLE_HYPERPARAMS.keys()) == expected
 
@@ -386,6 +387,8 @@ class TestHyperparameterTuner:
             assert hp["batch_size"] in {16, 32, 64}
             assert 1e-4 <= hp["weight_decay"] <= 1e-1
             assert 0.0 <= hp["class_weight_alpha"] <= 1.0
+            assert 0.0 <= hp["label_smoothing"] <= 0.3
+            assert 0.01 <= hp["sam_rho"] <= 0.2
 
     def test_tune_uses_sqlite_storage(self, tmp_path):
         """spec §4.8: study persists in SQLite at output_dir/hpo-study.db."""

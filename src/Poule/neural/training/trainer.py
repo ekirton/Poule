@@ -22,13 +22,15 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_HYPERPARAMS = {
     "num_hidden_layers": 6,
-    "batch_size": 64,
+    "batch_size": 16,
     "learning_rate": 2e-5,
     "weight_decay": 1e-2,
     "max_seq_length": 256,
     "max_epochs": 20,
     "early_stopping_patience": 3,
     "class_weight_alpha": 0.5,
+    "label_smoothing": 0.1,
+    "sam_rho": 0.05,
 }
 
 
@@ -305,19 +307,30 @@ class TacticClassifierTrainer:
 
         model = model.to(device)
 
-        # Class-weighted cross-entropy loss
+        # Class-weighted cross-entropy loss with label smoothing
         alpha = hp.get("class_weight_alpha", 0.5)
+        label_smoothing = hp.get("label_smoothing", 0.1)
         class_weights = compute_class_weights(
             family_counts, label_map, num_classes, alpha=alpha,
         ).to(device)
-        criterion = nn.CrossEntropyLoss(weight=class_weights)
+        criterion = nn.CrossEntropyLoss(
+            weight=class_weights,
+            label_smoothing=label_smoothing,
+        )
 
-        # Optimizer
-        optimizer = torch.optim.AdamW(
+        # Optimizer: SAM-AdamW or plain AdamW
+        sam_rho = hp.get("sam_rho", 0.05)
+        base_optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=hp["learning_rate"],
             weight_decay=hp["weight_decay"],
         )
+        use_sam = sam_rho > 0.0
+        if use_sam:
+            from Poule.neural.training.sam import SAM
+            optimizer = SAM(model.parameters(), base_optimizer, rho=sam_rho)
+        else:
+            optimizer = base_optimizer
 
         # Mixed precision (CUDA only)
         use_amp = device.type == "cuda"
@@ -369,16 +382,37 @@ class TacticClassifierTrainer:
                     input_ids = tokens["input_ids"].to(device)
                     attention_mask = tokens["attention_mask"].to(device)
 
-                    with autocast_ctx():
-                        logits = model(input_ids, attention_mask)
-                        loss = criterion(logits, labels)
+                    if use_sam and not scaler:
+                        # SAM two-step: first forward-backward, perturb,
+                        # second forward-backward, optimizer step
+                        optimizer.zero_grad()
+                        with autocast_ctx():
+                            logits = model(input_ids, attention_mask)
+                            loss = criterion(logits, labels)
+                        loss.backward()
+                        optimizer.first_step()
 
-                    optimizer.zero_grad()
-                    if scaler:
+                        optimizer.zero_grad()
+                        with autocast_ctx():
+                            logits2 = model(input_ids, attention_mask)
+                            loss2 = criterion(logits2, labels)
+                        loss2.backward()
+                        optimizer.second_step()
+                    elif scaler:
+                        # AMP path (no SAM with AMP for simplicity)
+                        optimizer.zero_grad()
+                        with autocast_ctx():
+                            logits = model(input_ids, attention_mask)
+                            loss = criterion(logits, labels)
                         scaler.scale(loss).backward()
-                        scaler.step(optimizer)
+                        scaler.step(base_optimizer if use_sam else optimizer)
                         scaler.update()
                     else:
+                        # Plain AdamW (sam_rho == 0)
+                        optimizer.zero_grad()
+                        with autocast_ctx():
+                            logits = model(input_ids, attention_mask)
+                            loss = criterion(logits, labels)
                         loss.backward()
                         optimizer.step()
 
