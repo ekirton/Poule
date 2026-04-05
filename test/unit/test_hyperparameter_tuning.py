@@ -338,9 +338,11 @@ class TestHyperparameterTuner:
             mock_trainer_instance.train.side_effect = trainer_side_effect
         mock_trainer_cls = MagicMock(return_value=mock_trainer_instance)
 
-        with patch("Poule.neural.training.tuner.TacticClassifierTrainer", mock_trainer_cls), \
+        with patch("Poule.neural.training.tuner._mlx_available", return_value=False), \
+             patch("Poule.neural.training.tuner.TacticClassifierTrainer", mock_trainer_cls), \
              patch("Poule.neural.training.tuner.load_checkpoint",
-                    return_value={"best_accuracy_5": 0.5}):
+                    return_value={"best_accuracy_5": 0.5}), \
+             patch("transformers.AutoTokenizer.from_pretrained", return_value=MagicMock()):
             result = HyperparameterTuner.tune(
                 dataset, output_dir, n_trials=n_trials, resume=resume,
             )
@@ -419,16 +421,18 @@ class TestHyperparameterTuner:
         dataset = self._make_dataset()
 
         # Pre-create the trial checkpoint that the trainer would write
-        def fake_train(ds, path, **kwargs):
-            Path(path).write_text("fake checkpoint data")
+        def fake_train(ds, tokenizer, output_path=None, **kwargs):
+            Path(output_path).write_text("fake checkpoint data")
 
         mock_trainer_instance = MagicMock()
         mock_trainer_instance.train.side_effect = fake_train
         mock_trainer_cls = MagicMock(return_value=mock_trainer_instance)
 
-        with patch("Poule.neural.training.tuner.TacticClassifierTrainer", mock_trainer_cls), \
+        with patch("Poule.neural.training.tuner._mlx_available", return_value=False), \
+             patch("Poule.neural.training.tuner.TacticClassifierTrainer", mock_trainer_cls), \
              patch("Poule.neural.training.tuner.load_checkpoint",
-                    return_value={"best_accuracy_5": 0.5}):
+                    return_value={"best_accuracy_5": 0.5}), \
+             patch("transformers.AutoTokenizer.from_pretrained", return_value=MagicMock()):
             HyperparameterTuner.tune(dataset, output_dir, n_trials=1)
 
         assert (output_dir / "best-model.pt").exists()
@@ -461,7 +465,9 @@ class TestHyperparameterTuner:
         mock_trainer_instance.train.side_effect = always_fail
         mock_trainer_cls = MagicMock(return_value=mock_trainer_instance)
 
-        with patch("Poule.neural.training.tuner.TacticClassifierTrainer", mock_trainer_cls), \
+        with patch("Poule.neural.training.tuner._mlx_available", return_value=False), \
+             patch("Poule.neural.training.tuner.TacticClassifierTrainer", mock_trainer_cls), \
+             patch("transformers.AutoTokenizer.from_pretrained", return_value=MagicMock()), \
              pytest.raises(TuningError, match="0 of"):
             HyperparameterTuner.tune(dataset, output_dir, n_trials=3)
 
@@ -481,9 +487,11 @@ class TestHyperparameterTuner:
         mock_trainer_instance = MagicMock()
         mock_trainer_cls = MagicMock(return_value=mock_trainer_instance)
 
-        with patch("Poule.neural.training.tuner.TacticClassifierTrainer", mock_trainer_cls), \
+        with patch("Poule.neural.training.tuner._mlx_available", return_value=False), \
+             patch("Poule.neural.training.tuner.TacticClassifierTrainer", mock_trainer_cls), \
              patch("Poule.neural.training.tuner.load_checkpoint",
-                    return_value={"best_accuracy_5": 0.5}):
+                    return_value={"best_accuracy_5": 0.5}), \
+             patch("transformers.AutoTokenizer.from_pretrained", return_value=MagicMock()):
             result2 = HyperparameterTuner.tune(
                 dataset, output_dir, n_trials=3, resume=True,
             )
@@ -509,8 +517,10 @@ class TestHyperparameterTuner:
         mock_trainer_instance = MagicMock()
         mock_trainer_cls = MagicMock(return_value=mock_trainer_instance)
 
-        with patch("Poule.neural.training.tuner.TacticClassifierTrainer", mock_trainer_cls), \
-             patch("Poule.neural.training.tuner.load_checkpoint", side_effect=varying_checkpoint):
+        with patch("Poule.neural.training.tuner._mlx_available", return_value=False), \
+             patch("Poule.neural.training.tuner.TacticClassifierTrainer", mock_trainer_cls), \
+             patch("Poule.neural.training.tuner.load_checkpoint", side_effect=varying_checkpoint), \
+             patch("transformers.AutoTokenizer.from_pretrained", return_value=MagicMock()):
             result = HyperparameterTuner.tune(dataset, output_dir, n_trials=2)
 
         assert result.best_value == 0.7  # Maximized
