@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CHECKPOINT="/data/model.pt"
-OUTPUT="/data/tactic-predictor.onnx"
+# Default paths work both inside the container (/data/) and locally.
+# Override with POULE_DATA_DIR or --checkpoint/--output flags.
+DATA_DIR="${POULE_DATA_DIR:-/data}"
+CHECKPOINT="${DATA_DIR}/final-model/model.pt"
+OUTPUT="${DATA_DIR}/final-model/tactic-predictor.onnx"
 
 usage() {
     echo "Usage: $(basename "$0") [--checkpoint PATH] [--output PATH]" >&2
@@ -25,15 +28,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ! -f "$CHECKPOINT" ]]; then
-    ALT="${CHECKPOINT%.pt}.safetensors"
-    if [[ "$CHECKPOINT" == *.pt ]] && [[ -f "$ALT" ]]; then
-        CHECKPOINT="$ALT"
-        echo "Using $CHECKPOINT (no .pt found)"
-    else
-        echo "Error: checkpoint not found at $CHECKPOINT" >&2
-        exit 1
-    fi
+    echo "Error: checkpoint not found at $CHECKPOINT" >&2
+    exit 1
 fi
 
 echo "Quantizing $CHECKPOINT -> $OUTPUT"
-poule quantize --checkpoint "$CHECKPOINT" --output "$OUTPUT"
+python -c "
+from pathlib import Path
+from Poule.neural.training.quantizer import ModelQuantizer
+ModelQuantizer.quantize(Path('${CHECKPOINT}'), Path('${OUTPUT}'))
+print('Done.')
+"

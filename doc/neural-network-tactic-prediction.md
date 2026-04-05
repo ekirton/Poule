@@ -331,6 +331,45 @@ The model achieves 70.2% val_acc@5 but only 46.6% test_acc@5 — a 24 percentage
 2. **Normalize SSReflect compounds.** Strip `/`-suffixed variants (`apply/eqp` → `apply`, `move/` → `move`) during collapse, rather than treating them as separate families.
 3. **Increase class_weight_alpha.** Re-run HPO with alpha ∈ [0.3, 0.7] to give more weight to mid-tier families.
 4. **Stratified splitting.** Split by library rather than file position to ensure each split contains examples from all six libraries.
+5. **Embedding factorization.** See the section below — the 158K-token embedding dominates model size and contains mostly undertrained parameters.
+
+### Embedding factorization
+
+The model has 150M parameters, but 121M (81%) are in the token embedding matrix (158K tokens × 768 dimensions). Most of these tokens are rare Coq identifiers that appear in very few training examples — they cannot learn meaningful 768-dimensional representations, and their embeddings are effectively noise. This wastes both model capacity and disk/memory at inference time.
+
+**The approach:** Decompose the embedding matrix into two smaller matrices, following ALBERT (Lan et al., 2020):
+
+```
+Standard:   E = V × H           158,242 × 768 = 121.5M params
+Factored:   E = (V × D) · (D × H)   158,242 × 128 + 128 × 768 = 20.4M params
+```
+
+where `D` is a low-rank bottleneck dimension (e.g., 128). Each token gets a compact 128-dimensional embedding, which a shared projection matrix expands to the 768-dimensional space the transformer expects.
+
+**Why it works here:** The vocabulary contains 158K tokens, but the training data has only 140K examples. Most tokens appear in a handful of proof states at best. A 768-dimensional embedding for a token seen 3 times is pure overfitting — a 128-dimensional representation captures everything that token can meaningfully learn, and the shared projection handles the expansion. Frequent tokens (`apply`, `rewrite`, `forall`, `nat`) might lose some expressiveness, but ALBERT found no accuracy degradation with D=128 on BERT-base (the same 768 hidden dimension).
+
+**Impact on model size:**
+
+| Component | Current | Factored (D=128) |
+|-----------|---------|-------------------|
+| Token embedding | 121.5M params (486 MB) | 20.4M params (82 MB) |
+| Position embedding | 0.4M | 0.4M (unchanged) |
+| 4 transformer layers | 28.4M | 28.4M (unchanged) |
+| Classification head | 0.1M | 0.1M (unchanged) |
+| **Total** | **150.4M (601 MB)** | **49.3M (197 MB)** |
+
+A 3× parameter reduction without quantization. Combined with INT8 quantization (when toolchain support improves), the model would be ~50 MB.
+
+**What changes:**
+- Add a `nn.Linear(D, H, bias=False)` projection layer after the embedding lookup
+- Initialize the projection from a truncated SVD of CodeBERT's original embedding matrix (preserves the most important directions)
+- The rest of the model (transformer layers, classification head) is unchanged — they still receive 768-dim inputs
+- Requires retraining, but there is no transfer learning loss: the custom 158K-token embedding already discards CodeBERT's vocabulary, so there are no pretrained embedding weights to preserve
+
+**Tradeoffs:**
+- Adds one small matrix multiply per forward pass (128 × 768 = 98K operations — negligible compared to attention)
+- If D is too small, frequent tokens lose expressiveness. D=128–256 is the typical sweet spot; D=128 is the ALBERT default for H=768
+- The CodeBERT pretrained weights for attention layers and FFN are unaffected — only the embedding input path changes
 
 ## Implementation Scope
 
