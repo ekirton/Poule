@@ -36,6 +36,7 @@ class TacticClassifier(nn.Module):
         num_classes: int = 1,
         vocab_size: int | None = None,
         num_hidden_layers: int = 6,
+        embedding_dim: int = 128,
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -51,23 +52,33 @@ class TacticClassifier(nn.Module):
             encoder.config.num_hidden_layers = num_hidden_layers
 
         self.encoder = encoder
+        hidden_size = self.encoder.config.hidden_size
 
         # Replace embedding layer if a custom vocab size is provided
         if vocab_size is not None:
             old_embeddings = self.encoder.embeddings.word_embeddings
-            hidden_size = old_embeddings.embedding_dim
-            new_embeddings = nn.Embedding(vocab_size, hidden_size)
+            new_embeddings = nn.Embedding(vocab_size, embedding_dim)
             # Initialize randomly (σ=0.02), then copy overlapping tokens
             nn.init.normal_(new_embeddings.weight, mean=0.0, std=0.02)
             overlap = min(vocab_size, old_embeddings.num_embeddings)
+            copy_dim = min(embedding_dim, old_embeddings.embedding_dim)
             with torch.no_grad():
-                new_embeddings.weight[:overlap] = old_embeddings.weight[:overlap]
+                new_embeddings.weight[:overlap, :copy_dim] = (
+                    old_embeddings.weight[:overlap, :copy_dim]
+                )
             self.encoder.embeddings.word_embeddings = new_embeddings
             # Free the old embedding tensor immediately
             del old_embeddings
             import gc; gc.collect()
 
-        hidden_size = self.encoder.config.hidden_size
+        # Embedding projection for factorized embeddings (ALBERT-style)
+        if embedding_dim < hidden_size:
+            self.embedding_projection = nn.Linear(
+                embedding_dim, hidden_size, bias=False,
+            )
+        else:
+            self.embedding_projection = None
+
         self.classifier = nn.Linear(hidden_size, num_classes)
 
     @classmethod
@@ -86,13 +97,15 @@ class TacticClassifier(nn.Module):
         state_dict = checkpoint["model_state_dict"]
         num_classes = checkpoint["num_classes"]
         num_hidden_layers = checkpoint.get("num_hidden_layers", 12)
+        embedding_dim = checkpoint.get("embedding_dim", 768)
 
         emb_key = "encoder.embeddings.word_embeddings.weight"
         vocab_size = state_dict[emb_key].shape[0] if emb_key in state_dict else None
 
+        hidden_size = 768
         config = RobertaConfig(
             vocab_size=vocab_size or 50265,
-            hidden_size=768,
+            hidden_size=hidden_size,
             num_hidden_layers=num_hidden_layers,
             num_attention_heads=12,
             intermediate_size=3072,
@@ -106,7 +119,20 @@ class TacticClassifier(nn.Module):
         nn.Module.__init__(model)
         model.num_classes = num_classes
         model.encoder = RobertaModel(config)
-        model.classifier = nn.Linear(768, num_classes)
+
+        # Embedding factorization: resize embedding and add projection
+        if embedding_dim < hidden_size:
+            if vocab_size is not None:
+                model.encoder.embeddings.word_embeddings = nn.Embedding(
+                    vocab_size, embedding_dim,
+                )
+            model.embedding_projection = nn.Linear(
+                embedding_dim, hidden_size, bias=False,
+            )
+        else:
+            model.embedding_projection = None
+
+        model.classifier = nn.Linear(hidden_size, num_classes)
 
         model.load_state_dict(state_dict, strict=False)
         return model
@@ -132,7 +158,19 @@ class TacticClassifier(nn.Module):
         Returns:
             [B, num_classes] unnormalized logits.
         """
-        outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        # Apply embedding projection for factorized embeddings
+        if self.embedding_projection is not None:
+            word_embs = self.encoder.embeddings.word_embeddings(input_ids)
+            projected = self.embedding_projection(word_embs)
+            # Pass projected embeddings via inputs_embeds; the encoder
+            # adds position embeddings and layer norm internally.
+            outputs = self.encoder(
+                inputs_embeds=projected, attention_mask=attention_mask,
+            )
+        else:
+            outputs = self.encoder(
+                input_ids=input_ids, attention_mask=attention_mask,
+            )
         token_embs = outputs.last_hidden_state  # [B, seq_len, dim]
 
         # Mean pooling over non-padding tokens
@@ -156,10 +194,12 @@ class TacticClassifier(nn.Module):
             label_map: Mapping from tactic family name to class index.
             extra: Optional additional metadata to include in the checkpoint.
         """
+        emb_dim = self.encoder.embeddings.word_embeddings.weight.shape[1]
         checkpoint: dict[str, Any] = {
             "model_state_dict": self.state_dict(),
             "num_classes": self.num_classes,
             "num_hidden_layers": self.encoder.config.num_hidden_layers,
+            "embedding_dim": emb_dim,
             "label_map": label_map,
         }
         if extra:

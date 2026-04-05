@@ -467,28 +467,31 @@ All steps from the same file go into the same split.
 | `max_seq_length` | 512 | Must be positive |
 | `max_epochs` | 20 | Must be positive |
 | `early_stopping_patience` | 3 | Must be positive |
-| `embedding_dim` | 768 | Fixed — not configurable |
+| `embedding_dim` | 128 | Must be positive. When equal to `hidden_size` (768), no projection is applied. |
 
 #### Model architecture: TacticClassifier
 
 ```
 Input: input_ids [B, 512], attention_mask [B, 512]
   |
+  |-- nn.Embedding(vocab_size, embedding_dim)         [B, 512, D]
+  |-- nn.Linear(embedding_dim, 768, bias=False)       [B, 512, 768]  (only when D < 768)
   |-- CodeBERT encoder (num_hidden_layers layers, 768 hidden, 12 heads)
   |-- Mean pooling (attention-masked)
   |-- nn.Linear(768, num_classes)
   |-- Output: logits [B, num_classes]
 ```
 
-Default `num_hidden_layers` is 6. Single forward pass per batch. No premise encoding, no contrastive pairs, no hard negatives.
+Default `num_hidden_layers` is 6, `embedding_dim` is 128. When `embedding_dim` equals 768 (the hidden size), the projection layer is omitted and the model behaves identically to the standard architecture. Single forward pass per batch. No premise encoding, no contrastive pairs, no hard negatives.
 
 #### Construction
 
-`TacticClassifier(model_name, num_classes, vocab_size, num_hidden_layers=6)`
+`TacticClassifier(model_name, num_classes, vocab_size, num_hidden_layers=6, embedding_dim=128)`
 
-- REQUIRES: `model_name` is a valid HuggingFace model name (default: `"microsoft/codebert-base"`). `num_classes` is a positive integer. `vocab_size` is `None` or a positive integer. `num_hidden_layers` is in {4, 6, 8, 12}.
-- ENSURES: Loads the pretrained model, then applies layer dropping if `num_hidden_layers` < 12. Layer dropping selects `num_hidden_layers` layers at evenly spaced indices from the 12-layer source: `indices = [i * 12 // num_hidden_layers for i in range(num_hidden_layers)]`. Builds a new encoder with only the selected layers. Updates the model config's `num_hidden_layers`. When `vocab_size` is not `None`, replaces the embedding layer (same procedure as before). Creates the classification head `nn.Linear(768, num_classes)`.
+- REQUIRES: `model_name` is a valid HuggingFace model name (default: `"microsoft/codebert-base"`). `num_classes` is a positive integer. `vocab_size` is `None` or a positive integer. `num_hidden_layers` is in {4, 6, 12}. `embedding_dim` is a positive integer.
+- ENSURES: Loads the pretrained model, then applies layer dropping if `num_hidden_layers` < 12. Layer dropping selects `num_hidden_layers` layers at evenly spaced indices from the 12-layer source: `indices = [i * 12 // num_hidden_layers for i in range(num_hidden_layers)]`. Builds a new encoder with only the selected layers. Updates the model config's `num_hidden_layers`. When `vocab_size` is not `None`, replaces the embedding layer with `nn.Embedding(vocab_size, embedding_dim)`. When `embedding_dim` < 768 (the hidden size), creates a bias-free projection layer `nn.Linear(embedding_dim, 768, bias=False)` to expand token embeddings to the transformer's hidden dimension. The projection layer is stored as `self.embedding_projection`. When `embedding_dim` == 768, no projection layer is created. Creates the classification head `nn.Linear(768, num_classes)`.
 - When `num_hidden_layers` is 12: no layer dropping; loads all pretrained layers (backward compatible).
+- When `embedding_dim` is 768: no factorization; the model behaves identically to the standard architecture (backward compatible).
 
 > **Given** `num_hidden_layers=6`
 > **When** `TacticClassifier` is constructed
@@ -500,25 +503,26 @@ Default `num_hidden_layers` is 6. Single forward pass per batch. No premise enco
 
 #### from_checkpoint(checkpoint)
 
-- REQUIRES: `checkpoint` is a dict containing `model_state_dict`, `num_classes`, and optionally `num_hidden_layers`.
-- ENSURES: Reads `num_hidden_layers` from the checkpoint (default 12 for backward compatibility with existing checkpoints). Builds a `RobertaModel` with the specified layer count. Loads weights with `strict=False`.
+- REQUIRES: `checkpoint` is a dict containing `model_state_dict`, `num_classes`, and optionally `num_hidden_layers` and `embedding_dim`.
+- ENSURES: Reads `num_hidden_layers` from the checkpoint (default 12 for backward compatibility). Reads `embedding_dim` from the checkpoint (default 768 for backward compatibility with pre-factorization checkpoints). Builds a `RobertaModel` with the specified layer count and embedding dimension. When `embedding_dim` < 768, creates the projection layer. Loads weights with `strict=False`.
 
-> **Given** a checkpoint saved with `num_hidden_layers=6`
+> **Given** a checkpoint saved with `num_hidden_layers=6` and `embedding_dim=128`
 > **When** `from_checkpoint` reconstructs the model
-> **Then** the encoder has 6 transformer layers
+> **Then** the encoder has 6 transformer layers and a 128→768 projection layer
 
-> **Given** a checkpoint saved before layer dropping was introduced (no `num_hidden_layers` key)
+> **Given** a checkpoint saved before embedding factorization was introduced (no `embedding_dim` key)
 > **When** `from_checkpoint` reconstructs the model
-> **Then** the encoder has 12 transformer layers (backward compatible)
+> **Then** `embedding_dim` defaults to 768 (no projection layer, backward compatible)
 
 #### forward(input_ids, attention_mask)
 
 - REQUIRES: `input_ids` is a tensor of shape `[B, seq_len]`. `attention_mask` is a tensor of shape `[B, seq_len]` with values 0 or 1.
 - ENSURES: Returns logits of shape `[B, num_classes]`.
-  1. Token embeddings: `embedding(input_ids)` → `[B, seq_len, 768]`
-  2. Transformer encoding (`num_hidden_layers` layers)
-  3. Mean pooling: `sum(output * mask.unsqueeze(-1)) / sum(mask).unsqueeze(-1)` per sequence
-  4. Linear projection: `nn.Linear(768, num_classes)` → `[B, num_classes]`
+  1. Token embeddings: `embedding(input_ids)` → `[B, seq_len, embedding_dim]`
+  2. Embedding projection (when `embedding_dim` < 768): `embedding_projection(embeddings)` → `[B, seq_len, 768]`
+  3. Transformer encoding (`num_hidden_layers` layers)
+  4. Mean pooling: `sum(output * mask.unsqueeze(-1)) / sum(mask).unsqueeze(-1)` per sequence
+  5. Linear projection: `nn.Linear(768, num_classes)` → `[B, num_classes]`
 
 #### Class-weighted cross-entropy loss with class-conditional label smoothing
 
@@ -585,9 +589,10 @@ After each epoch, compute accuracy@5 on the validation split. If validation accu
 #### Checkpoint format
 
 The checkpoint shall include:
-- Model state dict (encoder weights, classification head, including the custom embedding layer when using closed vocabulary)
+- Model state dict (encoder weights, classification head, including the custom embedding layer and projection layer when using embedding factorization)
 - `num_classes` (int) — number of tactic family classes
-- `num_hidden_layers` (int) — number of transformer layers in the encoder (4, 6, 8, or 12)
+- `num_hidden_layers` (int) — number of transformer layers in the encoder (4, 6, or 12)
+- `embedding_dim` (int) — embedding bottleneck dimension (128 default; 768 means no factorization)
 - Optimizer state dict
 - Epoch number
 - Best validation accuracy@5
@@ -799,29 +804,31 @@ MLX port of the tactic classifier model, architecturally identical to the PyTorc
 
 #### Construction
 
-`MLXTacticClassifier(vocab_size, num_classes, num_layers=6, hidden_size=768, num_heads=12)`
+`MLXTacticClassifier(vocab_size, num_classes, num_layers=6, hidden_size=768, num_heads=12, embedding_dim=128)`
 
-- REQUIRES: `vocab_size` is a positive integer matching the closed vocabulary size. `num_classes` is a positive integer matching the number of tactic families. `num_layers` is in {4, 6, 8, 12}.
+- REQUIRES: `vocab_size` is a positive integer matching the closed vocabulary size. `num_classes` is a positive integer matching the number of tactic families. `num_layers` is in {4, 6, 12}. `embedding_dim` is a positive integer.
 - ENSURES: Creates an `mlx.nn.Module` with:
-  - `mlx.nn.Embedding(vocab_size, hidden_size)` — token embedding layer
+  - `mlx.nn.Embedding(vocab_size, embedding_dim)` — token embedding layer
+  - When `embedding_dim` < `hidden_size`: `mlx.nn.Linear(embedding_dim, hidden_size, bias=False)` — embedding projection layer (`self.embedding_projection`)
   - Transformer encoder with `num_layers` `mlx.nn.TransformerEncoderLayer` blocks, each with `hidden_size` hidden dimension and `num_heads` attention heads
-  - No positional encoding module — position IDs are added as a learned embedding
+  - No positional encoding module — position IDs are added as a learned embedding (position embedding remains at `hidden_size` dimensions)
   - `mlx.nn.Linear(hidden_size, num_classes)` — classification head
 
 #### forward(input_ids, attention_mask)
 
 - REQUIRES: `input_ids` is an `mx.array` of shape `[B, seq_len]`. `attention_mask` is an `mx.array` of shape `[B, seq_len]` with values 0 or 1.
 - ENSURES: Returns logits of shape `[B, num_classes]`.
-  1. Token embeddings: `embedding(input_ids)` → `[B, seq_len, 768]`
-  2. Add positional embeddings
-  3. Transformer encoding (`num_layers` layers)
-  4. Mean pooling: `sum(output * mask) / sum(mask)` per sequence
-  5. Linear projection: `linear(pooled)` → `[B, num_classes]`
+  1. Token embeddings: `embedding(input_ids)` → `[B, seq_len, embedding_dim]`
+  2. Embedding projection (when `embedding_dim` < `hidden_size`): `embedding_projection(embeddings)` → `[B, seq_len, 768]`
+  3. Add positional embeddings
+  4. Transformer encoding (`num_layers` layers)
+  5. Mean pooling: `sum(output * mask) / sum(mask)` per sequence
+  6. Linear projection: `linear(pooled)` → `[B, num_classes]`
 
 #### load_codebert_weights(pytorch_model_name="microsoft/codebert-base")
 
 - REQUIRES: `transformers` and `torch` are installed. `pytorch_model_name` is a valid HuggingFace model name.
-- ENSURES: Loads CodeBERT weights from HuggingFace, applies layer dropping (selecting `num_layers` layers at evenly spaced indices from the 12-layer source, same index computation as PyTorch `TacticClassifier`), converts each parameter `torch.Tensor` → `numpy` → `mx.array`, maps parameter names from HuggingFace convention to MLX convention, and loads into the model. The embedding layer is replaced with one sized to `vocab_size`: overlapping tokens get copied pretrained vectors, new tokens are initialized from `N(0, 0.02)`. The classification head `Linear(768, num_classes)` is initialized randomly (not from CodeBERT).
+- ENSURES: Loads CodeBERT weights from HuggingFace, applies layer dropping (selecting `num_layers` layers at evenly spaced indices from the 12-layer source, same index computation as PyTorch `TacticClassifier`), converts each parameter `torch.Tensor` → `numpy` → `mx.array`, maps parameter names from HuggingFace convention to MLX convention, and loads into the model. The embedding layer is sized to `(vocab_size, embedding_dim)`: overlapping tokens get copied pretrained vectors (truncated to `embedding_dim` dimensions), new tokens are initialized from `N(0, 0.02)`. When `embedding_dim` < `hidden_size`, the embedding projection layer is initialized from the top-`embedding_dim` right singular vectors of CodeBERT's original embedding matrix (truncated SVD). The classification head `Linear(768, num_classes)` is initialized randomly (not from CodeBERT).
 - When `num_layers` is 12: all layers are loaded (no dropping).
 - When `transformers` is not installed: raises `ImportError` with message `"transformers is required for CodeBERT weight initialization"`.
 
@@ -901,7 +908,7 @@ Checkpoints are saved as a directory:
 ```
 <output_dir>/
 ├── model.safetensors       # MLX model weights (mx.save_safetensors)
-├── config.json             # {"vocab_size": int, "num_classes": int, "num_layers": 6, "hidden_size": 768, "num_heads": 12}
+├── config.json             # {"vocab_size": int, "num_classes": int, "num_layers": 6, "hidden_size": 768, "num_heads": 12, "embedding_dim": 128}
 ├── hyperparams.json        # Training hyperparameters used
 ├── label_map.json          # Tactic family name → class index mapping
 ├── vocabulary_path.txt     # Path to vocabulary JSON (single line)
@@ -928,7 +935,7 @@ Converts MLX-trained checkpoints to PyTorch format for the quantization and infe
 #### convert(mlx_checkpoint_dir, output_path)
 
 - REQUIRES: `mlx_checkpoint_dir` is a directory containing `model.safetensors`, `config.json`, `hyperparams.json`, `label_map.json`, and `vocabulary_path.txt` (as produced by `MLXTrainer`). `output_path` is a writable path. Both `mlx` and `torch` are installed.
-- ENSURES: Loads MLX weights from safetensors. Maps parameter names from MLX convention to PyTorch/HuggingFace convention (reverse of the table in 4.10). Converts each parameter: `mx.array` → `numpy` → `torch.Tensor`. Creates a PyTorch `TacticClassifier` with the same architecture, vocabulary size, and `num_classes`. Loads the converted state dict. Validates conversion quality. Saves as a PyTorch checkpoint (`.pt`) with `model_state_dict`, `hyperparams`, `vocabulary_path`, `label_map`, `epoch`, and `best_accuracy_5`.
+- ENSURES: Loads MLX weights from safetensors. Maps parameter names from MLX convention to PyTorch/HuggingFace convention (reverse of the table in 4.10). Converts each parameter: `mx.array` → `numpy` → `torch.Tensor`. Reads `embedding_dim` from `config.json` (default 768). Creates a PyTorch `TacticClassifier` with the same architecture, vocabulary size, `num_classes`, and `embedding_dim`. When `embedding_dim` < 768, the `embedding_projection.weight` parameter is included in the conversion. Loads the converted state dict. Validates conversion quality. Saves as a PyTorch checkpoint (`.pt`) with `model_state_dict`, `hyperparams`, `vocabulary_path`, `label_map`, `embedding_dim`, `epoch`, and `best_accuracy_5`.
 
 **Validation step:**
 
@@ -1099,7 +1106,7 @@ fine_tune("model.pt", dataset, "fine-tuned.pt", hyperparams={lr: 5e-6, epochs: 1
 - Use `torch.cuda.amp` for mixed-precision training (FP16 forward pass, FP32 gradients).
 - Use `torch.utils.data.DataLoader` with a custom `Dataset` for batching and shuffling.
 - Use `onnx` and `onnxruntime.quantization` for ONNX export and dynamic INT8 quantization.
-- Checkpoint format: `torch.save({"model_state_dict": ..., "optimizer_state_dict": ..., "epoch": ..., "best_accuracy_5": ..., "hyperparams": ..., "label_map": ..., "vocabulary_path": ...})`.
+- Checkpoint format: `torch.save({"model_state_dict": ..., "optimizer_state_dict": ..., "epoch": ..., "best_accuracy_5": ..., "hyperparams": ..., "label_map": ..., "vocabulary_path": ..., "embedding_dim": ...})`.
 - Use `optuna` for hyperparameter optimization. Import lazily — only required when `tune()` is called.
 - Use `mlx` for the MLX training backend. Import lazily — only required when `--backend mlx` is specified.
 - Use `mlx.nn` for model definition, `mlx.optimizers` for optimizer, `mlx.nn.value_and_grad` for functional gradients.
