@@ -142,7 +142,9 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 ENV UV_LINK_MODE=copy
 RUN mkdir -p /opt/venv && chown -R ${HOST_UID}:${HOST_GID} /opt/venv /poule
 
-# Create venv as the app user so it's writable when source is installed later
+# Install dev + training dependencies (includes PyTorch, transformers, optuna).
+# The production runtime stage below re-syncs with base-only to strip these,
+# keeping the user image small (~50 MB onnxruntime vs ~2.6 GB torch).
 USER ${HOST_USER}
 RUN uv sync --frozen --group dev --group tune
 USER root
@@ -174,6 +176,12 @@ FROM app-deps AS runtime
 ARG HOST_UID=1000
 ARG HOST_GID=1000
 ARG HOST_USER=poule
+
+# Strip dev/training dependencies (PyTorch ~2.6 GB, transformers ~500 MB)
+# from the production image. Only base deps (onnxruntime, numpy, etc.) remain.
+USER ${HOST_USER}
+RUN uv sync --frozen --no-dev --no-group tune
+USER root
 
 # ── Bake index.db: download from index-merged release and validate ───────
 # Placed before source COPY so that source-only changes don't re-download
