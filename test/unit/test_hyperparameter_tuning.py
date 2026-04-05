@@ -243,7 +243,7 @@ class TestTunableHyperparams:
         from Poule.neural.training.tuner import TUNABLE_HYPERPARAMS
 
         bs = TUNABLE_HYPERPARAMS["batch_size"]
-        assert set(bs["choices"]) == {16, 32, 64}
+        assert set(bs["choices"]) == {16, 32}
 
     def test_weight_decay_range(self):
         """spec §4.8: weight_decay is log-uniform in [1e-4, 1e-1]."""
@@ -384,9 +384,9 @@ class TestHyperparameterTuner:
         result, _, _ = self._run_tune(tmp_path, n_trials=3)
         for trial in result.all_trials:
             hp = trial["hyperparams"]
-            assert hp["num_hidden_layers"] in {4, 6, 8, 12}
+            assert hp["num_hidden_layers"] in {4, 6, 12}
             assert 1e-6 <= hp["learning_rate"] <= 1e-4
-            assert hp["batch_size"] in {16, 32, 64}
+            assert hp["batch_size"] in {16, 32}
             assert 1e-4 <= hp["weight_decay"] <= 1e-1
             assert 0.0 <= hp["class_weight_alpha"] <= 1.0
             assert 0.0 <= hp["label_smoothing"] <= 0.3

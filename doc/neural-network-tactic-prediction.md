@@ -215,9 +215,9 @@ The training pipeline includes an Optuna-based hyperparameter tuner that searche
 
 | Hyperparameter | Sampling | Range | Default |
 |---|---|---|---|
-| `num_hidden_layers` | Categorical | {4, 6, 8, 12} | 6 |
+| `num_hidden_layers` | Categorical | {4, 6, 12} | 6 |
 | `learning_rate` | Log-uniform | [1e-6, 1e-4] | 2e-5 |
-| `batch_size` | Categorical | {16, 32, 64} | 16 |
+| `batch_size` | Categorical | {16, 32} | 16 |
 | `weight_decay` | Log-uniform | [1e-4, 1e-1] | 1e-2 |
 | `class_weight_alpha` | Uniform | [0.0, 1.0] | 0.5 |
 | `label_smoothing` | Uniform | [0.0, 0.3] | 0.1 |
@@ -265,7 +265,7 @@ Tactic prediction accuracy is not the same as proof completion rate. The model m
 | 8 | 4 | 1.2e-6 | 16 | 0.25 | 0.123 | 0.096 | 0.6791 | Complete |
 | 9 | 4 | 1.2e-5 | 32 | 0.51 | 0.160 | 0.128 | 0.5451 | Pruned |
 
-HPO time: 51.9 hours on a 32 GiB Mac Mini (Apple M4, 10 CPU cores, MLX Metal GPU).
+HPO time: 51.9 hours on a 32 GiB Mac Mini (Apple M2 Pro, 10 CPU cores, MLX Metal GPU).
 
 **Key findings from HPO:**
 - **4-layer models dominate.** Both top trials used 4 layers. 6- and 8-layer models consistently underperformed, confirming Shwartz-Ziv et al.'s finding that larger models overfit on class-imbalanced data.
