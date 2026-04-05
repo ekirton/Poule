@@ -98,10 +98,12 @@ class MLXTrainer:
         tokenizer = CoqTokenizer(str(vocabulary_path))
 
         num_hidden_layers = hp.get("num_hidden_layers", 6)
+        embedding_dim = hp.get("embedding_dim", 128)
         model = MLXTacticClassifier(
             vocab_size=tokenizer.vocab_size,
             num_classes=num_classes,
             num_layers=num_hidden_layers,
+            embedding_dim=embedding_dim,
         )
         mx.eval(model.parameters())
 
@@ -351,6 +353,7 @@ class MLXTrainer:
             "num_heads": model.layers[0].attention.num_heads
             if hasattr(model.layers[0].attention, 'num_heads')
             else 12,
+            "embedding_dim": model.embedding.weight.shape[1],
         }
         (output_dir / "config.json").write_text(json.dumps(config, indent=2))
         (output_dir / "hyperparams.json").write_text(

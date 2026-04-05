@@ -602,8 +602,203 @@ class TestLayerDropping:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 7. TacticClassifierTrainer — Hyperparameters
+# 6b. Embedding Factorization
 # ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestEmbeddingFactorization:
+    """spec §4.3: ALBERT-style embedding factorization (V×D + D×H)."""
+
+    def test_default_embedding_dim_is_128(self):
+        """spec §4.3: Default embedding_dim is 128."""
+        assert DEFAULT_HYPERPARAMS["embedding_dim"] == 128
+
+    def test_factored_model_has_projection_layer(self):
+        """spec §4.3: When embedding_dim < 768, a projection layer is created."""
+        from Poule.neural.training.model import TacticClassifier
+
+        with patch("Poule.neural.training.model.AutoModel") as mock_auto:
+            mock_auto.from_pretrained.return_value = _mock_encoder()
+            model = TacticClassifier(
+                num_classes=5, vocab_size=100,
+                num_hidden_layers=6, embedding_dim=128,
+            )
+        assert hasattr(model, "embedding_projection")
+        assert model.embedding_projection.weight.shape == (768, 128)
+
+    def test_no_projection_when_embedding_dim_equals_hidden(self):
+        """spec §4.3: When embedding_dim == 768, no projection layer."""
+        from Poule.neural.training.model import TacticClassifier
+
+        with patch("Poule.neural.training.model.AutoModel") as mock_auto:
+            mock_auto.from_pretrained.return_value = _mock_encoder()
+            model = TacticClassifier(
+                num_classes=5, vocab_size=100,
+                num_hidden_layers=6, embedding_dim=768,
+            )
+        assert not hasattr(model, "embedding_projection") or model.embedding_projection is None
+
+    def test_factored_embedding_shape(self):
+        """spec §4.3: Embedding layer has shape (vocab_size, embedding_dim)."""
+        from Poule.neural.training.model import TacticClassifier
+
+        with patch("Poule.neural.training.model.AutoModel") as mock_auto:
+            mock_auto.from_pretrained.return_value = _mock_encoder()
+            model = TacticClassifier(
+                num_classes=5, vocab_size=200,
+                num_hidden_layers=6, embedding_dim=128,
+            )
+        emb = model.encoder.embeddings.word_embeddings
+        assert emb.weight.shape == (200, 128)
+
+    def test_factored_forward_produces_correct_logits_shape(self):
+        """spec §4.3: Forward pass produces [B, num_classes] logits."""
+        import torch
+        from Poule.neural.training.model import TacticClassifier
+
+        with patch("Poule.neural.training.model.AutoModel") as mock_auto:
+            mock_auto.from_pretrained.return_value = _mock_encoder()
+            model = TacticClassifier(
+                num_classes=5, vocab_size=100,
+                num_hidden_layers=6, embedding_dim=128,
+            )
+        model.eval()
+        with torch.no_grad():
+            logits = model(
+                torch.randint(0, 100, (2, 16)),
+                torch.ones(2, 16, dtype=torch.long),
+            )
+        assert logits.shape == (2, 5)
+
+    def test_from_checkpoint_reads_embedding_dim(self):
+        """spec §4.3: from_checkpoint reads embedding_dim from checkpoint."""
+        from Poule.neural.training.model import TacticClassifier
+
+        checkpoint = {
+            "model_state_dict": {},
+            "num_classes": 5,
+            "num_hidden_layers": 6,
+            "embedding_dim": 128,
+        }
+        with patch.object(TacticClassifier, "load_state_dict"):
+            model = TacticClassifier.from_checkpoint(checkpoint)
+        assert hasattr(model, "embedding_projection")
+        assert model.embedding_projection.weight.shape == (768, 128)
+
+    def test_from_checkpoint_defaults_to_768_for_old_checkpoints(self):
+        """spec §4.3: Old checkpoints without embedding_dim default to 768."""
+        from Poule.neural.training.model import TacticClassifier
+
+        checkpoint = {
+            "model_state_dict": {},
+            "num_classes": 5,
+            "num_hidden_layers": 6,
+            # No embedding_dim key
+        }
+        with patch.object(TacticClassifier, "load_state_dict"):
+            model = TacticClassifier.from_checkpoint(checkpoint)
+        assert not hasattr(model, "embedding_projection") or model.embedding_projection is None
+
+    def test_save_checkpoint_includes_embedding_dim(self, tmp_path):
+        """spec §4.3: Checkpoint includes embedding_dim."""
+        from Poule.neural.training.trainer import save_checkpoint, load_checkpoint
+
+        checkpoint_data = {
+            "model_state_dict": {"layer.weight": np.zeros(10)},
+            "num_classes": 3,
+            "num_hidden_layers": 6,
+            "embedding_dim": 128,
+            "epoch": 1,
+            "best_accuracy_5": 0.5,
+            "label_map": {"intros": 0, "apply": 1, "other": 2},
+            "hyperparams": {"batch_size": 16},
+        }
+        path = tmp_path / "checkpoint.pt"
+        save_checkpoint(checkpoint_data, path)
+        loaded = load_checkpoint(path)
+        assert loaded["embedding_dim"] == 128
+
+    def test_param_count_reduction(self):
+        """spec §4.3: Factored embedding has fewer parameters than standard.
+
+        V=10000, D=128, H=768:
+          factored = V*D + D*H = 10000*128 + 128*768 = 1,378,304
+          standard = V*H = 10000*768 = 7,680,000
+        """
+        vocab_size = 10000
+        embedding_dim = 128
+        hidden_size = 768
+        factored_params = vocab_size * embedding_dim + embedding_dim * hidden_size
+        standard_params = vocab_size * hidden_size
+        assert factored_params < standard_params
+
+
+def _mock_encoder():
+    """Create a minimal mock encoder for model construction tests."""
+    import torch
+    import torch.nn as nn
+
+    class MockEmbeddings:
+        def __init__(self):
+            self.word_embeddings = nn.Embedding(50265, 768)
+
+    class MockConfig:
+        def __init__(self):
+            self.hidden_size = 768
+            self.num_hidden_layers = 12
+
+    class MockEncoder:
+        def __init__(self):
+            self.embeddings = MockEmbeddings()
+            self.config = MockConfig()
+            self.encoder = type("E", (), {
+                "layer": nn.ModuleList([
+                    nn.TransformerEncoderLayer(d_model=768, nhead=12, batch_first=True)
+                    for _ in range(12)
+                ])
+            })()
+
+        def __call__(self, input_ids=None, attention_mask=None, inputs_embeds=None):
+            if inputs_embeds is not None:
+                B, S = inputs_embeds.shape[:2]
+            else:
+                B, S = input_ids.shape
+            hidden = torch.randn(B, S, 768)
+            return type("O", (), {"last_hidden_state": hidden})()
+
+        def to(self, *a, **kw):
+            return self
+
+        def parameters(self):
+            return iter([])
+
+        def named_parameters(self):
+            return iter([])
+
+        def children(self):
+            return iter([])
+
+        def named_children(self):
+            return iter([])
+
+        def modules(self):
+            return iter([self])
+
+        def named_modules(self, prefix='', memo=None):
+            yield prefix, self
+
+        def train(self, mode=True):
+            return self
+
+        def eval(self):
+            return self
+
+    return MockEncoder()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 7. TacticClassifierTrainer — Hyperparameters
+# ═════════════════════════════════════════════════════════════════��═════════
 
 
 class TestTacticClassifierTrainerHyperparams:

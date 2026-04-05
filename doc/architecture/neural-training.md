@@ -106,6 +106,25 @@ The closed vocabulary replaces CodeBERT's 50,265-token vocabulary with ~150K tok
 3. Copy pretrained embeddings for overlapping tokens (digits, punctuation, common words).
 4. Initialize Coq-specific tokens randomly (sigma=0.02).
 
+### Embedding Factorization
+
+The 158K-token embedding matrix dominates model size (121.5M of 150.4M parameters, 81%). Most tokens are rare Coq identifiers that appear in a handful of training examples and cannot learn meaningful 768-dimensional representations.
+
+Following ALBERT (Lan et al., 2020), the embedding matrix is decomposed into two smaller matrices:
+
+```
+Standard:   nn.Embedding(V, H)                  158,242 × 768 = 121.5M params
+Factored:   nn.Embedding(V, D) + nn.Linear(D, H)  158,242 × 128 + 128 × 768 = 20.4M params
+```
+
+where D is a configurable bottleneck dimension (default 128). Each token gets a compact D-dimensional embedding, which a bias-free linear projection expands to the hidden dimension H=768 that the transformer expects. When `embedding_dim` equals `hidden_size` (768), no projection is applied and the model behaves identically to the standard architecture.
+
+The position embedding remains at H dimensions — it is small (514 × 768 = 0.4M) and benefits from full-rank representation.
+
+**Initialization:** Embedding weights are initialized randomly (σ=0.02) with CodeBERT overlap copied as before — but only the first D dimensions are stored. The projection matrix is initialized from a truncated SVD of CodeBERT's original 768-dim embedding matrix, preserving the most important directions. Since the custom vocabulary already discards CodeBERT's tokens, there are no pretrained embedding weights to preserve.
+
+**Checkpoint format:** The `embedding_dim` value is stored in checkpoints alongside `num_hidden_layers`. On load, the model reconstructs the correct architecture (with or without projection) from the checkpoint metadata.
+
 ### CoqTokenizer
 
 A lightweight tokenizer class wrapping the vocabulary JSON:

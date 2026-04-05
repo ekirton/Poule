@@ -51,10 +51,11 @@ _HF_TO_MLX_LAYER_TEMPLATES = {
     "roberta.encoder.layer.{i}.output.LayerNorm.bias": "layers.{i}.ln2.bias",
 }
 
-# Classification head: MLX name -> PyTorch name
-_CLASSIFIER_MAPPING = {
+# Classification head and projection: MLX name -> PyTorch name
+_DIRECT_MAPPING = {
     "classifier.weight": "classifier.weight",
     "classifier.bias": "classifier.bias",
+    "embedding_projection.weight": "embedding_projection.weight",
 }
 
 
@@ -135,6 +136,7 @@ class WeightConverter:
         vocab_size = config["vocab_size"]
         hidden_size = config.get("hidden_size", 768)
         num_heads = config.get("num_heads", 12)
+        embedding_dim = config.get("embedding_dim", 768)
 
         # Load MLX weights
         import mlx.core as mx
@@ -153,8 +155,8 @@ class WeightConverter:
             torch_tensor = torch.from_numpy(np_array.copy())
 
             # Classification head weights pass through directly
-            if mlx_name in _CLASSIFIER_MAPPING:
-                pt_state_dict[_CLASSIFIER_MAPPING[mlx_name]] = torch_tensor
+            if mlx_name in _DIRECT_MAPPING:
+                pt_state_dict[_DIRECT_MAPPING[mlx_name]] = torch_tensor
             elif mlx_name in mlx_to_hf:
                 hf_name = mlx_to_hf[mlx_name]
                 # Strip "roberta." prefix -- PyTorch TacticClassifier uses "encoder."
@@ -176,6 +178,7 @@ class WeightConverter:
             "model_state_dict": pt_state_dict,
             "num_classes": num_classes,
             "num_hidden_layers": num_layers,
+            "embedding_dim": embedding_dim,
             "label_map": label_map,
             "best_accuracy_5": best_accuracy,
             "hyperparams": hyperparams,
@@ -209,6 +212,8 @@ class WeightConverter:
         hidden_size = config.get("hidden_size", 768)
         num_heads = config.get("num_heads", 12)
 
+        embedding_dim = config.get("embedding_dim", 768)
+
         # Rebuild MLX model and load weights
         mlx_model = MLXTacticClassifier(
             vocab_size=vocab_size,
@@ -216,6 +221,7 @@ class WeightConverter:
             num_layers=num_layers,
             hidden_size=hidden_size,
             num_heads=num_heads,
+            embedding_dim=embedding_dim,
         )
         mlx_model.load_weights(list(mlx_weights.items()))
         mx.eval(mlx_model.parameters())
@@ -229,6 +235,7 @@ class WeightConverter:
             "model_state_dict": pt_state_dict,
             "num_classes": num_classes,
             "num_hidden_layers": num_layers,
+            "embedding_dim": embedding_dim,
         }
         pt_model = TacticClassifier.from_checkpoint(pt_checkpoint)
         pt_model.eval()

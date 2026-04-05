@@ -31,6 +31,7 @@ DEFAULT_HYPERPARAMS = {
     "class_weight_alpha": 0.5,
     "label_smoothing": 0.1,
     "sam_rho": 0.05,
+    "embedding_dim": 128,
 }
 
 
@@ -284,16 +285,19 @@ class TacticClassifierTrainer:
         from Poule.neural.training.vocabulary import CoqTokenizer
 
         num_hidden_layers = hp.get("num_hidden_layers", 6)
+        embedding_dim = hp.get("embedding_dim", 128)
         if isinstance(tokenizer, CoqTokenizer):
             model = TacticClassifier(
                 num_classes=num_classes,
                 vocab_size=tokenizer.vocab_size,
                 num_hidden_layers=num_hidden_layers,
+                embedding_dim=embedding_dim,
             )
         else:
             model = TacticClassifier(
                 num_classes=num_classes,
                 num_hidden_layers=num_hidden_layers,
+                embedding_dim=embedding_dim,
             )
 
         # Free transient allocations from model loading before
