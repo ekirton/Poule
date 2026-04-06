@@ -22,7 +22,7 @@ Define the download client for prebuilt index databases and model checkpoints: r
 |------|-----------|
 | Release | A GitHub Release tagged with the `index-v` prefix, containing index and manifest assets |
 | Manifest | A JSON file (`manifest.json`) in each release containing version metadata and SHA-256 checksums |
-| Data directory | The platform-specific directory for application data (`~/Library/Application Support/poule/` on macOS, `~/.local/share/poule/` on Linux) |
+| Data directory | The directory for application data, resolved via `POULE_DATA_DIR` environment variable (default: `~/poule-home/data`). Set to `/data` inside containers by the Dockerfile and launchers. |
 | Libraries directory | The host directory storing per-library indexes and the merged index (default `~/poule-libraries/`, overridable via `POULE_LIBRARIES_PATH`) |
 | Per-library index | A SQLite database containing declarations from a single Coq library, named `index-{library}.db` |
 | Merged index | A single SQLite database combining declarations from all 6 per-library indexes |
@@ -35,7 +35,7 @@ Define the download client for prebuilt index databases and model checkpoints: r
 #### get_data_dir()
 
 - REQUIRES: Nothing.
-- ENSURES: Returns the platform-specific data directory path for poule. On macOS (`sys.platform == "darwin"`): `~/Library/Application Support/poule/`. On all other platforms: `~/.local/share/poule/`. Does not create the directory.
+- ENSURES: If `POULE_DATA_DIR` environment variable is set, returns that path. Otherwise returns `~/poule-home/data`. Does not create the directory.
 
 #### get_model_dir()
 

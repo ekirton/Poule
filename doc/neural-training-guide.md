@@ -137,7 +137,7 @@ poule train \
 The `--sample` flag randomly sub-samples the training split to the given fraction. Validation and test splits are not affected. **This is for test runs only.**
 
 Training details:
-- **Architecture**: CodeBERT encoder initialized from `microsoft/codebert-base`, with closed-vocabulary embedding layer (158K tokens), mean pooling, and linear classification head (96 classes)
+- **Architecture**: CodeBERT encoder initialized from `microsoft/codebert-base`, with closed-vocabulary embedding layer (158K tokens via ALBERT-style factorization), mean pooling, and hierarchical classification head (8 categories, ~65 within-category tactics)
 - **Encoder depth**: Configurable `num_hidden_layers` ∈ {4, 6, 8, 12}. When fewer than 12 layers are used, layers are selected at evenly spaced indices from CodeBERT's 12 layers (layer dropping)
 - **Loss**: Class-weighted cross-entropy with label smoothing. Weights use tunable inverse-frequency power law: `weight[c] = (total / (num_classes × count[c])) ^ alpha`
 - **Split**: Deterministic file-level split — position % 10 == 8 → validation, == 9 → test, rest → training
@@ -153,21 +153,22 @@ poule tune \
   --vocabulary coq-vocabulary.json \
   --db index.db \
   --output hpo-results/ \
-  --n-trials 10 \
+  --n-trials 15 \
   training-data.jsonl
 ```
 
-The tuner searches over 7 hyperparameters:
+The tuner searches over 8 hyperparameters:
 
 | Hyperparameter | Range |
 |---|---|
-| `num_hidden_layers` | {4, 6, 8, 12} |
+| `num_hidden_layers` | {4, 6, 8} |
 | `learning_rate` | [1e-6, 1e-4] log-uniform |
 | `batch_size` | {16, 32, 64} |
 | `weight_decay` | [1e-4, 1e-1] log-uniform |
 | `class_weight_alpha` | [0.0, 1.0] |
-| `label_smoothing` | [0.0, 0.3] |
+| `label_smoothing` | [0.0, 0.2] |
 | `sam_rho` | [0.01, 0.2] log-uniform |
+| `lambda_within` | [0.3, 3.0] log-uniform |
 
 The study uses TPE sampling with a MedianPruner (3 startup trials, 3 warmup epochs). Study state persists to SQLite (`hpo-study.db`) for crash recovery with `--resume`. The best trial's checkpoint is copied to `best-model.pt`.
 
@@ -201,17 +202,49 @@ The exported model is FP32. INT8 quantization is not applied — see the [design
 
 ## Step 7: Deploy
 
-Place the ONNX model and label file where the `suggest_tactics` MCP tool can find them:
+The ONNX model, label file, and vocabulary must be placed in the data directory so the `suggest_tactics` MCP tool can find them. All code resolves the data directory via the `POULE_DATA_DIR` environment variable, which defaults to `~/poule-home/data` when unset.
+
+| Context | `POULE_DATA_DIR` | Set by |
+|---------|-----------------|--------|
+| Production container (`bin/poule`) | `/data` | Dockerfile + launcher |
+| Dev container (`bin/poule-dev`) | `/data` (bind-mount of `~/poule-home/data`) | Launcher |
+| Host-side development | `~/poule-home/data` (default) | Not set — uses default |
+
+**For developers (training on the host Mac):** Artifacts land in `~/poule-home/data` by default, which is bind-mounted as `/data` inside the dev container:
 
 ```bash
-# Default model directory
-mkdir -p ~/.local/share/poule/models/
-cp tactic-predictor.onnx ~/.local/share/poule/models/
-cp tactic-labels.json ~/.local/share/poule/models/
-cp coq-vocabulary.json ~/.local/share/poule/models/
+cp tactic-predictor.onnx ~/poule-home/data/
+cp tactic-labels.json ~/poule-home/data/
+cp coq-vocabulary.json ~/poule-home/data/
+```
+
+**For developers (training inside the dev container):**
+
+```bash
+cp tactic-predictor.onnx $POULE_DATA_DIR/
+cp tactic-labels.json $POULE_DATA_DIR/
+cp coq-vocabulary.json $POULE_DATA_DIR/
 ```
 
 When these files are present, `suggest_tactics` automatically includes neural predictions alongside rule-based suggestions. When absent, it falls back to rule-based suggestions only — no errors, no degradation.
+
+## Step 8: Publish
+
+For users, model artifacts are distributed as GitHub releases and baked into the production Docker image. Use the publish script after quantization:
+
+```bash
+# Quantize first (Step 6)
+./scripts/quantize-model.sh
+
+# Publish as a GitHub release (requires gh CLI, authenticated)
+./scripts/publish-model.sh
+```
+
+The script:
+1. Reads artifacts from `$POULE_DATA_DIR/final-model/` (ONNX model, labels) and `$POULE_DATA_DIR/coq-vocabulary.json`
+2. Computes SHA-256 checksums and generates a `manifest.json`
+3. Creates (or replaces) the `tactic-model` GitHub release with all artifacts
+4. Users receive the model via `poule download-index --include-model` or by pulling the latest Docker image
 
 ## End-to-end example: training the canonical model
 
@@ -237,9 +270,8 @@ poule build-vocabulary \
   --output coq-vocabulary.json \
   training-data.jsonl
 
-# 4. Collapse training data (normalize tactic families, merge rare into "other")
+# 4. Collapse training data (normalize tactic families)
 poule collapse-training-data \
-  --min-count 50 \
   --output training.jsonl \
   training-data.jsonl
 
@@ -248,7 +280,7 @@ poule tune \
   --vocabulary coq-vocabulary.json \
   --db index.db \
   --output hpo-results/ \
-  --n-trials 10 \
+  --n-trials 15 \
   training.jsonl
 
 # 6. Train final model with best hyperparameters
@@ -264,4 +296,7 @@ poule evaluate --checkpoint model.pt --test-data training.jsonl --db index.db
 
 # 8. Export to ONNX
 poule quantize --checkpoint model.pt --output tactic-predictor.onnx
+
+# 9. Publish (requires gh CLI, authenticated)
+./scripts/publish-model.sh
 ```
