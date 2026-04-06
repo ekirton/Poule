@@ -29,7 +29,8 @@ def get_libraries_dir() -> Path:
     env = os.environ.get("POULE_LIBRARIES_PATH")
     if env:
         return Path(env)
-    return Path("/data")
+    from Poule.paths import get_data_dir
+    return get_data_dir()
 
 
 def _find_latest_release() -> dict:

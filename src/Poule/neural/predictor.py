@@ -15,11 +15,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Expected model file paths -- checked in order of preference.
-_MODEL_DIRS = [
-    Path.home() / ".local" / "share" / "poule" / "models",
-    Path("/data"),
-]
+# Model files are found via get_data_dir() which respects POULE_DATA_DIR.
+from Poule.paths import get_data_dir
 
 _MODEL_FILENAME = "tactic-predictor.onnx"
 _LABELS_FILENAME = "tactic-labels.json"
@@ -27,11 +24,10 @@ _VOCABULARY_FILENAME = "coq-vocabulary.json"
 
 
 def _find_file(filename: str) -> Path | None:
-    """Search candidate directories for a model file."""
-    for d in _MODEL_DIRS:
-        p = d / filename
-        if p.exists():
-            return p
+    """Search the data directory for a model file."""
+    p = get_data_dir() / filename
+    if p.exists():
+        return p
     return None
 
 

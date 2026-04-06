@@ -8,6 +8,7 @@ results to /data/final-model-validation.txt.
 
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -19,7 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("full-training")
 
-DATA_DIR = Path("/Users/ekirton/poule-home/data")
+DATA_DIR = Path(os.environ.get("POULE_DATA_DIR", Path.home() / "poule-home" / "data"))
 TRAINING_DATA = DATA_DIR / "training.jsonl"
 VOCABULARY = DATA_DIR / "coq-vocabulary.json"
 HPO_DIR = DATA_DIR / "hpo-results"

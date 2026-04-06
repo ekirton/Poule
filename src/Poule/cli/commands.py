@@ -56,8 +56,12 @@ def _to_search_result(row: dict, score: float = 1.0) -> SearchResult:
 # Shared options
 # ---------------------------------------------------------------------------
 
+def _default_db_path() -> str:
+    from Poule.paths import get_data_dir
+    return str(get_data_dir() / "index.db")
+
 _db_option = click.option(
-    "--db", default="/data/index.db", type=click.Path(), help="Path to the SQLite index database."
+    "--db", default=_default_db_path, type=click.Path(), help="Path to the SQLite index database."
 )
 _json_option = click.option("--json", "json_mode", is_flag=True, default=False, help="Output as JSON.")
 _limit_option = click.option("--limit", default=50, type=int, help="Maximum number of results (1-200).")

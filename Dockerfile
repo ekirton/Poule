@@ -189,6 +189,7 @@ USER root
 # asset timestamp — when a new index is published, the layer is invalidated.
 USER root
 RUN mkdir -p /data && chown ${HOST_UID}:${HOST_GID} /data
+ENV POULE_DATA_DIR=/data
 USER ${HOST_USER}
 
 ARG CACHEBUST_INDEX=0

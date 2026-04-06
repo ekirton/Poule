@@ -42,11 +42,12 @@ def main():
     manifest = json.load(open("/tmp/manifest.json"))
 
     print("Downloading index.db...")
-    download(assets["index.db"], "/data/index.db")
+    data_dir = os.environ.get("POULE_DATA_DIR", "/data")
+    download(assets["index.db"], f"{data_dir}/index.db")
 
     # ── SHA-256 verification ──────────────────────────────────────────────────
     expected = manifest["index"]["sha256"]
-    sha = hashlib.sha256(open("/data/index.db", "rb").read()).hexdigest()
+    sha = hashlib.sha256(open(f"{data_dir}/index.db", "rb").read()).hexdigest()
     if sha != expected:
         print(f"SHA-256 mismatch: expected {expected}, got {sha}", file=sys.stderr)
         sys.exit(1)

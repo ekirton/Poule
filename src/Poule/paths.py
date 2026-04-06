@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 
 def get_data_dir() -> Path:
-    """Return the platform-specific data directory for poule.
+    """Return the data directory for poule.
 
-    - macOS: ~/Library/Application Support/poule/
-    - Linux: ~/.local/share/poule/
+    Resolution order:
+    1. ``POULE_DATA_DIR`` environment variable (set by Dockerfile,
+       ``bin/poule``, and ``bin/poule-dev``).
+    2. ``~/poule-home/data`` (default for host-side development).
     """
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "poule"
-    return Path.home() / ".local" / "share" / "poule"
+    env = os.environ.get("POULE_DATA_DIR")
+    if env:
+        return Path(env)
+    return Path.home() / "poule-home" / "data"
 
 
 def get_model_dir() -> Path:

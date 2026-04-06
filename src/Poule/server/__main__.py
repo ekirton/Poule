@@ -1441,9 +1441,11 @@ async def _init_context(db_path: Path, log_level: str) -> _ServerContext:
             logger.error("Schema version mismatch: %s", exc)
 
     # Education RAG (optional — server starts normally if absent)
-    education_db = Path("/data/education.db")
-    education_model = Path("/data/models/education/encoder.onnx")
-    education_tokenizer = Path("/data/models/education/tokenizer.json")
+    from Poule.paths import get_data_dir
+    _data = get_data_dir()
+    education_db = _data / "education.db"
+    education_model = _data / "models" / "education" / "encoder.onnx"
+    education_tokenizer = _data / "models" / "education" / "tokenizer.json"
     if education_db.exists() and education_model.exists() and education_tokenizer.exists():
         try:
             from Poule.education import EducationRAG

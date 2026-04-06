@@ -88,7 +88,8 @@ def _report_status(libraries: list[str], versions: dict[str, str]) -> None:
 
 def main() -> None:
     """Entry point for ``python -m Poule.cli.startup_check``."""
-    startup_check(Path("/data"))
+    from Poule.paths import get_data_dir
+    startup_check(get_data_dir())
 
 
 if __name__ == "__main__":
