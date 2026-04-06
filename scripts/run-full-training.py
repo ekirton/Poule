@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Full training pipeline: HPO -> final model -> evaluation.
+"""Full training pipeline: HPO -> final model -> evaluation -> ONNX export.
 
 Runs Optuna trials with MLX on Apple Silicon, trains the final model
-with the best hyperparameters, evaluates on the test set, and writes
-results to /data/final-model-validation.txt.
+with the best hyperparameters, evaluates on the test set, exports to
+ONNX, and writes results to $POULE_DATA_DIR/final-model-validation.txt.
 """
 
 import json
@@ -123,7 +123,22 @@ def main():
     )
     report = evaluator.evaluate(dataset.test_pairs)
 
-    # ---- Step 5: Write results ----
+    # ---- Step 5: Export to ONNX ----
+    from Poule.neural.training.quantizer import ModelQuantizer
+
+    onnx_path = FINAL_MODEL_DIR / "tactic-predictor.onnx"
+    logger.info("Exporting to ONNX: %s -> %s", pt_path, onnx_path)
+    ModelQuantizer.quantize(pt_path, onnx_path)
+    logger.info("ONNX export complete: %s", onnx_path)
+
+    # Also copy vocabulary alongside model artifacts
+    import shutil
+    vocab_dest = FINAL_MODEL_DIR / "coq-vocabulary.json"
+    if not vocab_dest.exists() and VOCABULARY.exists():
+        shutil.copy2(VOCABULARY, vocab_dest)
+        logger.info("Copied vocabulary to %s", vocab_dest)
+
+    # ---- Step 6: Write results ----
     lines = []
     lines.append("=" * 60)
     lines.append("FINAL MODEL VALIDATION RESULTS (HIERARCHICAL)")
