@@ -136,6 +136,22 @@ poule train \
 
 The `--sample` flag randomly sub-samples the training split to the given fraction. Validation and test splits are not affected. **This is for test runs only.**
 
+### Head-class undersampling
+
+The six dominant tactic families (rewrite, intros, apply, auto, destruct, split) contain thousands of near-identical proof states. Capping each at ~2,000 examples reduces the training set from ~114K to ~40–50K samples, forcing more tail-class exposure per epoch without discarding rare tactic data.
+
+```bash
+# Train with undersampling (cap dominant families at 2000 examples each)
+poule train \
+  --vocabulary coq-vocabulary.json \
+  --db index.db \
+  --output model.pt \
+  --undersample-cap 2000 \
+  training-data.jsonl
+```
+
+The `--undersample-cap` flag sets the maximum examples per tactic family in the training split. Validation and test splits are unchanged. The random seed defaults to 42 for reproducibility (`--undersample-seed` to override). Class weights are recomputed from the undersampled distribution, so undersampling and class weighting work together.
+
 Training details:
 - **Architecture**: CodeBERT encoder initialized from `microsoft/codebert-base`, with closed-vocabulary embedding layer (158K tokens via ALBERT-style factorization), mean pooling, and hierarchical classification head (8 categories, ~65 within-category tactics)
 - **Encoder depth**: Configurable `num_hidden_layers` ∈ {4, 6, 8, 12}. When fewer than 12 layers are used, layers are selected at evenly spaced indices from CodeBERT's 12 layers (layer dropping)
@@ -284,11 +300,12 @@ poule tune \
   --n-trials 15 \
   training.jsonl
 
-# 6. Train final model with best hyperparameters
+# 6. Train final model with best hyperparameters + undersampling
 poule train \
   --vocabulary coq-vocabulary.json \
   --db index.db \
   --output model.pt \
+  --undersample-cap 2000 \
   --hyperparams hpo-results/best-hyperparams.json \
   training.jsonl
 

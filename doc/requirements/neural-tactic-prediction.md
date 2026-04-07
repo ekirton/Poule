@@ -90,6 +90,7 @@ Cross-references:
 | R6-P1-4 | Normalize SSReflect compound tactics for classification: handle `move=>`, `apply/`, `rewrite !term`, and other SSReflect-specific syntax |
 | R6-P1-5 | Report per-family precision and recall in evaluation, identifying which tactic families the model predicts well vs. poorly |
 | R6-P1-6 | Support fine-tuning the pre-trained classifier on a user's project-specific extracted data |
+| R6-P1-8 | Cap dominant tactic families in the training split to a configurable maximum number of examples per family, reducing head-class redundancy and increasing tail-class exposure per epoch |
 
 ### P2 — Nice to Have
 

@@ -444,6 +444,197 @@ class TestFileLevelSplit:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 4b. undersample_train — Head-Class Undersampling
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestUndersampleTrain:
+    """spec §4.1: undersample_train caps dominant tactic families in training split."""
+
+    def _make_dataset_with_counts(self, family_counts_train):
+        """Build a TacticDataset with specified per-family training counts.
+
+        family_counts_train: dict mapping tactic family name to count.
+        """
+        from Poule.neural.training.taxonomy import (
+            CATEGORY_NAMES,
+            TACTIC_CATEGORIES,
+            TACTIC_TO_CATEGORY,
+        )
+
+        category_index = {cat: i for i, cat in enumerate(CATEGORY_NAMES)}
+        per_cat_label_maps = {}
+        for cat in CATEGORY_NAMES:
+            per_cat_label_maps[cat] = {
+                t: i for i, t in enumerate(TACTIC_CATEGORIES[cat])
+            }
+
+        train_pairs = []
+        train_files = []
+        for family, count in family_counts_train.items():
+            cat = TACTIC_TO_CATEGORY[family]
+            cat_idx = category_index[cat]
+            within_idx = per_cat_label_maps[cat][family]
+            for i in range(count):
+                train_pairs.append((f"state_{family}_{i}", cat_idx, within_idx))
+                train_files.append(f"file_{family}_{i}.v")
+
+        # Small val/test splits
+        val_pairs = [("val_state", category_index["introduction"], 0)]
+        test_pairs = [("test_state", category_index["introduction"], 0)]
+
+        all_counts = dict(family_counts_train)
+        return _make_tactic_dataset(
+            train_pairs=train_pairs,
+            val_pairs=val_pairs,
+            test_pairs=test_pairs,
+            family_counts=all_counts,
+            train_files=train_files,
+            val_files=["val.v"],
+            test_files=["test.v"],
+        )
+
+    def test_caps_dominant_family(self):
+        """Families exceeding the cap are reduced to exactly cap examples."""
+        from Poule.neural.training.data import undersample_train
+
+        ds = self._make_dataset_with_counts({"rewrite": 5000, "lia": 50})
+        result = undersample_train(ds, cap=2000, seed=42)
+
+        from Poule.neural.training.taxonomy import (
+            CATEGORY_NAMES, TACTIC_CATEGORIES, TACTIC_TO_CATEGORY,
+        )
+        cat_idx_rewrite = list(CATEGORY_NAMES).index(TACTIC_TO_CATEGORY["rewrite"])
+        within_idx_rewrite = list(TACTIC_CATEGORIES[TACTIC_TO_CATEGORY["rewrite"]]).index("rewrite")
+
+        rewrite_count = sum(
+            1 for _, c, w in result.train_pairs
+            if c == cat_idx_rewrite and w == within_idx_rewrite
+        )
+        assert rewrite_count == 2000
+
+    def test_preserves_small_family(self):
+        """Families at or below the cap retain all examples."""
+        from Poule.neural.training.data import undersample_train
+
+        ds = self._make_dataset_with_counts({"rewrite": 5000, "lia": 50})
+        result = undersample_train(ds, cap=2000, seed=42)
+
+        from Poule.neural.training.taxonomy import (
+            CATEGORY_NAMES, TACTIC_CATEGORIES, TACTIC_TO_CATEGORY,
+        )
+        cat_idx_lia = list(CATEGORY_NAMES).index(TACTIC_TO_CATEGORY["lia"])
+        within_idx_lia = list(TACTIC_CATEGORIES[TACTIC_TO_CATEGORY["lia"]]).index("lia")
+
+        lia_count = sum(
+            1 for _, c, w in result.train_pairs
+            if c == cat_idx_lia and w == within_idx_lia
+        )
+        assert lia_count == 50
+
+    def test_val_test_unchanged(self):
+        """Validation and test splits are never modified."""
+        from Poule.neural.training.data import undersample_train
+
+        ds = self._make_dataset_with_counts({"rewrite": 5000, "lia": 50})
+        result = undersample_train(ds, cap=2000, seed=42)
+
+        assert result.val_pairs == ds.val_pairs
+        assert result.test_pairs == ds.test_pairs
+        assert result.val_files == ds.val_files
+        assert result.test_files == ds.test_files
+
+    def test_deterministic_with_same_seed(self):
+        """Same (dataset, cap, seed) always produces the same output."""
+        from Poule.neural.training.data import undersample_train
+
+        ds = self._make_dataset_with_counts({"rewrite": 5000, "lia": 50})
+        r1 = undersample_train(ds, cap=2000, seed=42)
+        r2 = undersample_train(ds, cap=2000, seed=42)
+
+        assert r1.train_pairs == r2.train_pairs
+        assert r1.train_files == r2.train_files
+
+    def test_different_seed_different_selection(self):
+        """Different seeds select different subsets (with high probability)."""
+        from Poule.neural.training.data import undersample_train
+
+        ds = self._make_dataset_with_counts({"rewrite": 5000})
+        r1 = undersample_train(ds, cap=2000, seed=42)
+        r2 = undersample_train(ds, cap=2000, seed=99)
+
+        states_1 = {s for s, _, _ in r1.train_pairs}
+        states_2 = {s for s, _, _ in r2.train_pairs}
+        assert states_1 != states_2
+
+    def test_family_counts_recomputed(self):
+        """family_counts reflects the undersampled distribution."""
+        from Poule.neural.training.data import undersample_train
+
+        ds = self._make_dataset_with_counts({"rewrite": 5000, "lia": 50})
+        result = undersample_train(ds, cap=2000, seed=42)
+
+        assert result.family_counts["rewrite"] == 2000
+        assert result.family_counts["lia"] == 50
+
+    def test_per_category_counts_recomputed(self):
+        """per_category_counts reflects the undersampled distribution."""
+        from Poule.neural.training.data import undersample_train
+        from Poule.neural.training.taxonomy import TACTIC_TO_CATEGORY
+
+        ds = self._make_dataset_with_counts({"rewrite": 5000, "lia": 50})
+        result = undersample_train(ds, cap=2000, seed=42)
+
+        rewrite_cat = TACTIC_TO_CATEGORY["rewrite"]
+        assert result.per_category_counts[rewrite_cat]["rewrite"] == 2000
+
+    def test_label_metadata_preserved(self):
+        """label_map, label_names, category_names are unchanged."""
+        from Poule.neural.training.data import undersample_train
+
+        ds = self._make_dataset_with_counts({"rewrite": 5000, "lia": 50})
+        result = undersample_train(ds, cap=2000, seed=42)
+
+        assert result.label_map == ds.label_map
+        assert result.label_names == ds.label_names
+        assert result.category_names == ds.category_names
+        assert result.per_category_label_maps == ds.per_category_label_maps
+        assert result.per_category_label_names == ds.per_category_label_names
+
+    def test_no_family_exceeds_cap(self):
+        """After undersampling, no family in train_pairs exceeds the cap."""
+        from Poule.neural.training.data import undersample_train
+        from Poule.neural.training.taxonomy import (
+            CATEGORY_NAMES, TACTIC_CATEGORIES,
+        )
+
+        ds = self._make_dataset_with_counts({
+            "rewrite": 5000, "intros": 3000, "apply": 4000,
+            "auto": 2500, "destruct": 1500, "lia": 50,
+        })
+        result = undersample_train(ds, cap=2000, seed=42)
+
+        from collections import Counter
+        family_counter = Counter()
+        for _, cat_idx, within_idx in result.train_pairs:
+            cat = CATEGORY_NAMES[cat_idx]
+            family = TACTIC_CATEGORIES[cat][within_idx]
+            family_counter[family] += 1
+
+        for family, count in family_counter.items():
+            assert count <= 2000, f"{family} has {count} > 2000"
+
+    def test_train_files_matches_train_pairs(self):
+        """train_files has the same length as train_pairs after undersampling."""
+        from Poule.neural.training.data import undersample_train
+
+        ds = self._make_dataset_with_counts({"rewrite": 5000, "lia": 50})
+        result = undersample_train(ds, cap=2000, seed=42)
+
+        assert len(result.train_files) == len(result.train_pairs)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 5. TrainingDataLoader — Label Map and Family Counts
 # ═══════════════════════════════════════════════════════════════════════════
 

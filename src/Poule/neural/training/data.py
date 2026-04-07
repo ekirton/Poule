@@ -9,6 +9,7 @@ Tactic family extraction and data loading follows specification/neural-training.
 from __future__ import annotations
 
 import json
+import random
 import re
 import statistics
 from collections import Counter
@@ -145,6 +146,79 @@ class TacticDataset:
             cat: len(names)
             for cat, names in self.per_category_label_names.items()
         }
+
+
+def undersample_train(
+    dataset: TacticDataset,
+    cap: int,
+    seed: int = 42,
+) -> TacticDataset:
+    """Cap dominant tactic families in the training split.
+
+    spec §4.1: Groups training pairs by tactic family, randomly samples
+    at most `cap` examples per family, and returns a new TacticDataset
+    with the reduced training split. Validation and test splits are unchanged.
+    """
+    from Poule.neural.training.taxonomy import (
+        CATEGORY_NAMES,
+        TACTIC_CATEGORIES,
+    )
+
+    # Group train pairs + files by family
+    family_groups: dict[str, list[int]] = {}
+    for idx, (_, cat_idx, within_idx) in enumerate(dataset.train_pairs):
+        cat_name = dataset.category_names[cat_idx]
+        family = dataset.per_category_label_names[cat_name][within_idx]
+        family_groups.setdefault(family, []).append(idx)
+
+    # Undersample: cap each family
+    rng = random.Random(seed)
+    selected_indices: list[int] = []
+    for family, indices in family_groups.items():
+        if len(indices) > cap:
+            selected_indices.extend(rng.sample(indices, cap))
+        else:
+            selected_indices.extend(indices)
+
+    # Preserve per-family ordering for determinism
+    selected_indices.sort()
+
+    new_train_pairs = [dataset.train_pairs[i] for i in selected_indices]
+    new_train_files = [dataset.train_files[i] for i in selected_indices]
+
+    # Recompute family_counts from undersampled train + unchanged val/test
+    new_family_counts: Counter[str] = Counter()
+    for pairs in (new_train_pairs, dataset.val_pairs, dataset.test_pairs):
+        for _, cat_idx, within_idx in pairs:
+            cat_name = dataset.category_names[cat_idx]
+            family = dataset.per_category_label_names[cat_name][within_idx]
+            new_family_counts[family] += 1
+
+    # Recompute per_category_counts
+    new_per_category_counts: dict[str, dict[str, int]] = {}
+    for cat in dataset.category_names:
+        cat_counts: dict[str, int] = {}
+        for tac in dataset.per_category_label_names[cat]:
+            count = new_family_counts.get(tac, 0)
+            if count > 0:
+                cat_counts[tac] = count
+        new_per_category_counts[cat] = cat_counts
+
+    return TacticDataset(
+        train_pairs=new_train_pairs,
+        val_pairs=dataset.val_pairs,
+        test_pairs=dataset.test_pairs,
+        label_map=dataset.label_map,
+        label_names=dataset.label_names,
+        family_counts=dict(new_family_counts),
+        train_files=new_train_files,
+        val_files=dataset.val_files,
+        test_files=dataset.test_files,
+        category_names=dataset.category_names,
+        per_category_label_maps=dataset.per_category_label_maps,
+        per_category_label_names=dataset.per_category_label_names,
+        per_category_counts=new_per_category_counts,
+    )
 
 
 @dataclass

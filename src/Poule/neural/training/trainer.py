@@ -372,6 +372,19 @@ class TacticClassifierTrainer:
         Returns:
             Path to the saved checkpoint.
         """
+        # Head-class undersampling (spec §4.1)
+        undersample_cap = (hyperparams or {}).get(
+            "undersample_cap", self.hyperparams.get("undersample_cap"),
+        )
+        if undersample_cap is not None:
+            from Poule.neural.training.data import undersample_train
+
+            undersample_seed = (hyperparams or {}).get(
+                "undersample_seed",
+                self.hyperparams.get("undersample_seed", 42),
+            )
+            dataset = undersample_train(dataset, cap=undersample_cap, seed=undersample_seed)
+
         train_pairs = dataset.train_pairs
 
         if sample is not None and sample < 1.0:

@@ -84,6 +84,29 @@ The same argument as for premise retrieval: 100M-class models with INT8 quantiza
 - GIVEN a training dataset with imbalanced tactic family distribution WHEN training is configured THEN class weights are computed from inverse frequency and applied to the cross-entropy loss
 - GIVEN class-weighted training WHEN evaluated on minority tactic families THEN per-family recall is significantly higher than without weighting
 
+### Undersample Dominant Tactic Families
+
+**Priority:** P1
+**Stability:** Draft
+**Traces to:** R6-P1-8
+
+The six most frequent tactic families (rewrite, intros, apply, auto, destruct, split) contain thousands of near-identical proof states. Capping each at a configurable maximum (default ~2,000) per family in the training split reduces training set size from ~114K to ~40–50K samples while preserving all tail-class examples. This forces more tail-class exposure per epoch without discarding rare tactic data.
+
+**What this provides:**
+- Configurable per-family cap applied only to the training split (validation and test splits are unchanged)
+- Deterministic, reproducible undersampling using a fixed random seed
+- Reduced training time proportional to the smaller dataset
+
+**What this does not provide:**
+- Oversampling of rare classes (a separate technique)
+- Changes to class weighting (undersampling and weighting are complementary)
+- Changes to the data collapse step or extraction pipeline
+
+- GIVEN a training dataset with dominant tactic families exceeding the cap WHEN undersampling is enabled THEN each dominant family in the training split is reduced to at most the configured cap
+- GIVEN undersampling is enabled WHEN the validation and test splits are inspected THEN they are unchanged from the non-undersampled case
+- GIVEN a tactic family below the cap WHEN undersampling is enabled THEN all its examples are retained
+- GIVEN undersampling with a fixed seed WHEN run twice on the same data THEN the same samples are selected
+
 ### Collapse Training Data
 
 **Priority:** P1

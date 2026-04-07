@@ -261,6 +261,26 @@ Identical to the previous design: file-level split, deterministic by position mo
 | Validation | 10% of files | Early stopping |
 | Test | 10% of files | Final evaluation |
 
+### Head-Class Undersampling
+
+After the file-level split, the training split is optionally undersampled to cap dominant tactic families. This reduces head-class redundancy and increases tail-class exposure per epoch.
+
+**Parameters:**
+- `undersample_cap`: maximum examples per tactic family in the training split (default: 2000). Set to `None` to disable.
+- `undersample_seed`: random seed for reproducible selection (default: 42).
+
+**Procedure:**
+1. Group training pairs by tactic family (resolved from the hierarchical `(category_idx, within_idx)` labels).
+2. For each family with more examples than `undersample_cap`, randomly sample `undersample_cap` examples using `undersample_seed`.
+3. For families at or below the cap, retain all examples.
+4. Concatenate the (possibly reduced) per-family groups into the new training split.
+
+**Scope:** Only the training split is affected. Validation and test splits are never undersampled — they must reflect the true data distribution for unbiased evaluation.
+
+**Effect on class weights:** Class weights are recomputed from the undersampled training distribution, not the original distribution. This ensures the loss function reflects the actual training data.
+
+**Expected impact:** With a 2,000-example cap on the 6 dominant families (rewrite, intros, apply, auto, destruct, split), training reduces from ~114K to ~40–50K samples. Per-epoch tail-class exposure increases proportionally.
+
 ## Training
 
 ### Objective: Class-Weighted Cross-Entropy with Label Smoothing
@@ -490,6 +510,10 @@ Tactic prediction is a classification problem, not a retrieval problem. Each pro
 ### Why class-weighted loss
 
 The tactic distribution is heavily long-tailed: `intros`, `apply`, `rewrite`, `simpl`, and `auto` dominate. Without class weighting, the model would achieve reasonable accuracy by always predicting the majority class. Inverse-frequency weighting forces the model to also learn minority tactic families. The alpha exponent controls the strength -- alpha=0 means no weighting, alpha=1 means full inverse frequency.
+
+### Why head-class undersampling
+
+Class-weighted loss helps the model attend to rare tactics, but does not reduce the sheer number of redundant head-class examples the model sees each epoch. With rewrite (26,950) and apply (24,562) dominating the training set, the model spends most of each epoch on near-identical proof states. Undersampling caps these families at ~2,000 examples, forcing more tail-class exposure per epoch. The literature (see `doc/background/class-imbalance.md`) finds that undersampling is effective when the majority class has high redundancy — which holds here, since proof states within a single tactic family are highly similar. Undersampling and class weighting are complementary: undersampling balances the data distribution, weighting balances the loss gradient.
 
 ### Why file-level split
 
