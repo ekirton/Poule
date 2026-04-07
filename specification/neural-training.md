@@ -399,6 +399,36 @@ All steps from the same file go into the same split.
 > **When** the split is computed
 > **Then** files at indices 8, 18, 28, ... → validation; indices 9, 19, 29, ... → test; all others → train
 
+#### Head-class undersampling
+
+`undersample_train(dataset, cap, seed) -> TacticDataset`
+
+- REQUIRES: `dataset` is a populated `TacticDataset`. `cap` is a positive integer (the maximum number of training examples per tactic family). `seed` is an integer used to seed the random selection.
+- ENSURES: Returns a new `TacticDataset` identical to `dataset` except that `train_pairs` and `train_files` are reduced so that no tactic family has more than `cap` examples. Validation and test splits are unchanged. `family_counts` and `per_category_counts` are recomputed from the undersampled training split only (not from the original data). All other fields (`label_map`, `label_names`, `category_names`, `per_category_label_maps`, `per_category_label_names`) are copied unchanged.
+
+**Procedure:**
+
+1. Group `train_pairs` by tactic family. The family for a triple `(state, cat_idx, within_idx)` is resolved via `dataset.category_names[cat_idx]` and `dataset.per_category_label_names[cat_name][within_idx]`.
+2. For each family with more than `cap` examples, use `random.Random(seed).sample()` to select exactly `cap` examples. The same seed always selects the same subset.
+3. For families with `cap` or fewer examples, retain all examples.
+4. Concatenate all per-family groups (in arbitrary order) into the new `train_pairs`.
+5. Build the corresponding `train_files` list by selecting the same indices.
+6. Recompute `family_counts` by counting all families across train + val + test in the result.
+7. Recompute `per_category_counts` from the recomputed family counts.
+
+- MAINTAINS: `val_pairs`, `test_pairs`, `val_files`, `test_files` are identical to the input dataset.
+- MAINTAINS: Deterministic — the same `(dataset, cap, seed)` always produces the same output.
+- MAINTAINS: No family in the resulting `train_pairs` has more than `cap` examples.
+- MAINTAINS: For families originally at or below `cap`, all examples are preserved.
+
+> **Given** a dataset where `rewrite` has 5,000 training examples and `lia` has 50
+> **When** `undersample_train(dataset, cap=2000, seed=42)` runs
+> **Then** `rewrite` is reduced to 2,000 examples; `lia` retains all 50
+
+> **Given** `undersample_train` called twice with `seed=42` on the same dataset
+> **When** the resulting `train_pairs` are compared
+> **Then** they are identical (same examples in the same positions per family group)
+
 #### Split diagnostic report
 
 `SplitReport.generate(dataset: TacticDataset) -> SplitReport`
@@ -456,7 +486,7 @@ All steps from the same file go into the same split.
 #### train(dataset, output_path, vocabulary_path, hyperparams, epoch_callback)
 
 - REQUIRES: `dataset` is a `TacticDataset` with at least 1,000 training steps (after sampling, if applied). `output_path` is a writable path. `vocabulary_path` points to a valid vocabulary JSON file (as produced by `VocabularyBuilder.build`). `hyperparams` has defaults as specified below. `sample` is `None` or a float in (0.0, 1.0]. `epoch_callback` is `None` or a callable `(epoch: int, val_accuracy: float) -> None`.
-- ENSURES: When `sample` is not `None`, randomly sub-samples the training split to `ceil(len(dataset.train) * sample)` steps before training begins (validation and test splits are not affected). Constructs a `CoqTokenizer` from `vocabulary_path`. Creates a `TacticClassifier` model with `num_hidden_layers` transformer layers (default 6, layer-dropped from CodeBERT's 12 layers), an embedding layer sized to the vocabulary, and a classification head sized to `dataset.num_classes`. Copies overlapping pretrained embeddings from CodeBERT for tokens that appear in both vocabularies (digits, punctuation, common words). Initializes remaining embeddings randomly (σ=0.02). Trains using class-weighted cross-entropy loss. Saves the best checkpoint (by validation accuracy@5) to `output_path`. The checkpoint includes `num_hidden_layers`, the vocabulary path, and label map for reproducibility. Prints training metrics (loss, validation accuracy@1, validation accuracy@5) after each epoch. When `epoch_callback` is not `None`, invokes it after each epoch's validation with the epoch number and validation accuracy@5; if the callback raises an exception, the training loop terminates and the exception propagates to the caller.
+- ENSURES: When `undersample_cap` is not `None` in hyperparams, calls `undersample_train(dataset, cap=undersample_cap, seed=undersample_seed)` before any other processing. When `sample` is not `None`, randomly sub-samples the training split to `ceil(len(dataset.train) * sample)` steps before training begins (validation and test splits are not affected). Constructs a `CoqTokenizer` from `vocabulary_path`. Creates a `TacticClassifier` model with `num_hidden_layers` transformer layers (default 6, layer-dropped from CodeBERT's 12 layers), an embedding layer sized to the vocabulary, and a classification head sized to `dataset.num_classes`. Copies overlapping pretrained embeddings from CodeBERT for tokens that appear in both vocabularies (digits, punctuation, common words). Initializes remaining embeddings randomly (σ=0.02). Trains using class-weighted cross-entropy loss. Saves the best checkpoint (by validation accuracy@5) to `output_path`. The checkpoint includes `num_hidden_layers`, the vocabulary path, and label map for reproducibility. Prints training metrics (loss, validation accuracy@1, validation accuracy@5) after each epoch. When `epoch_callback` is not `None`, invokes it after each epoch's validation with the epoch number and validation accuracy@5; if the callback raises an exception, the training loop terminates and the exception propagates to the caller.
 - On training completion: saves final checkpoint alongside best checkpoint.
 - On GPU OOM: raises `TrainingResourceError` with message suggesting batch size reduction.
 - When `vocabulary_path` is `None`: falls back to CodeBERT's default tokenizer and embedding layer (backward compatibility).
@@ -476,6 +506,8 @@ All steps from the same file go into the same split.
 | `max_epochs` | 20 | Must be positive |
 | `early_stopping_patience` | 3 | Must be positive |
 | `embedding_dim` | 128 | Must be positive. When equal to `hidden_size` (768), no projection is applied. |
+| `undersample_cap` | None | When not None, must be a positive integer. Passed to `undersample_train()` before training begins. |
+| `undersample_seed` | 42 | Integer seed for reproducible undersampling. |
 
 #### Model architecture: TacticClassifier
 

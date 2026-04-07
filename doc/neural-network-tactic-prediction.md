@@ -553,7 +553,7 @@ The hierarchical model improved validation accuracy by 10.5pp (70.2% → 80.2%),
 
 The 35pp val–test gap is the primary problem. The model learns useful representations (80% val) but does not generalize across libraries. The following interventions are ordered by expected impact; see [class-imbalance.md](background/class-imbalance.md) for literature backing.
 
-1. **Head-class undersampling.** Cap the 6 dominant families (rewrite, intros, apply, auto, destruct, split) at ~2,000 examples each, reducing training from ~114K to ~40–50K samples. These families have enormous redundancy — thousands of near-identical proof states. Forcing more tail-class exposure per epoch is the simplest change to try.
+1. **Head-class undersampling.** ✅ **Implemented.** Cap the 6 dominant families (rewrite, intros, apply, auto, destruct, split) at ~2,000 examples each, reducing training from ~114K to ~40–50K samples. These families have enormous redundancy — thousands of near-identical proof states. Forcing more tail-class exposure per epoch is the simplest change to try. Pass `undersample_cap=2000` in hyperparams to enable (`undersample_seed` defaults to 42 for reproducibility). Only the training split is affected; validation and test splits remain unchanged. Class weights are recomputed from the undersampled distribution.
 
 2. **Decoupled training** (Kang et al., 2020). Freeze the trained 8-layer encoder, reinitialize the 8 category heads, retrain them with class-balanced sampling. The literature's strongest finding is that imbalance harms the classifier, not the feature extractor. This is cheap since it skips encoder training.
 
