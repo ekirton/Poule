@@ -548,3 +548,19 @@ The hierarchical model improved validation accuracy by 10.5pp (70.2% → 80.2%),
 - **Supersedes**: cross-prover transfer training (uses existing Coq data instead of requiring Lean datasets)
 - **Enables**: proof search / auto-completion in the MCP proof session tools
 - **Blocked by**: nothing — extraction data (140K steps) and vocabulary (158K tokens) are ready
+
+## Next Steps
+
+The 35pp val–test gap is the primary problem. The model learns useful representations (80% val) but does not generalize across libraries. The following interventions are ordered by expected impact; see [class-imbalance.md](background/class-imbalance.md) for literature backing.
+
+1. **Head-class undersampling.** Cap the 6 dominant families (rewrite, intros, apply, auto, destruct, split) at ~2,000 examples each, reducing training from ~114K to ~40–50K samples. These families have enormous redundancy — thousands of near-identical proof states. Forcing more tail-class exposure per epoch is the simplest change to try.
+
+2. **Decoupled training** (Kang et al., 2020). Freeze the trained 8-layer encoder, reinitialize the 8 category heads, retrain them with class-balanced sampling. The literature's strongest finding is that imbalance harms the classifier, not the feature extractor. This is cheap since it skips encoder training.
+
+3. **Balanced softmax** (Ren et al., 2020). Subtract `log(class_frequency)` from logits before softmax at inference time. No retraining needed — can be applied to the current checkpoint as a post-hoc correction. Zero cost, worth trying immediately.
+
+4. **Library-level data split.** The current 80/10/10 split is file-level, but files within the same library share stylistic conventions. Splitting by library (e.g., MathComp+Coquelicot for training, stdpp for validation, stdlib for test) would reveal whether the gap is a distribution-shift problem rather than a class-imbalance problem.
+
+5. **LDAM + deferred re-balancing** (Cao et al., 2019). Class-dependent margin offsets (`C / n_c^{1/4}`) penalize misclassification of rare tactics more heavily. Combined with deferred re-balancing (normal sampling for 80% of training, balanced for the final 20%), this is a strong literature baseline.
+
+Try (1) + (2) together first: undersample head classes, then do decoupled classifier retraining. Add (3) at inference as a free bonus. If the gap persists, (4) will determine whether the root cause is distribution shift rather than imbalance.
