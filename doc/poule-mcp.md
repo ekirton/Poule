@@ -29,13 +29,59 @@ No search index required — communicates with a live Coq process via coq-lsp or
 | `observe_proof_state` | — | Current goals, hypotheses, focused goal |
 | `get_proof_state_at_step` | `step` (integer, 0-based) | Non-destructive — does not move current position |
 | `extract_proof_trace` | — | Full state+tactic history from start to current position |
-| `submit_tactic` | `tactic` (string) | Returns new proof state or structured error |
+| `submit_tactic` | `tactic` (string), optional `options` (object) | Returns new proof state or structured error. See **Hammer Automation** below for special tactic keywords. |
 | `step_backward` | — | Undo last tactic |
 | `step_forward` | — | Replay next tactic from original script |
 | `submit_tactic_batch` | `tactics` (string[]) | Stops on first failure; returns error + last good state |
 | `get_proof_premises` | — | Premise annotations for all steps |
 | `get_step_premises` | `step` (integer, 1-based) | Premise annotations for one step |
 | `suggest_tactics` | `session_id` (string) | Suggests tactics for the current proof state. Returns ranked list combining neural predictions (when a trained model is available) with rule-based suggestions. |
+
+## Hammer Automation
+
+The `submit_tactic` tool doubles as the entry point for CoqHammer. When the `tactic` string matches a recognized keyword, the handler delegates to the hammer engine instead of sending the tactic directly to Coq.
+
+**Keywords:**
+
+| Keyword | Description | Default timeout |
+|---------|-------------|-----------------|
+| `hammer` | Standard CoqHammer with ATP backend | 30 s |
+| `sauto` | Semi-automated search tactic | 10 s |
+| `qauto` | Quick automation tactic | 5 s |
+| `auto_hammer` | Multi-strategy fallback — tries `hammer`, then `sauto`, then `qauto`, stops on first success | 60 s total |
+
+**`options` parameter** (optional object, ignored for non-hammer tactics):
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `timeout` | number | Timeout in seconds (overrides the keyword default) |
+| `hints` | string[] | Lemma names to pass as hints |
+| `sauto_depth` | integer | Search depth for the `sauto` strategy |
+| `qauto_depth` | integer | Search depth for the `qauto` strategy |
+| `unfold` | string[] | Definitions to unfold (for `sauto`/`qauto`) |
+
+**Return value** (replaces the normal proof-state response):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | `success` or `failure` |
+| `proof_script` | string \| null | Successful tactic string, or null on failure |
+| `atp_proof` | string \| null | ATP proof text (hammer strategy only) |
+| `strategy_used` | string \| null | `hammer`, `sauto`, or `qauto` — whichever succeeded |
+| `state` | ProofState | Updated proof state |
+| `diagnostics` | StrategyDiagnostic[] | One entry per strategy attempted |
+| `wall_time_ms` | number | Total wall-clock time |
+
+**StrategyDiagnostic** (per failed strategy):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `strategy` | string | `hammer`, `sauto`, or `qauto` |
+| `failure_reason` | string | `timeout`, `no_proof_found`, `reconstruction_failed`, or `tactic_error` |
+| `detail` | string | Human-readable error message |
+| `partial_progress` | string \| null | ATP proof text when reconstruction failed |
+| `wall_time_ms` | number | Time consumed by this strategy |
+| `timeout_used` | number | Timeout value applied (seconds) |
 
 ## Profiling Tools
 
