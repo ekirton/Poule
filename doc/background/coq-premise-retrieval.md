@@ -89,6 +89,8 @@ Several systems integrate retrieval directly into the proving pipeline:
 
 **Seed-Prover 1.5** (ByteDance, 2025): Maintains per-problem lemma pools with dynamic scoring (proof-rate, semantic relevance, proof length). RL training progressively internalizes retrieval knowledge -- later checkpoints make fewer search calls while maintaining performance.
 
+**ProofFusion** (accepted FSE 2026): Adaptive retrieval-augmented reasoning for theorem proving. The system dynamically adjusts its retrieval strategy based on the difficulty and type of the current proof goal, using more aggressive retrieval for harder goals and lighter-weight retrieval for goals that are likely to yield to direct tactic application. The key insight is that retrieval is not free: each call adds latency and context window consumption to proof search. An adaptive system that retrieves more when the proof is stuck and less when it is making progress allocates the retrieval budget more efficiently.
+
 ---
 
 ## 5. Library Learning: The Reuse Problem
@@ -150,6 +152,8 @@ Cao, H. et al. "Library Learning Doesn't: The Curious Case of the Single-Use Lib
 Berlot-Attwell, I. et al. "LLM Library Learning Fails: A LEGO-Prover Case Study." 2025.
 
 Czajka, L. and Kaliszyk, C. "Hammer for Coq." JAR 2018.
+
+"ProofFusion: Adaptive Retrieval-Augmented Reasoning for Theorem Proving." Accepted FSE 2026.
 
 Hoder, K. and Voronkov, A. "Sine Qua Non for Large Theory Reasoning." CADE 2011.
 
