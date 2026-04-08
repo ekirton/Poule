@@ -64,6 +64,82 @@ These tools let Claude work with a live Coq process — opening proof sessions, 
 
 When a hammer tactic succeeds, the response includes the `proof_script` (the tactic that worked) and which `strategy_used`. When it fails, `diagnostics` explains what each strategy tried and why it didn't work — useful for understanding what to try next.
 
+## Vernacular Query Tools
+
+These tools execute Coq vernacular introspection commands in a live session.
+
+| Tool | Required params | Optional params | What it does |
+|------|----------------|-----------------|--------------|
+| `coq_query` | `command` (string), `argument` (string) | `session_id` | Execute a vernacular command: `Print`, `Check`, `About`, `Locate`, `Search`, `Compute`, or `Eval` |
+| `notation_query` | `subcommand` (string), `session_id` (string) | `input` (string) | Inspect notations, scopes, and notation visibility |
+
+## Assumption Auditing Tools
+
+These tools inspect what axioms your theorems depend on — useful for checking constructivity, comparing formulations, and catching unintended classical assumptions.
+
+| Tool | Required params | Optional params | What it does |
+|------|----------------|-----------------|--------------|
+| `audit_assumptions` | `name` (string), `session_id` (string) | — | Audit axiom dependencies for a theorem via `Print Assumptions`. Returns classified axioms (classical, extensionality, choice, proof irrelevance, custom) |
+| `audit_module` | `module` (string), `session_id` (string) | `flag_categories` (string[]) | Audit all theorems in a module for axiom dependencies. Flags theorems using specified axiom categories |
+| `compare_assumptions` | `names` (string[]), `session_id` (string) | — | Compare axiom profiles across multiple theorems — shows shared and unique assumptions |
+
+## Universe Inspection Tools
+
+These tools help debug universe polymorphism issues — one of the trickiest error categories in Coq.
+
+| Tool | Required params | Optional params | What it does |
+|------|----------------|-----------------|--------------|
+| `inspect_universes` | `session_id` (string) | — | Retrieve the full universe constraint graph from the current environment |
+| `inspect_definition_constraints` | `name` (string), `session_id` (string) | — | Get universe constraints for a specific definition |
+| `diagnose_universe_error` | `error_message` (string), `session_id` (string) | — | Diagnose a universe inconsistency error — explains what conflicting constraints mean and suggests fixes |
+
+## Typeclass Inspection Tools
+
+These tools help understand and debug typeclass resolution — useful when instance search is slow, fails, or picks the wrong instance.
+
+| Tool | Required params | Optional params | What it does |
+|------|----------------|-----------------|--------------|
+| `list_instances` | `typeclass_name` (string), `session_id` (string) | — | List all registered instances of a typeclass |
+| `list_typeclasses` | `session_id` (string) | — | List all registered typeclasses in the current session |
+| `trace_resolution` | `session_id` (string) | — | Trace typeclass instance resolution — shows the search path and which instances were tried |
+
+## Tactic Introspection Tools
+
+These tools let you look up tactic definitions, inspect hint databases, and compare tactics side by side.
+
+| Tool | Required params | Optional params | What it does |
+|------|----------------|-----------------|--------------|
+| `tactic_lookup` | `name` (string) | `session_id` | Look up an Ltac tactic definition. Returns the definition body, or `kind=primitive` for built-in tactics |
+| `inspect_hint_db` | `db_name` (string) | `session_id` | Inspect a hint database — lists Resolve, Unfold, Constructors, and Extern hints |
+| `compare_tactics` | `names` (string[]) | `session_id` | Compare two or more tactics — shows structural differences, performance characteristics, and applicability |
+
+## Dependency Analysis Tools
+
+These tools work with the prebuilt dependency graph to analyze how declarations relate to each other at project scale.
+
+| Tool | Required params | Optional params | What it does |
+|------|----------------|-----------------|--------------|
+| `transitive_closure` | `name` (string) | `max_depth` (int), `scope_filter` (string[]), `dot_file_path` (string) | Compute everything a declaration transitively depends on |
+| `impact_analysis` | `name` (string) | `max_depth` (int), `scope_filter` (string[]), `dot_file_path` (string) | Find everything that transitively depends on a declaration — the blast radius of a change |
+| `detect_cycles` | — | `dot_file_path` (string) | Detect circular dependencies in the indexed project |
+| `module_summary` | — | `dot_file_path` (string) | Dependency summary grouped by module — shows fan-in, fan-out, and coupling |
+
+## Documentation & Extraction Tools
+
+| Tool | Required params | Optional params | What it does |
+|------|----------------|-----------------|--------------|
+| `generate_documentation` | `file_path` (string) | `format` (html\|rst\|latex, default html), `output_path` | Generate literate documentation from a Coq source file using Alectryon |
+| `extract_code` | `session_id` (string), `definition_name` (string), `language` (ocaml\|haskell\|scheme) | `recursive` (bool, default false), `output_path` | Extract a Coq definition to OCaml, Haskell, or Scheme |
+
+## Project Management Tools
+
+| Tool | Required params | Optional params | What it does |
+|------|----------------|-----------------|--------------|
+| `build_project` | `project_dir` (string) | `target` (string), `timeout` (int, default 300s) | Build a Coq project using make or dune |
+| `check_proof` | `file_path` (string) | `include_paths` (string[]), `load_paths` (string[][]), `timeout` (int, default 300s) | Run the independent proof checker (coqchk) on a compiled file |
+| `query_packages` | — | — | List installed opam packages |
+| `add_dependency` | `project_dir` (string), `package_name` (string) | `version` (string) | Add an opam dependency to the project's .opam file |
+
 ## Profiling Tools
 
 These tools help you find slow proofs and understand where time is being spent.

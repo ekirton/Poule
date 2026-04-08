@@ -90,6 +90,60 @@ Check whether your project's dependencies are mutually compatible before you hit
 
 Claude reads your opam/dune dependency declarations, analyzes version constraints for conflicts, and explains any incompatibilities in plain language with resolution suggestions.
 
+## Analysis & Introspection
+
+### /audit
+
+Audit axiom dependencies for theorems, modules, or compare assumptions across formulations.
+
+```
+/audit Nat.add_comm
+/audit Coq.Arith.PeanoNat --constructive
+/audit lem1 lem2 lem3
+```
+
+Claude inspects what axioms a theorem depends on, classifies them (classical logic, extensionality, choice, proof irrelevance), explains their implications for constructivity and extraction, and suggests weaker alternatives when possible. In module mode, it flags theorems that use axioms in specified categories. In comparison mode, it shows shared and unique axioms across multiple formulations.
+
+### /profile
+
+Profile Coq proof compilation time and identify optimization opportunities.
+
+```
+/profile src/Core.v
+/profile src/Core.v my_lemma
+/profile src/Core.v --compare baseline.timing
+```
+
+Claude profiles compilation time at file or proof granularity, separates Qed time from tactic execution, classifies bottlenecks (expensive typeclass search, deep auto, aggressive simpl), and suggests concrete optimizations. Supports Ltac call-tree profiling for deep tactic analysis and before/after comparison to detect regressions.
+
+### /visualize
+
+Generate visual diagrams of proof states, trees, dependencies, or proof evolution.
+
+```
+/visualize state
+/visualize tree
+/visualize deps Nat.add_comm --depth 3
+/visualize sequence --detail detailed
+```
+
+Claude generates Mermaid diagrams and writes a self-contained `proof-diagram.html` to your project directory. Supports four modes: current proof state, complete proof tree, declaration dependency graph, and step-by-step proof evolution with diffs highlighted.
+
+### /browse
+
+Explore Coq modules, libraries, typeclasses, and dependency structure.
+
+```
+/browse
+/browse Coq.Arith
+/browse typeclasses
+/browse instances Decidable
+/browse deps Nat.add_comm
+/browse impact my_critical_lemma
+```
+
+Claude provides an interactive navigation experience across the indexed libraries. Browse module hierarchies, discover typeclasses and their instances, trace transitive dependencies, assess the blast radius of changes via impact analysis, and detect circular dependencies.
+
 ## Education
 
 ### /textbook
@@ -139,6 +193,10 @@ Claude asks for project parameters (name, build system, Coq version, dependencie
 | `/proof-obligations` | Scan for admits/axioms, classify, rank | Automated |
 | `/proof-lint` | Style linting with optional auto-fix | Automated |
 | `/proof-repair` | Fix broken proofs after version upgrade | Automated, iterative |
+| `/audit` | Axiom dependency auditing and comparison | Automated |
+| `/profile` | Proof compilation profiling and optimization | Automated |
+| `/visualize` | Proof state, tree, dependency, and sequence diagrams | Automated |
+| `/browse` | Module, library, and typeclass exploration | Interactive |
 | `/migrate-rocq` | Coq to Rocq namespace migration | Semi-automated |
 | `/check-compat` | Dependency compatibility analysis | Automated |
 | `/explain-error` | Type error explanation + fix suggestions | Automated |
