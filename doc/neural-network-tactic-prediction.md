@@ -83,7 +83,7 @@ Top tactic families by frequency:
 | `move` | 1,616 | 1.2% |
 | `+` | 1,357 | 1.0% |
 
-The top 20 families cover ~80% of all steps. The hierarchical taxonomy groups all tactics into 8 categories (~65 tactic families total), eliminating the need for frequency thresholding or an `"other"` catch-all class.
+The top 20 families cover ~80% of all steps. The hierarchical taxonomy groups all tactics into 6 categories (top 5 + an `"other"` catch-all, ~65 tactic families total). Arithmetic (864 samples), contradiction (146), and ssreflect (mostly excluded MathComp) had too few examples for reliable standalone prediction and were merged into "other".
 
 ### Phase 2: Tactic family classifier
 
@@ -418,9 +418,9 @@ Key changes from the flat approach:
 ```
 Encoder (shared, factored D=128, CodeBERT) -> z [B, 768]
   |
-  +-> Category Head: Linear(768, 8) -> P(category)
+  +-> Category Head: Linear(768, 384) -> ReLU -> Dropout(0.1) -> Linear(384, 6) -> P(category)
   |
-  +-> Per-Category Heads (8): Linear(768, N_cat) -> P(tactic|category)
+  +-> Per-Category Heads (6): Linear(768, N_cat) -> P(tactic|category)
 
 Inference: P(tactic) = P(category) * P(tactic|category)
 ```
