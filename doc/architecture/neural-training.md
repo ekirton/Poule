@@ -295,18 +295,30 @@ After the file-level split, the training split is optionally undersampled to cap
 
 ### Minority Oversampling
 
-After undersampling caps dominant families, minority families in the 100–500 example range face a 4–20× imbalance against capped families within the same category head. Oversampling duplicates these families' training examples up to a configurable floor, reducing the maximum within-category imbalance ratio.
+After undersampling caps dominant families, minority families in the 100–500 example range face a 4–20× imbalance against capped families within the same category head. Oversampling generates augmented copies of these families' training examples up to a configurable floor, reducing the maximum within-category imbalance ratio.
 
 **Parameters:**
 - `oversample_floor`: minimum examples per tactic family in the training split after oversampling (default: 500, i.e., 25% of the undersample cap). Set to `None` to disable.
-- `oversample_seed`: random seed for reproducible duplication (default: 42).
+- `oversample_seed`: random seed for reproducible augmentation (default: 42).
 
 **Procedure:**
 1. Run after `undersample_train()` — operates on the already-undersampled training split.
 2. Group training pairs by tactic family.
-3. For each family with fewer examples than `oversample_floor`, sample additional examples with replacement from that family's existing pool using `oversample_seed`, bringing the total to `oversample_floor`.
+3. For each family with fewer examples than `oversample_floor`, sample source examples with replacement from that family's existing pool using `oversample_seed`, generating `floor - len(family)` augmented examples. Each augmented example is created by applying label-preserving perturbations to the sampled source (see below).
 4. For families already at or above the floor, retain all examples unchanged.
 5. Concatenate the per-family groups into the new training split.
+
+#### Proof State Perturbation
+
+Each augmented example applies two label-preserving perturbations to the source proof state:
+
+**Hypothesis shuffling.** Reorder hypotheses within each goal block. Proof states may contain multiple goal blocks separated by `\n\n`. Within each block, lines matching the hypothesis pattern (`identifier : type`) are shuffled randomly; the goal line (the final non-hypothesis line) stays in place. The correct tactic is independent of hypothesis ordering — Coq's context is an unordered set.
+
+A line is a hypothesis if it matches: one or more identifier characters (`[a-zA-Z_][a-zA-Z_0-9']*`), followed by ` : ` (space-colon-space), followed by any text. Lines not matching this pattern are treated as goal lines.
+
+**Identifier renaming.** Replace hypothesis variable names with random alternatives. For each goal block, collect all hypothesis names (the identifier before ` : `). Map each name to a fresh random identifier (drawn from a pool of synthetic names like `v0`, `v1`, ..., `v99`). Replace all occurrences of each original name with its replacement throughout the entire block (hypotheses and goal), using word-boundary-aware replacement to avoid partial matches (e.g., replacing `H` must not affect `H0`). Replacements are applied simultaneously to avoid cascading collisions.
+
+Both perturbations are provably label-preserving: hypothesis order is semantically irrelevant, and tactic selection depends on the structure of types and the goal, not on variable names.
 
 **Scope:** Only the training split is affected. Validation and test splits are never oversampled.
 
@@ -314,7 +326,7 @@ After undersampling caps dominant families, minority families in the 100–500 e
 
 **Interaction with undersample_train min_count:** Families below `min_count` (default 100, i.e., 5% of cap) are dropped by `undersample_train` before oversampling runs. Oversampling does not resurrect dropped families — it only amplifies families that survived the minimum trainability threshold.
 
-**Expected impact:** Families in the 100–500 range (the "trainable but underrepresented" bucket) get 2–5× duplication. The maximum duplication factor is 5× (for a family with exactly 100 examples). The training set size increases modestly — most families are either above 500 (untouched) or below 100 (dropped).
+**Expected impact:** Families in the 100–500 range (the "trainable but underrepresented" bucket) get 2–5× augmented copies. The maximum augmentation factor is 5× (for a family with exactly 100 examples). Each augmented copy is a novel training example with shuffled hypotheses and renamed identifiers, providing genuine new signal unlike plain duplication.
 
 ### Leave-One-Library-Out Cross-Validation
 
