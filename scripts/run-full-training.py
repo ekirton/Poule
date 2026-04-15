@@ -60,6 +60,24 @@ def main():
         n_tactics = len(dataset.per_category_label_names.get(cat, []))
         logger.info("  %s: %d samples, %d tactic families", cat, total, n_tactics)
 
+    # ---- Step 1a: Build BPE vocabulary ----
+    from Poule.neural.training.vocabulary import BpeVocabularyBuilder
+
+    if (VOCABULARY_DIR / "tokenizer.model").exists():
+        logger.info("BPE vocabulary already exists at %s, skipping build", VOCABULARY_DIR)
+    else:
+        logger.info("Building BPE vocabulary from %s...", TRAINING_DATA)
+        vocab_report = BpeVocabularyBuilder.build(
+            jsonl_paths=[TRAINING_DATA],
+            output_dir=VOCABULARY_DIR,
+        )
+        logger.info(
+            "BPE vocabulary built: %d tokens (%d special) at %s",
+            vocab_report.vocab_size,
+            vocab_report.special_token_count,
+            VOCABULARY_DIR,
+        )
+
     # ---- Step 1b: Undersample dominant families ----
     UNDERSAMPLE_CAP = 2000
     UNDERSAMPLE_MIN = max(1, int(UNDERSAMPLE_CAP * 0.05))  # 5% of cap
