@@ -1106,3 +1106,97 @@ Head-class undersampling collapsed the val–test gap (35pp → 6pp) and raised 
 8. **Revert category head to single linear layer.** The 2-layer MLP category head (commit `bccd35a`) did not improve category acc@1 — it dropped from 34.9% (8 categories, single linear) to 31.5% (6 categories, 2-layer MLP). The bottleneck is encoder representation quality, not head capacity.
 
 Loss-function engineering is exhausted: balanced softmax (2), decoupled training (3), LDAM+DRW (5), and focal loss (6) all degraded performance. The consistent finding is that the bottleneck is data sparsity for rare families, not loss weighting. Try (4a) next — naive minority oversampling directly addresses the data gap by boosting families with <100 training examples. Use the pre-LDAM best hyperparameters (6 layers, lr=1.07e-5, batch_size=64, alpha=0.065, label_smoothing=0.190, sam_rho=0.180, lambda_within=1.93). If naive oversampling moves trainable coverage from 36% toward 50%, layer on (4b) token perturbation.
+
+## Minority Oversampling Experiment
+
+### Motivation
+
+After 5 failed loss-function and training-strategy interventions, the hypothesis shifted from "the loss function is wrong" to "the data is too sparse for rare families to learn." This experiment tests naive minority oversampling: duplicate examples from families with <500 training samples (cap) to see if synthetic data volume helps learn rare tactic patterns. Previous undersampling (cap=2000 per family) flattened the distribution to 40K training samples; oversampling inflates back to ~46.8K to provide more signal without changing the class distribution too dramatically.
+
+**Rebalancing Strategy:**
+- **Undersample:** cap each family at 2,000 examples (same as baseline)
+- **Oversample:** duplicate all examples from families with <500 examples (floor=500)
+- **Result:** 46,846 training samples (40K → 46.8K), class distribution unchanged, but rare families now see multiple copies of each example
+
+### HPO Results
+
+**Hyperparameter Search:** 15 Optuna trials (same search space as prior experiments), best trial acc@5 = **0.5061** (Trial 2).
+
+Trial 2 hyperparameters:
+- num_hidden_layers: 6
+- learning_rate: 1.0677e-05
+- batch_size: 64
+- weight_decay: 0.000325
+- class_weight_alpha: 0.065
+- label_smoothing: 0.190
+- sam_rho: 0.293
+- lambda_within: 1.930
+
+**Trial Summary:** 15 trials completed in ~31 hours (1,853 minutes), 10 pruned early (63%), 5 completed full training.
+
+| Trial | Status | Best Epoch | val_acc@5 | Notes |
+|-------|--------|-----------|-----------|-------|
+| 0 | Full | 1 | 0.4398 | baseline |
+| 1 | Full | 3 | 0.2130 | low accuracy |
+| **2** | **Full** | **4** | **0.5061** | **Best trial** |
+| 3 | Pruned | — | — | — |
+| 4 | Full | 1 | 0.4904 | good but not best |
+| 5 | Full | 3 | 0.3878 | — |
+| 6-11 | Pruned | — | — | — |
+| 12 | Pruned | 3 | 0.2451 | low accuracy |
+| 13 | Full | 4 | 0.4873 | 2nd best, pruned after E4 |
+| 14 | Pruned | 4 | 0.3647 | — |
+
+### Final Model Results
+
+**Setup:** Training on 46,846 samples (combined train+val from HPO, rebalanced with undersample+oversample). Final training: 3 epochs using Trial 2's best hyperparameters. MLX backend on Apple Silicon.
+
+**Training progress:**
+- **Epoch 1:** loss=5.3583 (28 min)
+- **Epoch 2:** loss=5.0963 (29 min)
+- **Epoch 3:** loss=4.9325 (25 min)
+
+Loss steadily improved across epochs, but final model performance degraded severely.
+
+**Test set evaluation** (15,497 test samples, ~4.7 minutes latency):
+
+| Metric | Result | Baseline | Status |
+|--------|--------|----------|--------|
+| **test_acc@5** | **35.6%** | 57.0% | **FAIL** (-21.4pp) |
+| test_acc@1 | 4.5% | 17.2% | Collapsed |
+| category_acc@1 | 34.2% | 34.9% | FAIL |
+| Non-zero recall families | 2 | 21 | Collapsed |
+| Trainable coverage (≥100 ex.) | 4.7% | ~36% | FAIL |
+| Trainable coverage (≥200 ex.) | 4.7% | ~25% | FAIL |
+
+**Per-Category Accuracy:**
+
+| Category | Accuracy@1 | Baseline | Change |
+|----------|------------|----------|--------|
+| ssreflect | 64.45% | 13.2% | **+51.3pp** |
+| hypothesis_mgmt | 6.52% | 84.7% | **-78.2pp** |
+| All others | 0.0% | — | Collapsed |
+
+**Per-Family Results:** The model learned to predict `ssreflect`/`move`/`have` for almost all inputs. 63 of 65 families never appear in predictions.
+
+| Family | Precision | Recall | Issue |
+|--------|-----------|--------|-------|
+| have | 3.71% | 66.74% | Overpredicted |
+| move | 5.53% | 67.01% | Overpredicted |
+| All others | 0.0% | 0.0% | No recall |
+
+### Analysis
+
+**Why minority oversampling failed catastrophically:**
+
+1. **Synthetic examples broke generalization.** Duplicating rare family examples provided no new information — the model saw the same tokens repeated, which neural networks ignore as noise. Oversampling changed the effective training distribution (40K unique → 46.8K with 7K duplicates) without adding distinctive features for rare tactics.
+
+2. **Hierarchical classification collapsed.** The within-category module should have learned family-level distinctions, but instead the model learned a shortcut: predict the high-frequency category (`ssreflect`), then predict the high-frequency family within it (`move`/`have`). Category accuracy remained near 34%, but test_acc@5 dropped 21.4pp because family predictions ignored proof context.
+
+3. **Early stopping broke without validation split.** With final training on combined train+val (no validation set), the model overfit without a stopping signal. Loss improved across epochs (5.36 → 4.93) but predictions became progressively more biased.
+
+4. **Undersampling + oversampling reintroduced imbalance.** The original undersampling (cap=2000) was tuned to collapse val–test gap from 35pp to 6pp. Adding non-uniform oversampling (floor=500) re-inflated the distribution unevenly, reintroducing class imbalance.
+
+**Net assessment:** Minority oversampling regressed test_acc@5 from 57.0% to 35.6% (-21.4pp), non-zero families from 21 to 2 (-90.5%), and collapsed family recall. The undersampled baseline (57.0% test_acc@5, 21 families) remains the best model.
+
+**Key insight:** Synthetic oversampling fails without feature augmentation. Duplicating examples teaches the model nothing — it needs diverse contexts (e.g., via token perturbation, mixup, or back-translation) to learn when rare tactics apply. This validates findings from long-tailed learning literature: data volume alone is insufficient; data *distinctiveness* matters more.
