@@ -260,18 +260,84 @@ def fold_val_into_train(dataset: TacticDataset) -> TacticDataset:
     )
 
 
+# Regex for identifying hypothesis lines: "identifier : rest"
+_HYP_RE = re.compile(r"^[a-zA-Z_][a-zA-Z_0-9']* : ")
+
+# Pool of synthetic variable names for identifier renaming.
+_SYNTHETIC_NAMES = [f"v{i}" for i in range(200)]
+
+
+def perturb_proof_state(state_text: str, rng: random.Random) -> str:
+    """Apply label-preserving perturbations to a serialized proof state.
+
+    spec §4.1: Applies hypothesis shuffling and identifier renaming.
+    Both perturbations are provably label-preserving.
+    """
+    blocks = state_text.split("\n\n")
+    shuffled_blocks = []
+
+    for block in blocks:
+        lines = block.split("\n")
+        hyp_lines = []
+        goal_lines = []
+        for line in lines:
+            if _HYP_RE.match(line):
+                hyp_lines.append(line)
+            else:
+                goal_lines.append(line)
+
+        if not hyp_lines:
+            shuffled_blocks.append(block)
+            continue
+
+        rng.shuffle(hyp_lines)
+        shuffled_blocks.append("\n".join(hyp_lines + goal_lines))
+
+    shuffled_state = "\n\n".join(shuffled_blocks)
+
+    # Identifier renaming: collect all hypothesis names across all blocks
+    all_names: list[str] = []
+    seen: set[str] = set()
+    for block in shuffled_state.split("\n\n"):
+        for line in block.split("\n"):
+            if _HYP_RE.match(line):
+                name = line.split(" : ", 1)[0]
+                if name not in seen:
+                    all_names.append(name)
+                    seen.add(name)
+
+    if not all_names:
+        return shuffled_state
+
+    # Build name mapping: original -> synthetic
+    pool = list(_SYNTHETIC_NAMES)
+    rng.shuffle(pool)
+    name_map = {orig: pool[i] for i, orig in enumerate(all_names)}
+
+    # Apply all replacements simultaneously using word-boundary-aware regex.
+    # Sort by length descending so longer names are matched first.
+    sorted_names = sorted(name_map.keys(), key=len, reverse=True)
+    pattern = re.compile(
+        r"(?<![a-zA-Z_0-9'])("
+        + "|".join(re.escape(n) for n in sorted_names)
+        + r")(?![a-zA-Z_0-9'])"
+    )
+    result = pattern.sub(lambda m: name_map[m.group(1)], shuffled_state)
+    return result
+
+
 def oversample_train(
     dataset: TacticDataset,
     floor: int = 500,
     seed: int = 42,
 ) -> TacticDataset:
-    """Duplicate minority families up to a floor count in training.
+    """Augment minority families up to a floor count in training.
 
     spec §4.1: Groups training pairs by tactic family, and for families
-    with fewer than `floor` examples, samples additional examples with
-    replacement from the family's existing pool to bring the total to
-    `floor`. Families at or above `floor` are unchanged. Validation and
-    test splits are unchanged.
+    with fewer than `floor` examples, samples source examples with
+    replacement and applies label-preserving perturbations to create
+    augmented examples, bringing the total to `floor`. Families at or
+    above `floor` are unchanged. Validation and test splits are unchanged.
     """
     # Group train pairs + files by family
     family_groups: dict[str, list[int]] = {}
@@ -287,11 +353,14 @@ def oversample_train(
     for family, indices in family_groups.items():
         if len(indices) >= floor:
             continue
-        # Sample additional indices with replacement to reach floor
+        # Sample source indices with replacement to reach floor
         extra_count = floor - len(indices)
         extra_indices = rng.choices(indices, k=extra_count)
-        new_train_pairs.extend(dataset.train_pairs[i] for i in extra_indices)
-        new_train_files.extend(dataset.train_files[i] for i in extra_indices)
+        for i in extra_indices:
+            state, cat_idx, within_idx = dataset.train_pairs[i]
+            perturbed = perturb_proof_state(state, rng)
+            new_train_pairs.append((perturbed, cat_idx, within_idx))
+            new_train_files.append(dataset.train_files[i])
 
     # Recompute family_counts from oversampled train + unchanged val/test
     new_family_counts: Counter[str] = Counter()

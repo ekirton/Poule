@@ -476,28 +476,70 @@ After HPO selects optimal hyperparameters, the validation split has served its p
 `oversample_train(dataset, floor, seed) -> TacticDataset`
 
 - REQUIRES: `dataset` is a populated `TacticDataset` (typically the output of `undersample_train`). `floor` is a positive integer defaulting to 500 (the minimum number of training examples per tactic family after oversampling). `seed` is an integer used to seed the random selection (default: 42).
-- ENSURES: Returns a new `TacticDataset` identical to `dataset` except that `train_pairs` is augmented so that every tactic family present in the training split has at least `floor` examples (or all its original examples if it already meets or exceeds `floor`). Validation and test splits are unchanged. `family_counts` and `per_category_counts` are recomputed from the oversampled training split.
+- ENSURES: Returns a new `TacticDataset` identical to `dataset` except that `train_pairs` is augmented so that every tactic family present in the training split has at least `floor` examples (or all its original examples if it already meets or exceeds `floor`). Each augmented example is a label-preserving perturbation of a source example (not a verbatim copy). Validation and test splits are unchanged. `family_counts` and `per_category_counts` are recomputed from the oversampled training split.
 
 **Procedure:**
 
 1. Group `train_pairs` by tactic family. The family for a triple `(state, cat_idx, within_idx)` is resolved via `dataset.category_names[cat_idx]` and `dataset.per_category_label_names[cat_name][within_idx]`.
-2. For each family with fewer than `floor` examples, use `random.Random(seed).choices(family_pairs, k=floor - len(family_pairs))` to sample additional examples with replacement. Append these to the family's existing examples.
+2. For each family with fewer than `floor` examples, use `random.Random(seed).choices(family_pairs, k=floor - len(family_pairs))` to sample source examples with replacement. For each sampled source, generate an augmented example by applying `perturb_proof_state(state_text, rng)` to produce a new state text, preserving the original `(cat_idx, within_idx)` labels.
 3. For families with `floor` or more examples, retain all examples unchanged.
 4. Concatenate all per-family groups (in arbitrary order) into the new `train_pairs`.
-5. Build the corresponding `train_files` list by selecting the same indices (duplicated entries reference the same source file).
+5. Build the corresponding `train_files` list by selecting the same indices (augmented entries reference the same source file as their source example).
 6. Recompute `family_counts` by counting all families across train + val + test in the result.
 7. Recompute `per_category_counts` from the recomputed family counts.
 
 - MAINTAINS: `val_pairs`, `test_pairs`, `val_files`, `test_files` are identical to the input dataset.
 - MAINTAINS: Deterministic — the same `(dataset, floor, seed)` always produces the same output.
 - MAINTAINS: Every family in the resulting `train_pairs` has at least `floor` examples.
-- MAINTAINS: For families originally at or above `floor`, all examples are preserved and no duplicates are added.
+- MAINTAINS: For families originally at or above `floor`, all examples are preserved and no augmented examples are added.
 - MAINTAINS: All label maps, category names, and taxonomy fields are copied unchanged.
-- MAINTAINS: Duplicated pairs are exact copies of existing pairs — no synthetic data is generated.
+- MAINTAINS: Augmented pairs preserve labels — only the state text is modified via label-preserving perturbations.
+
+#### Proof state perturbation
+
+`perturb_proof_state(state_text, rng) -> str`
+
+- REQUIRES: `state_text` is a serialized proof state string. `rng` is a `random.Random` instance.
+- ENSURES: Returns a new proof state string with label-preserving perturbations applied. The perturbation applies both hypothesis shuffling and identifier renaming.
+
+**Proof state structure:** A proof state contains one or more goal blocks separated by `\n\n`. Each block consists of zero or more hypothesis lines followed by a goal line. A hypothesis line matches the pattern `^[a-zA-Z_][a-zA-Z_0-9']* : ` (identifier, space, colon, space, then the type). The goal is the last line of the block that does not match this pattern.
+
+**Hypothesis shuffling:**
+
+1. Split `state_text` on `\n\n` to obtain goal blocks.
+2. Within each block, split on `\n` to obtain lines.
+3. Partition lines: a line is a hypothesis if it matches `^[a-zA-Z_][a-zA-Z_0-9']* : `. All other lines are goal lines.
+4. Shuffle the hypothesis lines using `rng.shuffle()`.
+5. Reconstruct the block: shuffled hypotheses followed by goal lines, joined by `\n`.
+6. Rejoin blocks with `\n\n`.
+
+**Identifier renaming:**
+
+1. After hypothesis shuffling, collect all hypothesis names across all blocks. A hypothesis name is the identifier before ` : ` on a hypothesis line.
+2. Deduplicate the names (same name may appear in multiple blocks).
+3. Generate a mapping from each original name to a fresh synthetic name. Synthetic names are drawn from a pool `v0, v1, v2, ...`, shuffled by `rng` to avoid deterministic positional correlation. The pool must be large enough to cover all unique hypothesis names in the state.
+4. Apply the mapping to the entire state text using word-boundary-aware replacement: each occurrence of an original name that is bounded by non-identifier characters (or string boundaries) is replaced with its mapped name. Partial matches within longer identifiers are not replaced (e.g., replacing `H` does not affect `H0` or `IHbetween`).
+5. All replacements are applied simultaneously (not sequentially) to avoid cascading collisions.
+
+- MAINTAINS: Deterministic given the same `(state_text, rng)` state.
+- MAINTAINS: Label-preserving — hypothesis order is semantically irrelevant, and tactic selection is independent of variable names.
+- MAINTAINS: The number of goal blocks, the number of hypotheses per block, and the structure of types and goal expressions are unchanged (only ordering and names change).
+
+> **Given** a state `"H : nat\nH0 : bool\nH = H0"` 
+> **When** `perturb_proof_state(state, rng)` runs
+> **Then** hypotheses are shuffled (e.g., `H0` line before `H` line) and identifiers are renamed (e.g., `"v3 : nat\nv1 : bool\nv3 = v1"`)
+
+> **Given** a multi-block state `"A : nat\nA + 1 = 2\n\nB : bool\ntrue = B"`
+> **When** `perturb_proof_state(state, rng)` runs
+> **Then** each block's hypotheses are shuffled independently and identifiers are renamed consistently within each block
+
+> **Given** a state with no hypotheses `"forall n, n = n"`
+> **When** `perturb_proof_state(state, rng)` runs
+> **Then** the state is returned unchanged (no hypotheses to shuffle, no identifiers to rename)
 
 > **Given** a dataset where `set` has 120 training examples and `rewrite` has 2,000
 > **When** `oversample_train(dataset, floor=500, seed=42)` runs
-> **Then** `set` gains 380 duplicated examples (total 500); `rewrite` is unchanged at 2,000
+> **Then** `set` gains 380 augmented examples (total 500), each with shuffled hypotheses and renamed identifiers; `rewrite` is unchanged at 2,000
 
 > **Given** a dataset where `exact` has 500 training examples
 > **When** `oversample_train(dataset, floor=500, seed=42)` runs

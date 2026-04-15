@@ -800,8 +800,117 @@ class TestFoldValIntoTrain:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+class TestPerturbProofState:
+    """spec §4.1: perturb_proof_state applies label-preserving perturbations."""
+
+    def test_shuffles_hypotheses(self):
+        """Hypothesis lines are reordered; goal stays at end."""
+        import random
+        from Poule.neural.training.data import perturb_proof_state
+
+        state = "H : nat\nH0 : bool\nH1 : list nat\nH = H0"
+        rng = random.Random(42)
+        result = perturb_proof_state(state, rng)
+        lines = result.split("\n")
+        # Goal (last line) is always last (though identifiers may be renamed)
+        # There should be 3 hypothesis lines + 1 goal line
+        assert len(lines) == 4
+        # Hypothesis lines contain " : "
+        hyp_lines = [l for l in lines[:-1] if " : " in l]
+        assert len(hyp_lines) == 3
+
+    def test_renames_identifiers(self):
+        """Hypothesis names are replaced with synthetic names throughout."""
+        import random
+        from Poule.neural.training.data import perturb_proof_state
+
+        state = "n : nat\nm : nat\nn + m = m + n"
+        rng = random.Random(42)
+        result = perturb_proof_state(state, rng)
+        # Original names should not appear (they get renamed)
+        # The goal structure should be preserved (X + Y = Y + X pattern)
+        lines = result.split("\n")
+        assert len(lines) == 3
+        # The hypothesis names should not be "n" and "m" anymore
+        hyp_names = [l.split(" : ")[0] for l in lines[:2]]
+        assert "n" not in hyp_names or "m" not in hyp_names  # at least one renamed
+
+    def test_word_boundary_replacement(self):
+        """Replacing 'H' does not affect 'H0' or 'IHn'."""
+        import random
+        from Poule.neural.training.data import perturb_proof_state
+
+        state = "H : nat\nH0 : bool\nIHn : nat\nH + H0 + IHn = 0"
+        rng = random.Random(42)
+        result = perturb_proof_state(state, rng)
+        lines = result.split("\n")
+        # All three hypothesis names should be independently renamed
+        hyp_names = [l.split(" : ")[0] for l in lines[:3]]
+        assert len(set(hyp_names)) == 3  # all unique
+
+    def test_multi_block_state(self):
+        """Each goal block is perturbed independently."""
+        import random
+        from Poule.neural.training.data import perturb_proof_state
+
+        state = "A : nat\nA + 1 = 2\n\nB : bool\ntrue = B"
+        rng = random.Random(42)
+        result = perturb_proof_state(state, rng)
+        blocks = result.split("\n\n")
+        assert len(blocks) == 2
+        # Each block should have hypothesis + goal structure
+        for block in blocks:
+            lines = block.split("\n")
+            assert len(lines) == 2  # 1 hyp + 1 goal
+
+    def test_no_hypotheses_unchanged(self):
+        """A state with no hypotheses is returned unchanged."""
+        import random
+        from Poule.neural.training.data import perturb_proof_state
+
+        state = "forall n, n = n"
+        rng = random.Random(42)
+        result = perturb_proof_state(state, rng)
+        assert result == state
+
+    def test_deterministic(self):
+        """Same rng state produces same result."""
+        import random
+        from Poule.neural.training.data import perturb_proof_state
+
+        state = "H : nat\nH0 : bool\nH = H0"
+        r1 = perturb_proof_state(state, random.Random(42))
+        r2 = perturb_proof_state(state, random.Random(42))
+        assert r1 == r2
+
+    def test_different_seed_different_result(self):
+        """Different rng states produce different results."""
+        import random
+        from Poule.neural.training.data import perturb_proof_state
+
+        state = "A : nat\nB : nat\nC : nat\nD : nat\nA + B + C + D = 0"
+        r1 = perturb_proof_state(state, random.Random(42))
+        r2 = perturb_proof_state(state, random.Random(99))
+        assert r1 != r2
+
+    def test_preserves_goal_structure(self):
+        """The goal expression structure is preserved (only names change)."""
+        import random
+        from Poule.neural.training.data import perturb_proof_state
+
+        state = "x : nat\ny : nat\nx + y = y + x"
+        rng = random.Random(42)
+        result = perturb_proof_state(state, rng)
+        lines = result.split("\n")
+        goal = lines[-1]
+        # Goal should have the pattern "A + B = B + A"
+        # (identifiers renamed but structure preserved)
+        assert "+" in goal
+        assert "=" in goal
+
+
 class TestOversampleTrain:
-    """spec §4.1: oversample_train duplicates minority families up to a floor."""
+    """spec §4.1: oversample_train augments minority families up to a floor."""
 
     def _make_dataset_with_counts(self, family_counts_train):
         """Build a TacticDataset with specified per-family training counts."""
@@ -912,8 +1021,8 @@ class TestOversampleTrain:
 
         assert r1.train_pairs != r2.train_pairs
 
-    def test_duplicates_are_from_original_pool(self):
-        """All duplicated examples are copies of original family examples."""
+    def test_augmented_preserve_labels(self):
+        """All augmented examples preserve the original family labels."""
         from Poule.neural.training.data import oversample_train
 
         ds = self._make_dataset_with_counts({"rewrite": 2000, "lia": 120})
@@ -925,9 +1034,61 @@ class TestOversampleTrain:
         cat_idx = list(CATEGORY_NAMES).index(TACTIC_TO_CATEGORY["lia"])
         within_idx = list(TACTIC_CATEGORIES[TACTIC_TO_CATEGORY["lia"]]).index("lia")
 
-        original_states = {f"state_lia_{i}" for i in range(120)}
+        lia_pairs = [(s, c, w) for s, c, w in result.train_pairs if c == cat_idx and w == within_idx]
+        assert len(lia_pairs) == 500
+        # All augmented examples have the correct label indices
+        assert all(c == cat_idx and w == within_idx for _, c, w in lia_pairs)
+
+    def test_augmented_with_hypotheses_are_perturbed(self):
+        """Augmented examples with hypothesis structure are perturbed, not duplicated."""
+        from Poule.neural.training.data import oversample_train
+        from Poule.neural.training.taxonomy import (
+            CATEGORY_NAMES, TACTIC_CATEGORIES, TACTIC_TO_CATEGORY,
+        )
+
+        # Build dataset with realistic proof states that have hypotheses
+        category_index = {cat: i for i, cat in enumerate(CATEGORY_NAMES)}
+        per_cat_label_maps = {}
+        for cat in CATEGORY_NAMES:
+            per_cat_label_maps[cat] = {
+                t: i for i, t in enumerate(TACTIC_CATEGORIES[cat])
+            }
+
+        cat = TACTIC_TO_CATEGORY["lia"]
+        cat_idx = category_index[cat]
+        within_idx = per_cat_label_maps[cat]["lia"]
+
+        # Create states with hypothesis structure
+        train_pairs = []
+        train_files = []
+        for i in range(120):
+            state = f"H{i} : nat\nG{i} : bool\nH{i} + G{i} = 0"
+            train_pairs.append((state, cat_idx, within_idx))
+            train_files.append(f"file_lia_{i}.v")
+        # Add majority family
+        rw_cat = TACTIC_TO_CATEGORY["rewrite"]
+        rw_cat_idx = category_index[rw_cat]
+        rw_within_idx = per_cat_label_maps[rw_cat]["rewrite"]
+        for i in range(2000):
+            train_pairs.append((f"rw_state_{i}", rw_cat_idx, rw_within_idx))
+            train_files.append(f"file_rw_{i}.v")
+
+        val_pairs = [("val_state", category_index["introduction"], 0)]
+        test_pairs = [("test_state", category_index["introduction"], 0)]
+        family_counts = {"lia": 120, "rewrite": 2000}
+
+        ds = _make_tactic_dataset(
+            train_pairs=train_pairs, val_pairs=val_pairs, test_pairs=test_pairs,
+            family_counts=family_counts,
+            train_files=train_files, val_files=["val.v"], test_files=["test.v"],
+        )
+        result = oversample_train(ds, floor=500, seed=42)
+
+        original_states = {s for s, c, w in ds.train_pairs if c == cat_idx and w == within_idx}
         result_states = [s for s, c, w in result.train_pairs if c == cat_idx and w == within_idx]
-        assert all(s in original_states for s in result_states)
+        # Some augmented states should differ from originals (perturbed)
+        novel_states = [s for s in result_states if s not in original_states]
+        assert len(novel_states) > 0, "Expected some augmented states to be perturbed"
 
     def test_family_counts_recomputed(self):
         """family_counts reflects the oversampled distribution."""

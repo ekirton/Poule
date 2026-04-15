@@ -1091,7 +1091,7 @@ Head-class undersampling collapsed the val–test gap (35pp → 6pp) and raised 
 
 4. **Minority oversampling.** Undersampling capped the majority but did nothing to boost families with <100 examples (arithmetic, contradiction, many elimination tactics). Three approaches, ordered by complexity:
 
-   **4a. Naive oversampling (duplicate rare examples).** Duplicate training examples from families below a threshold (e.g., <200 examples) until they reach a target count. Requires a ~10-line change to the data pipeline. Risk: the model sees identical examples repeatedly and memorizes surface forms rather than learning general usage patterns. However, the test set for rare families is drawn from the same narrow distribution, so some recall improvement is likely even with overfitting. Try this first as the baseline.
+   **4a. Naive oversampling (duplicate rare examples).** ❌ **Evaluated 2026-04-14 and rejected.** Duplicating rare family examples (floor=500) regressed test_acc@5 from 57.0% to 35.6%, non-zero families from 21 to 2. The model collapsed to predicting only ssreflect/move/have. Duplication provides no new signal — the model memorized surface forms. See [Minority Oversampling Experiment](#minority-oversampling-experiment).
 
    **4b. Token-level perturbation (noise augmentation).** When oversampling a rare family, perturb the proof state to create novel training examples: (1) hypothesis shuffling — reorder hypotheses in the context (order is incidental, the correct tactic is unchanged); (2) identifier renaming — replace bound variable names with random alternatives (tactic selection is independent of variable names); (3) conservative token dropout — mask 5% of tokens with `[UNK]` (riskier, since dropping the goal's head symbol could change the correct tactic). Hypothesis shuffling and identifier renaming are provably label-preserving. Implement on top of 4a if naive oversampling shows movement.
 
@@ -1105,7 +1105,9 @@ Head-class undersampling collapsed the val–test gap (35pp → 6pp) and raised 
 
 8. **Revert category head to single linear layer.** The 2-layer MLP category head (commit `bccd35a`) did not improve category acc@1 — it dropped from 34.9% (8 categories, single linear) to 31.5% (6 categories, 2-layer MLP). The bottleneck is encoder representation quality, not head capacity.
 
-Loss-function engineering is exhausted: balanced softmax (2), decoupled training (3), LDAM+DRW (5), and focal loss (6) all degraded performance. The consistent finding is that the bottleneck is data sparsity for rare families, not loss weighting. Try (4a) next — naive minority oversampling directly addresses the data gap by boosting families with <100 training examples. Use the pre-LDAM best hyperparameters (6 layers, lr=1.07e-5, batch_size=64, alpha=0.065, label_smoothing=0.190, sam_rho=0.180, lambda_within=1.93). If naive oversampling moves trainable coverage from 36% toward 50%, layer on (4b) token perturbation.
+Loss-function engineering is exhausted: balanced softmax (2), decoupled training (3), LDAM+DRW (5), and focal loss (6) all degraded performance. The consistent finding is that the bottleneck is data sparsity for rare families, not loss weighting.
+
+4a (naive oversampling) was tried and failed catastrophically — see [Minority Oversampling Experiment](#minority-oversampling-experiment). Duplicating examples provided no new signal; the model collapsed to predicting 2 families. Try 4b next: hypothesis shuffling (1) and identifier renaming (2) to create genuinely novel training examples when oversampling rare families. Token dropout (3) is excluded — dropping the goal's head symbol can change the correct tactic.
 
 ## Minority Oversampling Experiment
 
