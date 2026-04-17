@@ -111,9 +111,9 @@ def main():
         dataset,
         HPO_DIR,
         vocabulary_path=VOCABULARY_DIR,
-        n_trials=15,
+        n_trials=13,
         study_name="poule-hpo-undersampled",
-        resume=False,
+        resume=True,
         hpo_patience=2,
     )
     hpo_time = time.time() - t0
