@@ -127,7 +127,7 @@ class HyperparameterTuner:
             storage=storage,
             direction="maximize",
             load_if_exists=resume,
-            sampler=optuna.samplers.TPESampler(seed=42),
+            sampler=optuna.samplers.TPESampler(seed=42, n_startup_trials=3),
             pruner=optuna.pruners.MedianPruner(
                 n_startup_trials=3,
                 n_warmup_steps=3,
